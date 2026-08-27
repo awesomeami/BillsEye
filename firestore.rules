@@ -1,0 +1,241 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+    
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    
+    function hasNoImageData(data) {
+      return !('image' in data) && !('imageBase64' in data) && !('blob' in data) && !('file' in data) && !('thumbnail' in data) && !('storagePath' in data);
+    }
+
+    function checkStringOrNull(val, maxLen) {
+      return val == null || (val is string && val.size() <= maxLen);
+    }
+    function checkNumberOrNull(val, minVal, maxVal) {
+      return val == null || (val is number && val >= minVal && val <= maxVal);
+    }
+    function checkNumberOrNullNoMax(val, minVal) {
+      return val == null || (val is number && val >= minVal);
+    }
+    function checkBoolOrNull(val) {
+      return val == null || val is bool;
+    }
+    
+    function isValidReceiptItem(item) {
+      return item is map 
+        && item.keys().hasAll(['id'])
+        && item.keys().hasOnly(['id', 'rawLineText', 'name', 'brand', 'quantity', 'unit', 'unitPrice', 'discount', 'lineTotal', 'category', 'confidence', 'userEdited', 'warnings'])
+        && item.id is string && item.id.size() <= 128
+        && checkStringOrNull(item.get('rawLineText', null), 500)
+        && checkStringOrNull(item.get('name', null), 200)
+        && checkStringOrNull(item.get('brand', null), 100)
+        && checkNumberOrNullNoMax(item.get('quantity', null), 0)
+        && checkStringOrNull(item.get('unit', null), 50)
+        && checkNumberOrNullNoMax(item.get('unitPrice', null), 0)
+        && checkNumberOrNullNoMax(item.get('discount', null), 0)
+        && checkNumberOrNullNoMax(item.get('lineTotal', null), 0)
+        && checkStringOrNull(item.get('category', null), 100)
+        && checkNumberOrNull(item.get('confidence', null), 0, 1)
+        && checkBoolOrNull(item.get('userEdited', null))
+        && (item.get('warnings', []) is list && item.get('warnings', []).size() <= 10);
+    }
+    
+    function areValidReceiptItems(items) {
+      return (items.size() <= 0 || isValidReceiptItem(items[0]))
+        && (items.size() <= 1 || isValidReceiptItem(items[1]))
+        && (items.size() <= 2 || isValidReceiptItem(items[2]))
+        && (items.size() <= 3 || isValidReceiptItem(items[3]))
+        && (items.size() <= 4 || isValidReceiptItem(items[4]))
+        && (items.size() <= 5 || isValidReceiptItem(items[5]))
+        && (items.size() <= 6 || isValidReceiptItem(items[6]))
+        && (items.size() <= 7 || isValidReceiptItem(items[7]))
+        && (items.size() <= 8 || isValidReceiptItem(items[8]))
+        && (items.size() <= 9 || isValidReceiptItem(items[9]))
+        && (items.size() <= 10 || isValidReceiptItem(items[10]))
+        && (items.size() <= 11 || isValidReceiptItem(items[11]))
+        && (items.size() <= 12 || isValidReceiptItem(items[12]))
+        && (items.size() <= 13 || isValidReceiptItem(items[13]))
+        && (items.size() <= 14 || isValidReceiptItem(items[14]))
+        && (items.size() <= 15 || isValidReceiptItem(items[15]))
+        && (items.size() <= 16 || isValidReceiptItem(items[16]))
+        && (items.size() <= 17 || isValidReceiptItem(items[17]))
+        && (items.size() <= 18 || isValidReceiptItem(items[18]))
+        && (items.size() <= 19 || isValidReceiptItem(items[19]))
+        && (items.size() <= 20 || isValidReceiptItem(items[20]))
+        && (items.size() <= 21 || isValidReceiptItem(items[21]))
+        && (items.size() <= 22 || isValidReceiptItem(items[22]))
+        && (items.size() <= 23 || isValidReceiptItem(items[23]))
+        && (items.size() <= 24 || isValidReceiptItem(items[24]))
+        && (items.size() <= 25 || isValidReceiptItem(items[25]))
+        && (items.size() <= 26 || isValidReceiptItem(items[26]))
+        && (items.size() <= 27 || isValidReceiptItem(items[27]))
+        && (items.size() <= 28 || isValidReceiptItem(items[28]))
+        && (items.size() <= 29 || isValidReceiptItem(items[29]))
+        && (items.size() <= 30 || isValidReceiptItem(items[30]))
+        && (items.size() <= 31 || isValidReceiptItem(items[31]))
+        && (items.size() <= 32 || isValidReceiptItem(items[32]))
+        && (items.size() <= 33 || isValidReceiptItem(items[33]))
+        && (items.size() <= 34 || isValidReceiptItem(items[34]))
+        && (items.size() <= 35 || isValidReceiptItem(items[35]))
+        && (items.size() <= 36 || isValidReceiptItem(items[36]))
+        && (items.size() <= 37 || isValidReceiptItem(items[37]))
+        && (items.size() <= 38 || isValidReceiptItem(items[38]))
+        && (items.size() <= 39 || isValidReceiptItem(items[39]));
+    }
+    
+    function isValidReceipt(data) {
+      return data is map
+        && hasNoImageData(data)
+        && data.keys().hasAll(['id', 'schemaVersion', 'revision', 'status', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id.size() <= 128
+        && data.schemaVersion is number && data.schemaVersion >= 1 && data.schemaVersion <= 2
+        && data.revision is number && data.revision >= 1
+        && data.status in ['pendingReview', 'confirmed']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && (data.get('confirmedAt', null) == null || data.get('confirmedAt', null) is timestamp)
+        && checkStringOrNull(data.get('sourceFileName', null), 255)
+        && checkStringOrNull(data.get('sourceMimeType', null), 100)
+        && checkStringOrNull(data.get('sourceSha256', null), 64)
+        && checkNumberOrNullNoMax(data.get('sourcePageNumber', null), 1)
+        && checkStringOrNull(data.get('merchantRaw', null), 255)
+        && checkStringOrNull(data.get('merchantNormalized', null), 255)
+        && checkStringOrNull(data.get('branchAddress', null), 500)
+        && checkStringOrNull(data.get('receiptNumber', null), 100)
+        && (data.get('transactionDate', null) == null || (data.get('transactionDate', null) is string && data.get('transactionDate', null).matches('^\\d{4}-\\d{2}-\\d{2}$')))
+        && checkStringOrNull(data.get('transactionTime', null), 20)
+        && checkBoolOrNull(data.get('dateAmbiguous', null))
+        && checkStringOrNull(data.get('currency', null), 10)
+        && checkStringOrNull(data.get('paymentMethod', null), 50)
+        && checkNumberOrNullNoMax(data.get('printedSubtotal', null), 0)
+        && checkNumberOrNullNoMax(data.get('printedDiscount', null), 0)
+        && checkNumberOrNullNoMax(data.get('printedTax', null), 0)
+        && checkNumberOrNullNoMax(data.get('printedFees', null), 0)
+        && (data.get('printedRounding', null) == null || data.get('printedRounding', null) is number)
+        && checkNumberOrNullNoMax(data.get('printedGrandTotal', null), 0)
+        && checkNumberOrNullNoMax(data.get('computedLineTotal', null), 0)
+        && checkNumberOrNullNoMax(data.get('computedExpectedTotal', null), 0)
+        && (data.get('discrepancy', null) == null || data.get('discrepancy', null) is number)
+        && (data.get('reconciliationStatus', null) == null || data.get('reconciliationStatus', null) in ['matched', 'mismatched', 'unknown'])
+        && checkStringOrNull(data.get('rawOcrText', null), 100000)
+        && checkNumberOrNull(data.get('overallConfidence', null), 0, 1)
+        && checkStringOrNull(data.get('extractionModel', null), 100)
+        && checkStringOrNull(data.get('extractionSchemaVersion', null), 50)
+        && checkNumberOrNullNoMax(data.get('extractionDurationMs', null), 0)
+        && checkStringOrNull(data.get('userNote', null), 500)
+        && checkBoolOrNull(data.get('wasEditedByUser', null))
+        && data.get('items', []) is list && data.get('items', []).size() <= 40
+        && areValidReceiptItems(data.get('items', []));
+    }
+    
+    function isValidCategory(data) {
+      return data is map
+        && hasNoImageData(data)
+        && data.keys().hasAll(['id', 'name', 'isCustom', 'createdAt', 'order', 'isActive'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 100
+        && data.isCustom is bool
+        && data.createdAt is string && data.createdAt.size() <= 50
+        && checkStringOrNull(data.get('color', null), 50)
+        && checkStringOrNull(data.get('icon', null), 50)
+        && data.order is number
+        && data.isActive is bool;
+    }
+    
+    function isValidAlias(data) {
+      return data is map
+        && hasNoImageData(data)
+        && data.keys().hasAll(['id', 'merchantNormalized', 'categoryId', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id.size() <= 128
+        && data.merchantNormalized is string && data.merchantNormalized.size() <= 255
+        && data.categoryId is string && data.categoryId.size() <= 128
+        && data.createdAt is string && data.createdAt.size() <= 50
+        && data.updatedAt is string && data.updatedAt.size() <= 50;
+    }
+
+    function isValidSettings(data) {
+      return data is map
+        && hasNoImageData(data)
+        && checkStringOrNull(data.get('currency', null), 10)
+        && checkStringOrNull(data.get('locale', null), 20)
+        && checkStringOrNull(data.get('timeZone', null), 50)
+        && (data.get('theme', null) == null || data.get('theme', null) in ['light', 'dark', 'system'])
+        && checkNumberOrNull(data.get('lowConfidenceThreshold', null), 0, 1)
+        && checkNumberOrNullNoMax(data.get('discrepancyTolerance', null), 0);
+    }
+    
+    function isValidUserProfile(data) {
+      return data is map
+        && hasNoImageData(data)
+        && data.keys().hasAll(['email', 'createdAt', 'lastLoginAt', 'schemaVersion'])
+        && data.email is string && data.email.size() <= 255
+        && data.createdAt is timestamp
+        && data.lastLoginAt is timestamp
+        && data.schemaVersion is number && data.schemaVersion >= 1
+        && checkStringOrNull(data.get('displayName', null), 255);
+    }
+    
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidUserProfile(incoming());
+      allow update: if isOwner(uid) && isValidUserProfile(incoming()) 
+        && incoming().createdAt == existing().createdAt 
+        && incoming().email == existing().email;
+      allow delete: if false; // Only via Functions or Admin
+      
+      match /receipts/{receiptId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) 
+          && isValidId(receiptId)
+          && isValidReceipt(incoming()) 
+          && incoming().id == receiptId;
+        allow update: if isOwner(uid) 
+          && isValidId(receiptId)
+          && isValidReceipt(incoming()) 
+          && incoming().id == receiptId
+          && incoming().createdAt == existing().createdAt
+          && incoming().revision > existing().revision;
+        allow delete: if isOwner(uid) && isValidId(receiptId);
+      }
+      
+      match /categories/{categoryId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidId(categoryId) && isValidCategory(incoming()) && incoming().id == categoryId;
+        allow update: if isOwner(uid) && isValidId(categoryId) && isValidCategory(incoming()) && incoming().id == categoryId;
+        allow delete: if isOwner(uid) && isValidId(categoryId);
+      }
+      
+      match /aliases/{aliasId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidId(aliasId) && isValidAlias(incoming()) && incoming().id == aliasId;
+        allow update: if isOwner(uid) && isValidId(aliasId) && isValidAlias(incoming()) && incoming().id == aliasId;
+        allow delete: if isOwner(uid) && isValidId(aliasId);
+      }
+      
+      match /settings/{settingId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidSettings(incoming());
+        allow update: if isOwner(uid) && isValidSettings(incoming());
+        allow delete: if false;
+      }
+    }
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
