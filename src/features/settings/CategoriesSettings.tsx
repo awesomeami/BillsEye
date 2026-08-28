@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 import { categoryRepository } from '../../services/firebase/db';
 import { CategoryDocument } from '../../domain/schema';
 import { ActiveSessionGuard, SessionScope } from '../../services/firebase/subscriptionIsolation';
+import { useDialogA11y } from '../../components/ui/useDialogA11y';
 
 export function CategoriesSettings({ onBack }: { onBack: () => void }) {
   const { user, sessionEpoch } = useAuth();
@@ -28,6 +29,12 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
   const [deletingCategory, setDeletingCategory] = useState<CategoryDocument | null>(null);
   const [replacementCategory, setReplacementCategory] = useState<string>('');
   const [referenceCounts, setReferenceCounts] = useState({ receiptItems: 0, aliases: 0 });
+  const replacementCancelRef = useRef<HTMLButtonElement>(null);
+  const replacementDialogRef = useDialogA11y<HTMLDivElement>({
+    isOpen: deletingCategory !== null,
+    onClose: () => setDeletingCategory(null),
+    initialFocusRef: replacementCancelRef,
+  });
 
   useEffect(() => {
     const sessionGuard = sessionGuardRef.current;
@@ -159,7 +166,7 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
         </div>
         <button 
           onClick={() => setIsAdding(true)}
-          className="bg-blue-50 text-blue-600 p-2 rounded-lg hover:bg-blue-100 flex items-center gap-1 text-sm font-medium"
+          className="touch-target bg-blue-50 text-blue-700 p-2 rounded-lg hover:bg-blue-100 flex items-center gap-1 text-sm font-medium"
         >
           <Plus size={16} /> Add
         </button>
@@ -215,7 +222,7 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
                   <>
                     <button
                       onClick={() => toggleActive(cat)}
-                      className="text-xs px-2 py-1 mr-2 text-gray-500 hover:bg-gray-100 rounded border border-gray-200"
+                      className="touch-target text-xs px-2 py-1 mr-2 text-gray-600 hover:bg-gray-100 rounded border border-gray-200"
                     >
                       {cat.isActive ? 'Deactivate' : 'Activate'}
                     </button>
@@ -242,8 +249,8 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
       </div>
 
       {deletingCategory && (
-        <div role="dialog" aria-modal="true" aria-labelledby="category-delete-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <div ref={replacementDialogRef} role="dialog" aria-modal="true" aria-labelledby="category-delete-title" tabIndex={-1} className="bg-white rounded-2xl w-full max-w-sm overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-200">
               <h2 id="category-delete-title" className="text-lg font-bold text-gray-900 flex items-center gap-2">
                 <AlertTriangle className="text-amber-500" size={20} />
@@ -256,8 +263,9 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
                 {referenceCounts.aliases > 0 && ` and ${referenceCounts.aliases} merchant alias(es)`}. Choose a replacement before deleting it.
               </p>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Replacement Category</label>
+                <label htmlFor="replacement-category" className="block text-xs font-medium text-gray-700 mb-1">Replacement Category</label>
                 <select 
+                  id="replacement-category"
                   className="w-full border border-gray-300 rounded-lg p-2"
                   value={replacementCategory}
                   onChange={e => setReplacementCategory(e.target.value)}
@@ -270,15 +278,16 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
             </div>
             <div className="p-4 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
               <button 
+                ref={replacementCancelRef}
                 onClick={() => setDeletingCategory(null)}
-                className="px-4 py-2 font-medium text-gray-600 hover:bg-gray-200 rounded-lg"
+                className="touch-target px-4 py-2 font-medium text-gray-700 hover:bg-gray-200 rounded-lg"
               >
                 Cancel
               </button>
               <button 
                 onClick={confirmDeleteWithReplacement}
                 disabled={!replacementCategory}
-                className="px-4 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
+                className="touch-target px-4 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
               >
                 Replace & Delete
               </button>

@@ -35,6 +35,7 @@ export function ItemReportView({ receipts, range }: Props) {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
+            <caption className="sr-only">Item price and spending summary. Activate an item row to show its details.</caption>
             <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b border-gray-100">
               <tr>
                 <th className="px-6 py-4 font-medium">Canonical Item</th>
@@ -55,9 +56,20 @@ export function ItemReportView({ receipts, range }: Props) {
 
                 return (
                   <React.Fragment key={rowId}>
-                    <tr 
-                      className={`hover:bg-gray-50 transition-colors cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`}
+                    <tr
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isExpanded}
+                      aria-controls={`item-details-${rowId}`}
+                      aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${row.canonicalName}`}
+                      className={`hover:bg-gray-50 transition-colors cursor-pointer focus-visible:outline focus-visible:outline-3 focus-visible:outline-blue-600 focus-visible:outline-offset-[-3px] ${isExpanded ? 'bg-gray-50' : ''}`}
                       onClick={() => toggleExpand(rowId)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          toggleExpand(rowId);
+                        }
+                      }}
                     >
                       <td className="px-6 py-4">
                         <div className="font-medium text-gray-900 capitalize">{row.canonicalName}</div>
@@ -83,7 +95,7 @@ export function ItemReportView({ receipts, range }: Props) {
                     
                     {isExpanded && (
                       <tr>
-                        <td colSpan={6} className="p-0 border-b border-gray-100">
+                        <td id={`item-details-${rowId}`} colSpan={6} className="p-0 border-b border-gray-100">
                           <div className="bg-gray-50 px-6 py-6 border-l-4 border-blue-500">
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -131,7 +143,9 @@ export function ItemReportView({ receipts, range }: Props) {
                             <div className="mt-8">
                               <h4 className="font-medium text-gray-900 mb-4">Price Trend</h4>
                               {row.observations.length > 1 ? (
-                                <div className="h-64 w-full bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                                <>
+                                  <p id={`price-trend-summary-${rowId}`} className="sr-only">Price trend for {row.canonicalName}: {row.observations.length} comparable purchases, from {formatCurrency(row.minPrice / 100)} to {formatCurrency(row.maxPrice / 100)} per {row.standardUnit}.</p>
+                                  <div aria-hidden="true" aria-describedby={`price-trend-summary-${rowId}`} className="h-64 w-full bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                                   <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={row.observations}>
                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
@@ -192,7 +206,8 @@ export function ItemReportView({ receipts, range }: Props) {
                                       />
                                     </LineChart>
                                   </ResponsiveContainer>
-                                </div>
+                                  </div>
+                                </>
                               ) : (
                                 <div className="p-4 bg-white border border-gray-100 rounded-xl text-sm text-gray-500 shadow-sm">
                                   Insufficient observations to generate a price trend. Need at least 2 comparable purchases.

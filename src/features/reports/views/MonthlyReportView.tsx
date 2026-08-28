@@ -23,7 +23,15 @@ export function MonthlyReportView({ receipts, range }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80">
+      {data.length === 1 ? (
+        <section aria-label="Monthly spending summary" className="rounded-2xl border border-blue-100 bg-blue-50 p-6">
+          <p className="text-sm font-medium text-blue-900">First month in this period</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{formatCurrency(data[0].total / 100)}</p>
+          <p className="mt-2 text-sm text-blue-800">{data[0].count} receipt{data[0].count === 1 ? '' : 's'} recorded in {data[0].month}. Add another month to compare spending over time.</p>
+        </section>
+      ) : <>
+      <p id="monthly-chart-summary" className="sr-only">Monthly spending chart. The detailed monthly totals, receipt counts, averages, and month-to-month changes are available in the table below.</p>
+      <div aria-hidden="true" aria-describedby="monthly-chart-summary" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
@@ -39,10 +47,16 @@ export function MonthlyReportView({ receipts, range }: Props) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      </>}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="space-y-3 md:hidden">
+        {data.map((row) => <article key={row.month} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-gray-900">{row.month}</p><p className="mt-1 text-xs text-gray-500">{row.count} receipt{row.count === 1 ? '' : 's'} · Average {formatCurrency(row.average / 100)}</p></div><p className="text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div>{row.changePct !== null && <p className={`mt-3 text-sm font-medium ${row.changePct > 0 ? 'text-red-700' : 'text-green-700'}`}>{row.changePct > 0 ? '+' : ''}{row.changePct.toFixed(1)}% from the previous month</p>}</article>)}
+      </div>
+
+      <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
+            <caption className="sr-only">Monthly spending summary</caption>
             <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b border-gray-100">
               <tr>
                 <th className="px-6 py-4 font-medium">Month</th>

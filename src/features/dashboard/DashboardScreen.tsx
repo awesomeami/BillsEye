@@ -38,10 +38,10 @@ export function DashboardScreen() {
   const isUp = changeAbs > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <header className="flex justify-between items-end pb-4 border-b border-gray-200">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Overview</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Overview</h1>
           <p className="text-sm text-gray-500 mt-1">This month's snapshot</p>
         </div>
         {pendingCount > 0 && (
@@ -75,7 +75,7 @@ export function DashboardScreen() {
             <Wallet size={18} />
             <span className="font-medium">Total Spent (This Month)</span>
           </div>
-          <div className="text-4xl font-bold text-gray-900 mb-4">
+          <div className="text-4xl font-bold tracking-tight text-gray-900 mb-3">
             {currentTotalAvailable ? formatCurrency(currentTotal / 100) : 'Unavailable'}
           </div>
           <div className="flex items-center gap-2 text-sm">
@@ -103,12 +103,12 @@ export function DashboardScreen() {
             <h3 className="font-medium text-gray-900 mb-1">Recent Activity</h3>
             <p className="text-sm text-gray-500">You have added {summary.receiptCount} receipts this month.</p>
           </div>
-          <Link to="/add" className="mt-4 flex items-center justify-between bg-gray-50 p-4 rounded-xl hover:bg-gray-100 transition-colors">
+          <Link to="/add" className="touch-target mt-4 flex items-center justify-between bg-blue-600 p-4 rounded-xl text-white hover:bg-blue-700 transition-colors">
             <div className="flex items-center gap-3">
-              <ReceiptText size={20} className="text-blue-600" />
-              <span className="font-medium text-gray-900">Add a new receipt</span>
+              <ReceiptText size={20} />
+              <span className="font-medium">Add a new receipt</span>
             </div>
-            <ChevronRight size={20} className="text-gray-400" />
+            <ChevronRight size={20} />
           </Link>
         </div>
       </div>
@@ -177,9 +177,9 @@ export function DashboardScreen() {
       )}
 
       {/* Categories & Trends */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
         {/* ... category composition and daily trend ... */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80 flex flex-col">
+        <div className={`bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col ${categoryComposition.length > 0 ? 'h-80' : ''}`}>
           <h3 className="font-medium text-gray-900 mb-4">Category Composition</h3>
           {categoryComposition.length > 0 ? (
             <div className="flex-1 min-h-0">
@@ -207,15 +207,15 @@ export function DashboardScreen() {
               </ResponsiveContainer>
             </div>
           ) : (
-             <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
-               No categories this month.
+             <div className="rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+               Add a receipt with categories to see your spending mix.
              </div>
           )}
         </div>
         
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80 flex flex-col">
+        <div className={`bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col ${dailyTrend.length > 1 ? 'h-80' : ''}`}>
           <h3 className="font-medium text-gray-900 mb-4">Daily Spending Trend</h3>
-          {dailyTrend.length > 0 ? (
+          {dailyTrend.length > 1 ? (
             <div className="flex-1 min-h-0">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={dailyTrend}>
@@ -243,14 +243,14 @@ export function DashboardScreen() {
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
-               No spending data this month.
+            <div className="rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+               {dailyTrend.length === 1 ? `You've recorded ${formatCurrency(dailyTrend[0].total / 100)} on ${formatTrendDate(dailyTrend[0].date)}.` : 'Your daily spending trend will appear after your first dated receipt.'}
              </div>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-2">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
           <h3 className="font-medium text-gray-900 mb-4">Top Merchants</h3>
           <div className="space-y-4">

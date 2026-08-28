@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { FileText, X } from 'lucide-react';
+import { useDialogA11y } from '../../components/ui/useDialogA11y';
 
 interface Props {
   file: File;
@@ -13,6 +14,8 @@ interface Props {
 export function PdfPageSelector({ file, totalPages, position, totalFiles, onConfirm, onCancel }: Props) {
   const [selectedPages, setSelectedPages] = useState<string>('1');
   const [error, setError] = useState('');
+  const pageInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useDialogA11y<HTMLDivElement>({ isOpen: true, onClose: onCancel, initialFocusRef: pageInputRef });
 
   const handleConfirm = () => {
     const pages = new Set<number>();
@@ -55,13 +58,13 @@ export function PdfPageSelector({ file, totalPages, position, totalFiles, onConf
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="pdf-page-selector-title" className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="pdf-page-selector-title" tabIndex={-1} className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
         <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gray-50/50">
           <h2 id="pdf-page-selector-title" className="font-semibold flex items-center gap-2">
             <FileText size={18} className="text-gray-500" />
             Select PDF Pages
           </h2>
-          <button onClick={onCancel} aria-label="Skip this PDF" className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-lg transition-colors">
+          <button onClick={onCancel} aria-label="Skip this PDF" className="touch-target text-gray-500 hover:bg-gray-100 p-1.5 rounded-lg transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -78,13 +81,13 @@ export function PdfPageSelector({ file, totalPages, position, totalFiles, onConf
               Pages to Extract (max 20)
             </label>
             <input 
+              ref={pageInputRef}
               id="pdf-pages"
               type="text" 
               value={selectedPages}
               onChange={(e) => { setSelectedPages(e.target.value); setError(''); }}
               placeholder="e.g. 1, 3-5"
               className="w-full border border-gray-300 rounded-lg p-2.5 text-sm"
-              autoFocus
             />
             {error ? (
               <p className="text-sm text-red-600 mt-1">{error}</p>
@@ -97,10 +100,10 @@ export function PdfPageSelector({ file, totalPages, position, totalFiles, onConf
         </div>
         
         <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
-          <button onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+          <button onClick={onCancel} className="touch-target px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
             Cancel
           </button>
-          <button onClick={handleConfirm} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
+          <button onClick={handleConfirm} className="touch-target px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
             Process Pages
           </button>
         </div>

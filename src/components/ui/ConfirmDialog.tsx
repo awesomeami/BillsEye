@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import { AlertCircle, X } from 'lucide-react';
+import { useDialogA11y } from './useDialogA11y';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -23,27 +24,18 @@ export function ConfirmDialog({
   isDestructive = false,
 }: ConfirmDialogProps) {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    cancelButtonRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onCancel]);
+  const dialogRef = useDialogA11y<HTMLDivElement>({ isOpen, onClose: onCancel, initialFocusRef: cancelButtonRef });
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-      <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message" className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-in fade-in zoom-in-95 duration-200">
+      <div ref={dialogRef} role="alertdialog" tabIndex={-1} aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message" className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-in fade-in zoom-in-95 duration-200">
         <div className="flex justify-between items-start mb-4">
           <div className={`p-2 rounded-full ${isDestructive ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
             <AlertCircle size={24} />
           </div>
-          <button onClick={onCancel} aria-label="Close confirmation" className="text-gray-400 hover:text-gray-600 transition-colors">
+          <button onClick={onCancel} aria-label="Close confirmation" className="touch-target text-gray-500 hover:text-gray-700 transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -55,13 +47,13 @@ export function ConfirmDialog({
           <button
             ref={cancelButtonRef}
             onClick={onCancel}
-            className="flex-1 bg-white border border-gray-300 text-gray-700 font-medium py-2.5 px-4 rounded-xl hover:bg-gray-50 transition-colors"
+            className="touch-target flex-1 bg-white border border-gray-300 text-gray-700 font-medium py-2.5 px-4 rounded-xl hover:bg-gray-50 transition-colors"
           >
             {cancelText}
           </button>
           <button
             onClick={onConfirm}
-            className={`flex-1 font-medium py-2.5 px-4 rounded-xl text-white transition-colors ${
+            className={`touch-target flex-1 font-medium py-2.5 px-4 rounded-xl text-white transition-colors ${
               isDestructive ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >

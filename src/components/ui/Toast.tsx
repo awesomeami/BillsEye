@@ -37,10 +37,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast, clearToasts }}>
       {children}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full">
+      <div className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] right-4 z-[60] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2 md:bottom-4" aria-live="polite" aria-atomic="true">
         {toasts.map((toast) => (
           <div
             key={toast.id}
+            role={toast.type === 'error' ? 'alert' : 'status'}
             className="flex items-center gap-3 p-4 bg-white rounded-xl shadow-lg border border-gray-100 animate-in slide-in-from-top-2 fade-in duration-300"
           >
             {toast.type === 'success' && <CheckCircle2 className="text-green-500" size={20} />}
@@ -49,7 +50,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <p className="flex-1 text-sm font-medium text-gray-900">{toast.message}</p>
             <button
               onClick={() => removeToast(toast.id)}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              aria-label={`Dismiss notification: ${toast.message}`}
+              className="touch-target text-gray-500 hover:text-gray-700 transition-colors"
             >
               <X size={16} />
             </button>

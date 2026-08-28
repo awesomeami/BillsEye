@@ -338,7 +338,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
   return (
     <div className="space-y-6">
       <header className="pb-4 border-b border-gray-200 flex items-center gap-4">
-        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
+        <button onClick={onBack} aria-label="Back to settings" className="touch-target p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
           <ChevronRight className="rotate-180" size={20} />
         </button>
         <h2 className="text-xl font-bold text-gray-900">Data & Exports</h2>
@@ -381,16 +381,16 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
         <p className="text-sm text-gray-500">Download your data in various formats for personal analysis.</p>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button onClick={handleExportCSV} disabled={loading} className="btn-outline flex items-center justify-center gap-2 py-2">
+          <button onClick={handleExportCSV} disabled={loading} className="touch-target btn-outline flex items-center justify-center gap-2 py-2">
             <Download size={16} /> Receipts CSV
           </button>
-          <button onClick={handleExportItemsCSV} disabled={loading} className="btn-outline flex items-center justify-center gap-2 py-2">
+          <button onClick={handleExportItemsCSV} disabled={loading} className="touch-target btn-outline flex items-center justify-center gap-2 py-2">
             <Download size={16} /> Items CSV
           </button>
-          <button onClick={handleExportExcel} disabled={loading} className="btn-outline flex items-center justify-center gap-2 py-2">
+          <button onClick={handleExportExcel} disabled={loading} className="touch-target btn-outline flex items-center justify-center gap-2 py-2">
             <Download size={16} /> Excel Workbook
           </button>
-          <button onClick={handleExportPDF} disabled={loading} className="btn-outline flex items-center justify-center gap-2 py-2">
+          <button onClick={handleExportPDF} disabled={loading} className="touch-target btn-outline flex items-center justify-center gap-2 py-2">
             <Download size={16} /> PDF Report
           </button>
         </div>
@@ -402,7 +402,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
         <p className="text-sm text-gray-500">JSON backups include your profile record, receipts, categories, aliases, and settings. They use a SHA-256 corruption check but are not encrypted or authenticated, so restore only a file you trust. Gemini keys and receipt images are never included.</p>
         
         <div className="flex flex-col sm:flex-row gap-3">
-          <button onClick={handleExportJSON} disabled={loading} className="btn-primary flex-1 flex items-center justify-center gap-2">
+          <button onClick={handleExportJSON} disabled={loading} className="touch-target btn-primary flex-1 flex items-center justify-center gap-2">
             <Download size={16} /> Download JSON Backup
           </button>
           <label className="btn-outline flex-1 flex items-center justify-center gap-2 cursor-pointer">
@@ -442,11 +442,11 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
             <p className="text-xs text-blue-700 mt-2 mb-4">A profile restore preserves the signed-in account’s email and creation time; it can restore the display name and profile schema version only.</p>
             <p className="text-xs text-blue-700 mt-2 mb-4">The backup is fully validated before restore starts. Firestore writes are applied record by record; if a network failure interrupts it, retry the same backup to complete the remaining records.</p>
             <div className="flex gap-2">
-              <button onClick={confirmRestore} disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
+              <button onClick={confirmRestore} disabled={loading} className="touch-target bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
                 {loading && <Loader2 size={16} className="animate-spin" />}
                 Confirm Restore
               </button>
-              <button onClick={() => setRestoreDryRun(null)} disabled={loading} className="bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
+              <button onClick={() => setRestoreDryRun(null)} disabled={loading} className="touch-target bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
                 Cancel
               </button>
             </div>
@@ -466,7 +466,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
           <button 
             onClick={() => openDeletionConfirmation('delete_data')}
             disabled={loading || deletionPending}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-red-200 text-red-600 rounded-xl shadow-sm font-medium hover:bg-red-100 transition-colors"
+            className="touch-target w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-red-200 text-red-700 rounded-xl shadow-sm font-medium hover:bg-red-100 transition-colors"
           >
             {pendingDeletionAction === 'delete_data'
               ? <Loader2 size={18} className="animate-spin" aria-hidden="true" />
@@ -479,7 +479,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
           <button 
             onClick={() => openDeletionConfirmation('delete_account')}
             disabled={loading || deletionPending}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-red-600 text-white rounded-xl shadow-sm font-medium hover:bg-red-700 transition-colors"
+            className="touch-target w-full flex items-center justify-center gap-2 py-3 px-4 bg-red-600 text-white rounded-xl shadow-sm font-medium hover:bg-red-700 transition-colors"
           >
             {pendingDeletionAction === 'delete_account'
               ? <Loader2 size={18} className="animate-spin" aria-hidden="true" />

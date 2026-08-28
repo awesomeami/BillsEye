@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useToast } from '../../components/ui/Toast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { User, Tags, Key, Download, Shield, Info, LogOut, ChevronRight, Activity, Cpu } from 'lucide-react';
+import { User, Tags, Key, Download, Shield, LogOut, ChevronRight, Activity, Cpu } from 'lucide-react';
 import { useAuth } from './../auth/AuthContext';
 import { AiKeysSettings } from './ai/AiKeysSettings';
 import { AiSimulator } from './ai/AiSimulator';
@@ -30,6 +30,8 @@ type ConfirmAction = {
   isDestructive?: boolean;
   action: () => Promise<void>;
 };
+
+const developerMode = import.meta.env.VITE_DEVELOPER_MODE === 'true';
 
 export function SettingsScreen() {
   const { user, signOut } = useAuth();
@@ -119,7 +121,7 @@ export function SettingsScreen() {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <header className="pb-4 border-b border-gray-200 flex items-center gap-4">
-          <button onClick={() => setActiveView('main')} className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
+          <button onClick={() => setActiveView('main')} aria-label="Back to settings" className="touch-target p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
              <ChevronRight className="rotate-180" size={20} />
           </button>
           <h2 className="text-xl font-bold text-gray-900">Privacy</h2>
@@ -137,11 +139,11 @@ export function SettingsScreen() {
     );
   }
 
-  if (activeView === 'simulator') {
+  if (developerMode && activeView === 'simulator') {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <header className="pb-4 border-b border-gray-200 flex items-center gap-4">
-          <button onClick={() => setActiveView('main')} className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
+          <button onClick={() => setActiveView('main')} aria-label="Back to settings" className="touch-target p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
              <ChevronRight className="rotate-180" size={20} />
           </button>
           <h2 className="text-xl font-bold text-gray-900">AI Simulator</h2>
@@ -151,11 +153,11 @@ export function SettingsScreen() {
     );
   }
 
-  if (activeView === 'extraction-test') {
+  if (developerMode && activeView === 'extraction-test') {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <header className="pb-4 border-b border-gray-200 flex items-center gap-4">
-          <button onClick={() => setActiveView('main')} className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
+          <button onClick={() => setActiveView('main')} aria-label="Back to settings" className="touch-target p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
              <ChevronRight className="rotate-180" size={20} />
           </button>
           <h2 className="text-xl font-bold text-gray-900">Extraction Test</h2>
@@ -184,7 +186,7 @@ export function SettingsScreen() {
       title: 'Advanced',
       items: [
         { id: 'ai-keys', label: 'AI Configuration', icon: Key, onClick: () => setActiveView('ai-keys') },
-        ...(import.meta.env.DEV ? [
+        ...(developerMode ? [
           { id: 'simulator', label: 'AI Rotation Simulator', icon: Activity, onClick: () => setActiveView('simulator') },
           { id: 'extraction-test', label: 'Test Gemini Extraction', icon: Activity, onClick: () => setActiveView('extraction-test') },
         ] : []),
@@ -195,7 +197,6 @@ export function SettingsScreen() {
       title: 'About',
       items: [
         { id: 'privacy', label: 'Privacy Policy', icon: Shield, onClick: () => setActiveView('privacy') },
-        { id: 'about', label: 'About KharchaLens', icon: Info, value: 'v1.0.0-dev' },
       ]
     }
   ];
@@ -229,7 +230,7 @@ export function SettingsScreen() {
                     <li key={item.id}>
                       <button 
                         onClick={item.onClick}
-                        className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-left"
+                        className="touch-target w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-left"
                       >
                         <div className="flex items-center gap-3">
                           <div className="bg-gray-100 p-2 rounded-lg">
@@ -253,7 +254,7 @@ export function SettingsScreen() {
         ))}
       </div>
 
-      <SyncDiagnostic />
+      {developerMode && <SyncDiagnostic />}
 
       <div className="pt-4 space-y-4">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
@@ -316,7 +317,7 @@ export function SettingsScreen() {
             action: () => clearCurrentDeviceData(false),
           })}
           disabled={isCacheActionPending}
-          className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-gray-300 text-gray-700 rounded-xl shadow-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+          className="touch-target w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-gray-300 text-gray-700 rounded-xl shadow-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
         >
           <Cpu size={18} />
           Clear this device's offline data
@@ -325,7 +326,7 @@ export function SettingsScreen() {
 
         <button 
           onClick={() => void signOut()}
-          className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-red-200 text-red-600 rounded-xl shadow-sm font-medium hover:bg-red-50 transition-colors"
+          className="touch-target w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-red-200 text-red-700 rounded-xl shadow-sm font-medium hover:bg-red-50 transition-colors"
         >
           <LogOut size={18} />
           Sign Out

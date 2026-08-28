@@ -161,7 +161,9 @@ export function ReceiptsListScreen() {
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search size={18} className="text-gray-400" />
             </div>
+            <label htmlFor="receipt-search" className="sr-only">Search receipts</label>
             <input
+              id="receipt-search"
               type="text"
               className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               placeholder="Search merchant, items, notes..."
@@ -169,9 +171,12 @@ export function ReceiptsListScreen() {
               onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
             />
           </div>
-          <button 
+            <button
             onClick={() => setShowFilters(!showFilters)}
-            className={cn("flex items-center justify-center p-2.5 rounded-xl border transition-colors",
+            aria-label={showFilters ? 'Hide receipt filters' : 'Show receipt filters'}
+            aria-controls="receipt-filters"
+            aria-expanded={showFilters}
+            className={cn("touch-target flex items-center justify-center p-2.5 rounded-xl border transition-colors",
               showFilters ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-gray-100 text-gray-700 border-transparent hover:bg-gray-200"
             )}
           >
@@ -180,25 +185,25 @@ export function ReceiptsListScreen() {
         </div>
 
         {showFilters && (
-          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div id="receipt-filters" aria-label="Receipt filters" className="p-4 bg-gray-50 border border-gray-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Date Range Start</label>
-              <input type="date" className="w-full border-gray-300 rounded-md text-sm p-1.5"
+              <label htmlFor="filter-date-start" className="block text-xs font-medium text-gray-700 mb-1">Date Range Start</label>
+              <input id="filter-date-start" type="date" className="w-full border-gray-300 rounded-md text-sm p-1.5"
                 value={filters.dateStart || ''} onChange={e => setFilters(prev => ({...prev, dateStart: e.target.value || null}))} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Date Range End</label>
-              <input type="date" className="w-full border-gray-300 rounded-md text-sm p-1.5"
+              <label htmlFor="filter-date-end" className="block text-xs font-medium text-gray-700 mb-1">Date Range End</label>
+              <input id="filter-date-end" type="date" className="w-full border-gray-300 rounded-md text-sm p-1.5"
                 value={filters.dateEnd || ''} onChange={e => setFilters(prev => ({...prev, dateEnd: e.target.value || null}))} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Amount Min</label>
-              <input type="text" className="w-full border-gray-300 rounded-md text-sm p-1.5" placeholder="0.00"
+              <label htmlFor="filter-amount-min" className="block text-xs font-medium text-gray-700 mb-1">Amount Min</label>
+              <input id="filter-amount-min" type="text" className="w-full border-gray-300 rounded-md text-sm p-1.5" placeholder="0.00"
                 value={filters.amountMin !== null ? (filters.amountMin / 100).toString() : ''} onChange={e => setFilters(prev => ({...prev, amountMin: safeParseMajorToMinor(e.target.value)}))} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Amount Max</label>
-              <input type="text" className="w-full border-gray-300 rounded-md text-sm p-1.5" placeholder="0.00"
+              <label htmlFor="filter-amount-max" className="block text-xs font-medium text-gray-700 mb-1">Amount Max</label>
+              <input id="filter-amount-max" type="text" className="w-full border-gray-300 rounded-md text-sm p-1.5" placeholder="0.00"
                 value={filters.amountMax !== null ? (filters.amountMax / 100).toString() : ''} onChange={e => setFilters(prev => ({...prev, amountMax: safeParseMajorToMinor(e.target.value)}))} />
             </div>
             <div className="col-span-1 sm:col-span-2 lg:col-span-4 flex gap-4">
@@ -209,7 +214,7 @@ export function ReceiptsListScreen() {
               </label>
               <button 
                 onClick={() => setFilters({searchQuery: '', dateStart: null, dateEnd: null, merchant: null, category: null, item: null, paymentMethod: null, amountMin: null, amountMax: null, hasWarning: null})}
-                className="text-sm text-blue-600 hover:underline"
+                className="touch-target text-sm text-blue-700 hover:underline"
               >
                 Clear Filters
               </button>
@@ -220,16 +225,22 @@ export function ReceiptsListScreen() {
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
         {/* Desktop Table Header */}
-        <div className="hidden sm:grid grid-cols-12 gap-4 p-4 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-          <div className="col-span-3 cursor-pointer flex items-center gap-1 hover:text-gray-700" onClick={() => handleSortChange('date')}>
-            Date {sort.field === 'date' && (sort.order === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}
+        <div role="row" className="hidden sm:grid grid-cols-12 gap-4 p-4 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div role="columnheader" aria-sort={sort.field === 'date' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-3">
+            <button type="button" onClick={() => handleSortChange('date')} className="touch-target flex items-center gap-1 hover:text-gray-700" aria-label={`Sort by date, currently ${sort.field === 'date' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
+              Date {sort.field === 'date' && (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>)}
+            </button>
           </div>
-          <div className="col-span-4 cursor-pointer flex items-center gap-1 hover:text-gray-700" onClick={() => handleSortChange('merchant')}>
-            Merchant {sort.field === 'merchant' && (sort.order === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}
+          <div role="columnheader" aria-sort={sort.field === 'merchant' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-4">
+            <button type="button" onClick={() => handleSortChange('merchant')} className="touch-target flex items-center gap-1 hover:text-gray-700" aria-label={`Sort by merchant, currently ${sort.field === 'merchant' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
+              Merchant {sort.field === 'merchant' && (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>)}
+            </button>
           </div>
-          <div className="col-span-2">Categories</div>
-          <div className="col-span-3 text-right cursor-pointer flex items-center justify-end gap-1 hover:text-gray-700" onClick={() => handleSortChange('total')}>
-            Total {sort.field === 'total' && (sort.order === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}
+          <div role="columnheader" className="col-span-2 self-center">Categories</div>
+          <div role="columnheader" aria-sort={sort.field === 'total' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-3 flex justify-end">
+            <button type="button" onClick={() => handleSortChange('total')} className="touch-target flex items-center justify-end gap-1 hover:text-gray-700" aria-label={`Sort by total, currently ${sort.field === 'total' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
+              Total {sort.field === 'total' && (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>)}
+            </button>
           </div>
         </div>
 

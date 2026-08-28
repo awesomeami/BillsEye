@@ -397,7 +397,7 @@ export function ReviewReceiptScreen() {
     <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 pb-40 md:pb-28">
       <aside className="flex-1 md:max-w-[40%] space-y-4">
         <header className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} aria-label="Go back" className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft size={20} /></button>
+          <button onClick={() => navigate(-1)} aria-label="Go back" className="touch-target p-2 hover:bg-gray-100 rounded-full"><ArrowLeft size={20} /></button>
           <h1 className="text-xl font-bold text-gray-900">Review Receipt</h1>
           {isDirty && <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded">Unsaved changes</span>}
         </header>
@@ -406,7 +406,7 @@ export function ReviewReceiptScreen() {
             <AlertTriangle size={32} className="text-orange-400 mx-auto mb-3" /><h2 className="font-bold text-orange-900">Image missing</h2>
             <p className="text-orange-700 mt-2 text-sm">Original image not stored. Reattach temporarily if needed.</p>
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleReattach} />
-            <button onClick={() => fileInputRef.current?.click()} className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg"><Upload size={16} /> Reattach</button>
+            <button onClick={() => fileInputRef.current?.click()} className="touch-target mt-4 inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg"><Upload size={16} /> Reattach</button>
             {reattachError && <p className="text-red-600 text-sm mt-3">{reattachError}</p>}
           </div>
         )}
@@ -431,14 +431,14 @@ export function ReviewReceiptScreen() {
           </section>
 
           <section>
-            <div className="flex justify-between items-center border-b pb-2 mb-4"><h2 className="text-lg font-bold text-gray-900">Items ({items.length}/{MAX_RECEIPT_ITEMS})</h2><button onClick={addItem} disabled={items.length >= MAX_RECEIPT_ITEMS} className="text-sm font-medium text-blue-600 flex items-center gap-1 disabled:text-gray-400"><Plus size={16} /> Add Item</button></div>
+            <div className="flex justify-between items-center border-b pb-2 mb-4"><h2 className="text-lg font-bold text-gray-900">Items ({items.length}/{MAX_RECEIPT_ITEMS})</h2><button onClick={addItem} disabled={items.length >= MAX_RECEIPT_ITEMS} className="touch-target text-sm font-medium text-blue-700 flex items-center gap-1 disabled:text-gray-400"><Plus size={16} /> Add Item</button></div>
             <div className="space-y-4">
               {items.map((item, index) => {
                 const prefix = 'item-' + item.id;
                 const unitKey = itemMoneyKey(item.id, 'unitPrice');
                 const totalKey = itemMoneyKey(item.id, 'lineTotal');
                 return <div key={item.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 relative">
-                  <button onClick={() => removeItem(index)} aria-label={'Remove item ' + (index + 1)} className="absolute top-2 right-2 p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                  <button onClick={() => removeItem(index)} aria-label={'Remove item ' + (index + 1)} className="touch-target absolute top-1 right-1 p-1 text-gray-500 hover:text-red-700"><Trash2 size={16} /></button>
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pr-8">
                     <div className="sm:col-span-5"><TextInput id={prefix + '-name'} label="Name" value={item.name ?? ''} onChange={(value) => updateItem(index, 'name', value)} /></div>
                     <div className="sm:col-span-2"><TextInput id={prefix + '-quantity'} label="Qty" value={item.quantity == null ? '' : String(item.quantity)} onChange={(value) => updateItem(index, 'quantity', value === '' ? null : Number(value))} /></div>
@@ -470,10 +470,10 @@ export function ReviewReceiptScreen() {
           </section>
         </div>
 
-        <div className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-8px_20px_rgba(0,0,0,0.06)] flex flex-col sm:flex-row gap-3">
-          <button onClick={() => void save('confirmed')} disabled={isSaving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl disabled:opacity-50"><Check size={20} /> {isSaving ? 'Saving...' : 'Confirm & Save'}</button>
-          <button onClick={() => void save('pendingReview')} disabled={isSaving} className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-xl disabled:opacity-50">Save Draft</button>
-          <button onClick={() => setDeleteDialogOpen(true)} disabled={isSaving || isDeleting} aria-label="Delete receipt" className="px-6 py-3 bg-white border border-gray-300 text-red-600 font-medium rounded-xl disabled:opacity-50"><Trash2 size={20} /></button>
+        <div aria-label="Receipt actions" className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-8px_20px_rgba(0,0,0,0.06)] flex flex-col sm:flex-row gap-3">
+          <button onClick={() => void save('confirmed')} disabled={isSaving} className="touch-target flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl disabled:opacity-50"><Check size={20} /> {isSaving ? 'Saving...' : 'Confirm & Save'}</button>
+          <button onClick={() => void save('pendingReview')} disabled={isSaving} className="touch-target px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-xl disabled:opacity-50">Save Draft</button>
+          <button onClick={() => setDeleteDialogOpen(true)} disabled={isSaving || isDeleting} aria-label="Delete receipt" className="touch-target px-6 py-3 bg-white border border-gray-300 text-red-700 font-medium rounded-xl disabled:opacity-50"><Trash2 size={20} /></button>
         </div>
       </main>
 

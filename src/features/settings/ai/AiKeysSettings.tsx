@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Plus, Trash2, KeyRound, CheckCircle2, XCircle, Clock, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { useAiKeys } from './AiKeysContext';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useToast } from '../../../components/ui/Toast';
+import { useDialogA11y } from '../../../components/ui/useDialogA11y';
 
 export function AiKeysSettings({ onBack }: { onBack: () => void }) {
   const {
@@ -27,6 +28,16 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
   const [vaultBusy, setVaultBusy] = useState(false);
   
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const editCancelRef = useRef<HTMLButtonElement>(null);
+  const editDialogRef = useDialogA11y<HTMLDivElement>({
+    isOpen: editingSlotId !== null,
+    onClose: () => {
+      setEditingSlotId(null);
+      setNewKey('');
+      setPassphrase('');
+    },
+    initialFocusRef: editCancelRef,
+  });
 
   const handleSaveKey = async () => {
     if (!newKey || !editingSlotId) return;
@@ -70,7 +81,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
     <div className="space-y-6">
       <header className="pb-4 border-b border-gray-200 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
+          <button onClick={onBack} aria-label="Back to settings" className="touch-target p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500">
             <ArrowLeft size={20} />
           </button>
           <div>
@@ -103,7 +114,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
               placeholder="Vault passphrase"
               className="flex-1 px-3 py-2 border border-amber-300 rounded-lg bg-white"
             />
-            <button onClick={handleUnlock} disabled={vaultBusy || !passphrase} className="px-4 py-2 bg-amber-700 text-white rounded-lg disabled:opacity-50">
+            <button onClick={handleUnlock} disabled={vaultBusy || !passphrase} className="touch-target px-4 py-2 bg-amber-700 text-white rounded-lg disabled:opacity-50">
               Unlock
             </button>
           </div>
@@ -120,7 +131,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
       {vaultState === 'unlocked' && (
         <div className="flex justify-between items-center rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
           <span>Persistent keys are decrypted only for this browser session.</span>
-          <button onClick={lockVault} className="px-3 py-1.5 border border-green-300 rounded-lg hover:bg-green-100">Lock now</button>
+          <button onClick={lockVault} className="touch-target px-3 py-1.5 border border-green-300 rounded-lg hover:bg-green-100">Lock now</button>
         </div>
       )}
 
@@ -134,7 +145,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
                 .then(() => showToast('Legacy key reminders dismissed.', 'success'))
                 .catch(() => showToast('Could not dismiss legacy key reminders.', 'error'));
             }
-          }} className="px-3 py-2 border border-red-300 rounded-lg hover:bg-red-100">
+          }} className="touch-target px-3 py-2 border border-red-300 rounded-lg hover:bg-red-100">
             Dismiss reminders
           </button>
         </div>
@@ -166,7 +177,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
               </div>
 
               <div className="flex items-center gap-2">
-                <label className="flex items-center cursor-pointer mr-2">
+                <label className="touch-target flex items-center cursor-pointer mr-2" aria-label={`${slot.isEnabled ? 'Disable' : 'Enable'} ${slot.label}`}>
                   <div className="relative">
                     <input 
                       type="checkbox" 
@@ -184,10 +195,10 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
                   setEditingSlotId(slot.slotId);
                   setNewLabel(slot.label || '');
                   setIsSessionOnly(slot.isSessionOnly);
-                }} className="p-2 text-gray-400 hover:text-blue-600 transition-colors" title="Replace Key">
+                }} aria-label={`Replace ${slot.label}`} className="touch-target p-2 text-gray-500 hover:text-blue-700 transition-colors" title="Replace Key">
                   <KeyRound size={18} />
                 </button>
-                <button onClick={() => setConfirmDeleteId(slot.slotId)} className="p-2 text-gray-400 hover:text-red-600 transition-colors" title="Remove Key">
+                <button onClick={() => setConfirmDeleteId(slot.slotId)} aria-label={`Remove ${slot.label}`} className="touch-target p-2 text-gray-500 hover:text-red-700 transition-colors" title="Remove Key">
                   <Trash2 size={18} />
                 </button>
               </div>
@@ -204,7 +215,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
                 setIsSessionOnly(false);
               }
             }}
-            className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-2xl text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+            className="touch-target w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-2xl text-gray-600 hover:bg-gray-50 hover:text-gray-700 transition-colors"
           >
             <Plus size={20} />
             <span className="font-medium">Add Key (Slot {nextAvailableSlot()})</span>
@@ -215,13 +226,14 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
       {/* Editing Modal */}
       {editingSlotId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Slot {editingSlotId} Configuration</h3>
+          <div ref={editDialogRef} role="dialog" aria-modal="true" aria-labelledby="key-dialog-title" tabIndex={-1} className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <h3 id="key-dialog-title" className="text-lg font-bold text-gray-900 mb-4">Slot {editingSlotId} Configuration</h3>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Key Label (Optional)</label>
+                <label htmlFor="key-label" className="block text-sm font-medium text-gray-700 mb-1">Key Label (Optional)</label>
                 <input 
+                  id="key-label"
                   type="text" 
                   placeholder="e.g. Personal Gemini Key"
                   value={newLabel}
@@ -232,12 +244,13 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
               
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="block text-sm font-medium text-gray-700">Gemini API Key</label>
+                  <label htmlFor="gemini-api-key" className="block text-sm font-medium text-gray-700">Gemini API Key</label>
                   <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
                     Get API Key
                   </a>
                 </div>
                 <input 
+                  id="gemini-api-key"
                   type="password" 
                   placeholder="AIza..."
                   value={newKey}
@@ -261,8 +274,9 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
 
                 {!isSessionOnly && (vaultState === 'unconfigured' || vaultState === 'migration-required') && (
                   <div className="ml-6 mt-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Create vault passphrase (12+ characters)</label>
+                    <label htmlFor="vault-passphrase" className="block text-xs font-medium text-gray-700 mb-1">Create vault passphrase (12+ characters)</label>
                     <input
+                      id="vault-passphrase"
                       type="password"
                       value={passphrase}
                       onChange={event => setPassphrase(event.target.value)}
@@ -288,17 +302,17 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button onClick={() => {
+              <button ref={editCancelRef} onClick={() => {
                 setEditingSlotId(null);
                 setNewKey('');
                 setPassphrase('');
-              }} className="flex-1 px-4 py-2 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50">
+              }} className="touch-target flex-1 px-4 py-2 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50">
                 Cancel
               </button>
               <button 
                 onClick={handleSaveKey}
                 disabled={!newKey}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50"
+                className="touch-target flex-1 px-4 py-2 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50"
               >
                 Save Key
               </button>

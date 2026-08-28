@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useRef } from 'react';
 import { formatCurrency, formatDate } from '../../../utilities/config';
 import { AlertTriangle, Edit2, Trash2, X } from 'lucide-react';
 import { ReceiptDocument } from '../../../domain/schema';
@@ -6,6 +7,7 @@ import { useReceiptsLibrary } from './ReceiptsLibraryContext';
 import { getReceiptItemCategoryLabel } from '../../../domain/categories';
 import { calculateReceiptTotals, getDiscrepancyLabel } from '../../../domain/reconciliation';
 import { ReceiptTotalValue } from '../../../components/receipts/ReceiptTotalValue';
+import { useDialogA11y } from '../../../components/ui/useDialogA11y';
 
 interface Props {
   receipt: ReceiptDocument;
@@ -20,6 +22,8 @@ function formatOptionalMinor(value: number | null | undefined): string {
 /** Read-only summary. All receipt changes use the full, conflict-safe review editor. */
 export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
   const navigate = useNavigate();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useDialogA11y<HTMLDivElement>({ isOpen: true, onClose, initialFocusRef: closeButtonRef });
   const { categories, settings } = useReceiptsLibrary();
   const reconciliation = calculateReceiptTotals(receipt.items, receipt, settings.discrepancyTolerance);
 
@@ -30,13 +34,13 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-labelledby="receipt-detail-title" className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
+      <div ref={dialogRef} role="dialog" tabIndex={-1} aria-modal="true" aria-labelledby="receipt-detail-title" className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
         <div className="p-4 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white z-10">
           <h2 id="receipt-detail-title" className="text-lg font-bold flex items-center gap-2">
             Receipt Details
             {receipt.wasEditedByUser && <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs">Edited</span>}
           </h2>
-          <button onClick={onClose} aria-label="Close receipt details" className="text-gray-500 hover:text-gray-700 p-1">
+          <button ref={closeButtonRef} onClick={onClose} aria-label="Close receipt details" className="touch-target text-gray-500 hover:text-gray-700 p-1">
             <X size={20} />
           </button>
         </div>
@@ -88,8 +92,8 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
           {receipt.rawOcrText && <pre className="text-xs text-gray-500 bg-gray-50 p-3 rounded whitespace-pre-wrap max-h-40 overflow-y-auto">{receipt.rawOcrText}</pre>}
 
           <div className="flex justify-between gap-3 pt-4 border-t border-gray-200">
-            <button onClick={onDelete} className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"><Trash2 size={16} /> Delete Receipt</button>
-            <button onClick={openEditor} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2"><Edit2 size={16} /> Open Full Editor</button>
+            <button onClick={onDelete} className="touch-target px-4 py-2 text-sm text-red-700 hover:bg-red-50 rounded-lg flex items-center gap-2"><Trash2 size={16} /> Delete Receipt</button>
+            <button onClick={openEditor} className="touch-target px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2"><Edit2 size={16} /> Open Full Editor</button>
           </div>
         </div>
       </div>
