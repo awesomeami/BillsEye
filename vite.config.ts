@@ -5,13 +5,33 @@ import {defineConfig, loadEnv} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { validateViteConfiguration } from './src/config/buildConfig';
 
+const CLIENT_FIREBASE_ENV_NAMES = [
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_APP_ID',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_DATABASE_ID',
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+] as const;
+
 export default defineConfig(({ command, mode }) => {
   const environment = loadEnv(mode, process.cwd(), '');
   const { useE2eMocks } = validateViteConfiguration(environment, mode, command);
+  const clientFirebaseDefines: Record<string, string> = {};
+  for (const name of CLIENT_FIREBASE_ENV_NAMES) {
+    const value = environment[name];
+    clientFirebaseDefines[`__KHARCHALENS_${name}__`] = value === undefined
+      ? 'undefined'
+      : JSON.stringify(value);
+  }
   const firebaseRepositoryPath = path.resolve(__dirname, 'src/services/firebase/db.ts');
   const e2eRepositoryMockPath = path.resolve(__dirname, 'e2e/mocks/firebaseDb.ts');
 
   return {
+    // Keep the browser bundle aligned with the public Firebase values that the
+    // production build validates. Server-only variables are never defined here.
+    define: clientFirebaseDefines,
     plugins: [
       ...(useE2eMocks ? [{
         name: 'e2e-firebase-repository-mock',
