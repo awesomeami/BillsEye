@@ -437,7 +437,7 @@ export function ReviewReceiptScreen() {
                 const prefix = 'item-' + item.id;
                 const unitKey = itemMoneyKey(item.id, 'unitPrice');
                 const totalKey = itemMoneyKey(item.id, 'lineTotal');
-                return <div key={item.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 relative">
+                return <div key={item.id} className="render-lazy bg-gray-50 border border-gray-200 rounded-xl p-4 relative">
                   <button onClick={() => removeItem(index)} aria-label={'Remove item ' + (index + 1)} className="touch-target absolute top-1 right-1 p-1 text-gray-500 hover:text-red-700"><Trash2 size={16} /></button>
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pr-8">
                     <div className="sm:col-span-5"><TextInput id={prefix + '-name'} label="Name" value={item.name ?? ''} onChange={(value) => updateItem(index, 'name', value)} /></div>

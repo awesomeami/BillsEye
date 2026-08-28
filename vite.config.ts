@@ -53,7 +53,19 @@ export default defineConfig(({ command, mode }) => {
           ]
         },
         workbox: {
-          globIgnores: ['**/node_modules/**/*', '**/pdfjs*', '**/exceljs*', '**/jspdf*', '**/recharts*'],
+          globIgnores: [
+            '**/node_modules/**/*',
+            '**/pdfjs*',
+            '**/pdf.worker*',
+            '**/pdfProcessor-*',
+            '**/pdf-*',
+            '**/exceljs*',
+            '**/excel-*',
+            '**/jspdf*',
+            '**/html2canvas*',
+            '**/purify*',
+            '**/index.es-*',
+          ],
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           // API routes must never be answered with cached SPA HTML.
           navigateFallbackDenylist: [/^\/api(?:\/|$)/],
@@ -77,16 +89,12 @@ export default defineConfig(({ command, mode }) => {
     },
     
     build: {
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('pdfjs-dist')) return 'pdfjs';
-            if (id.includes('exceljs')) return 'exceljs';
-            if (id.includes('jspdf')) return 'jspdf';
-            if (id.includes('recharts')) return 'recharts';
-          }
-        }
-      }
+      // Kept in production output so performance budgets can follow static
+      // dependency graphs instead of relying on hashed filenames.
+      manifest: true,
+      // Optional report/export modules use dynamic imports at their activation
+      // points. Let Rollup preserve those boundaries; forcing vendor chunks here
+      // can create cross-chunk edges that preload optional code from the entry.
     },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { receiptRepository, categoryRepository, settingsRepository } from '../../../services/firebase/db';
 import { ReceiptDocument, CategoryDocument, AppSettingsDocument, AppSettingsSchema } from '../../../domain/schema';
@@ -27,6 +27,7 @@ interface ReceiptsLibraryContextType {
   receipts: ReceiptDocument[];
   pendingReceipts: ReceiptDocument[];
   filteredReceipts: ReceiptDocument[];
+  isFiltering: boolean;
   categories: CategoryDocument[];
   settings: AppSettingsDocument;
   loading: boolean;
@@ -65,6 +66,7 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
   const [filters, setFilters] = useState<FilterState>(initialFilters);
 
   const [sort, setSort] = useState<SortState>({ field: 'date', order: 'desc' });
+  const deferredSearchQuery = useDeferredValue(filters.searchQuery);
 
   useEffect(() => {
     const sessionGuard = sessionGuardRef.current;
@@ -198,38 +200,82 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
     sources: [confirmedSnapshotSync, pendingSnapshotSync],
   }), [confirmedSnapshotSync, loading, online, pendingSnapshotSync, syncErrors]);
 
+  // Search can scan OCR text and every line item. Keep the controlled input
+  // urgent while deferring that scan; non-search filters still apply at once.
+  const deferredFilters = useMemo<FilterState>(() => ({
+    searchQuery: deferredSearchQuery,
+    dateStart: filters.dateStart,
+    dateEnd: filters.dateEnd,
+    merchant: filters.merchant,
+    category: filters.category,
+    item: filters.item,
+    paymentMethod: filters.paymentMethod,
+    amountMin: filters.amountMin,
+    amountMax: filters.amountMax,
+    hasWarning: filters.hasWarning,
+  }), [
+    deferredSearchQuery,
+    filters.amountMax,
+    filters.amountMin,
+    filters.category,
+    filters.dateEnd,
+    filters.dateStart,
+    filters.hasWarning,
+    filters.item,
+    filters.merchant,
+    filters.paymentMethod,
+  ]);
   const filteredReceipts = useMemo(() => {
-    return filterAndSortReceipts(receipts, filters, sort);
-  }, [receipts, filters, sort]);
+    return filterAndSortReceipts(receipts, deferredFilters, sort);
+  }, [receipts, deferredFilters, sort]);
+  const isFiltering = filters.searchQuery !== deferredSearchQuery;
 
-  const deleteReceipt = async (id: string) => {
+  const deleteReceipt = useCallback(async (id: string) => {
     if (!user) return;
     await receiptRepository.deleteReceipt(user.uid, id);
-  };
+  }, [user]);
 
-  const updateReceipt = async (id: string, data: Partial<ReceiptDocument>, currentVersion?: number) => {
+  const updateReceipt = useCallback(async (id: string, data: Partial<ReceiptDocument>, currentVersion?: number) => {
     if (!user) throw new Error('You must be signed in to update a receipt.');
     return receiptRepository.updateReceipt(user.uid, id, data, currentVersion);
-  };
+  }, [user]);
+
+  const value = useMemo<ReceiptsLibraryContextType>(() => ({
+    receipts,
+    pendingReceipts,
+    filteredReceipts,
+    isFiltering,
+    categories,
+    settings,
+    loading,
+    error,
+    syncState,
+    lastSyncedAt,
+    filters,
+    sort,
+    setFilters,
+    setSort,
+    deleteReceipt,
+    updateReceipt,
+  }), [
+    categories,
+    deleteReceipt,
+    error,
+    filteredReceipts,
+    filters,
+    isFiltering,
+    lastSyncedAt,
+    loading,
+    pendingReceipts,
+    receipts,
+    settings,
+    sort,
+    syncState,
+    updateReceipt,
+  ]);
 
   return (
-    <ReceiptsLibraryContext.Provider value={{
-      receipts,
-      pendingReceipts,
-      filteredReceipts,
-      categories,
-      settings,
-      loading,
-      error,
-      syncState,
-      lastSyncedAt,
-      filters,
-      sort,
-      setFilters,
-      setSort,
-      deleteReceipt,
-      updateReceipt
-    }}>
+    <ReceiptsLibraryContext.Provider value={value}>
       {children}
     </ReceiptsLibraryContext.Provider>
   );

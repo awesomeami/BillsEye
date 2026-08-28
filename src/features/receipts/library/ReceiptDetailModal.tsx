@@ -62,7 +62,7 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
             <h3 className="font-bold text-sm text-gray-900 border-b pb-2 mb-3">Items</h3>
             <ul className="space-y-3">
               {receipt.items.map((item) => (
-                <li key={item.id} className="flex gap-2 text-sm items-start">
+                <li key={item.id} className="render-lazy flex gap-2 text-sm items-start">
                   <div className="flex-1">
                     <span>{item.quantity ? `${item.quantity}x ` : ''}{item.name || item.rawLineText || 'Unknown item'}</span>
                     {(item.categoryId || item.category) && <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{getReceiptItemCategoryLabel(item, categories)}</span>}

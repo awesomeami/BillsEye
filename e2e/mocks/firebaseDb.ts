@@ -58,6 +58,43 @@ function emitReceipts(uid: string) {
   pendingReceiptListeners.get(uid)?.forEach(listener => listener(currentReceipts(uid, 'pendingReview')));
 }
 
+function seedPerformanceReceipts(uid: string, count: number) {
+  const receipts = userMap(receiptsByUser, uid);
+  for (let index = 0; index < count; index += 1) {
+    const id = `performance-receipt-${index}`;
+    receipts.set(id, ReceiptSchema.parse({
+      id,
+      revision: 1,
+      status: 'confirmed',
+      createdAt: '2026-08-28T00:00:00.000Z',
+      updatedAt: '2026-08-28T00:00:00.000Z',
+      confirmedAt: '2026-08-28T00:00:00.000Z',
+      merchantRaw: `Performance Merchant ${String(index).padStart(3, '0')}`,
+      merchantNormalized: `Performance Merchant ${String(index).padStart(3, '0')}`,
+      transactionDate: `2026-08-${String((index % 28) + 1).padStart(2, '0')}`,
+      currency: 'PKR',
+      paymentMethod: index % 2 === 0 ? 'Card' : 'Cash',
+      items: Array.from({ length: 4 }, (_, itemIndex) => ({
+        id: `${id}-item-${itemIndex}`,
+        rawLineText: `Fixture line ${itemIndex} for receipt ${index}`,
+        name: `Fixture item ${itemIndex}`,
+        quantity: 1,
+        unitPrice: 2500 + index,
+        lineTotal: 2500 + index,
+        category: 'Groceries',
+      })),
+      printedGrandTotal: 10_000 + (index * 4),
+      rawOcrText: `Performance fixture ${index} `.repeat(30),
+    }));
+  }
+  emitReceipts(uid);
+}
+
+if (typeof window !== 'undefined') {
+  const target = window as typeof window & { __KHARCHALENS_E2E_SEED_RECEIPTS__?: (count: number) => void };
+  target.__KHARCHALENS_E2E_SEED_RECEIPTS__ = count => seedPerformanceReceipts('e2e-user', count);
+}
+
 function subscribe<T>(listeners: Map<string, Set<(value: T) => void>>, uid: string, listener: (value: T) => void, value: T) {
   const userListeners = listeners.get(uid) ?? new Set<(value: T) => void>();
   userListeners.add(listener);

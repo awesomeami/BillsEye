@@ -1,4 +1,4 @@
-import { 
+import {
   collection, 
   doc, 
   getDoc, 
@@ -20,6 +20,7 @@ import {
   writeBatch,
   Timestamp
 } from 'firebase/firestore';
+import { ReceiptHydrationCache } from './receiptHydrationCache';
 import { db } from './config';
 import { getAuth } from 'firebase/auth';
 import { handleFirestoreError, OperationType } from './errors';
@@ -290,9 +291,20 @@ export const receiptRepository = {
     // We order by transactionDate descending
     const q = query(receiptsRef, where('status', '==', 'confirmed'), orderBy('transactionDate', 'desc'));
     
+    // The cache belongs to this UID-scoped subscription and is discarded on
+    // unsubscribe, so neither auth transitions nor replacement generations can
+    // reuse another session's hydrated receipt data.
+    const hydrationCache = new ReceiptHydrationCache<
+      ReturnType<typeof doc>,
+      DocumentData,
+      Awaited<ReturnType<typeof hydrateReceiptItems>>
+    >();
     const sequencer = new SequencedAsyncSubscription<QuerySnapshot<DocumentData>, ReceiptDocument[]>({
       hydrate: async snapshot => {
-        const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
+        const receipts = await hydrationCache.hydrate(
+          snapshot.docs.map(docSnap => ({ id: docSnap.id, ref: docSnap.ref, data: docSnap.data() })),
+          source => hydrateReceiptItems(source.ref, source.data),
+        );
         return receipts.filter(receipt => !receipt._malformed);
       },
       onUpdate,
@@ -313,6 +325,7 @@ export const receiptRepository = {
     });
     return () => {
       sequencer.deactivate();
+      hydrationCache.clear();
       unsubscribe();
     };
   },
@@ -327,9 +340,17 @@ export const receiptRepository = {
     const receiptsRef = collection(db, `users/${uid}/receipts`);
     const q = query(receiptsRef, where('status', '==', 'pendingReview'), orderBy('createdAt', 'desc'));
     
+    const hydrationCache = new ReceiptHydrationCache<
+      ReturnType<typeof doc>,
+      DocumentData,
+      Awaited<ReturnType<typeof hydrateReceiptItems>>
+    >();
     const sequencer = new SequencedAsyncSubscription<QuerySnapshot<DocumentData>, ReceiptDocument[]>({
       hydrate: async snapshot => {
-        const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
+        const receipts = await hydrationCache.hydrate(
+          snapshot.docs.map(docSnap => ({ id: docSnap.id, ref: docSnap.ref, data: docSnap.data() })),
+          source => hydrateReceiptItems(source.ref, source.data),
+        );
         return receipts.filter(receipt => !receipt._malformed);
       },
       onUpdate,
@@ -350,6 +371,7 @@ export const receiptRepository = {
     });
     return () => {
       sequencer.deactivate();
+      hydrationCache.clear();
       unsubscribe();
     };
   },

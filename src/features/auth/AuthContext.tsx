@@ -7,19 +7,10 @@ import {
   getRedirectResult,
   reauthenticateWithPopup,
 } from 'firebase/auth';
-import { clearIndexedDbPersistence, terminate } from 'firebase/firestore';
-import { auth, db, googleProvider } from '../../services/firebase/config';
-import { userRepository } from '../../services/firebase/db';
+import { auth, googleProvider } from '../../services/firebase/authConfig';
 import { useToast } from '../../components/ui/Toast';
 import { ImageSessionStore } from '../../utils/imageSessionStore';
 import { isE2eMockMode } from '../../config/e2eMocks';
-import { AiVault } from '../../services/ai/vault';
-import {
-  clearLegacyVaultRemnants,
-  clearOfflineDeviceData,
-  getClearOfflineDataOnSignOutPreference,
-  shouldClearOfflineDataAfterSignOut,
-} from '../../services/firebase/offlineStorage';
 
 export interface AuthenticatedUser {
   uid: string;
@@ -60,6 +51,16 @@ function getErrorCode(error: unknown): string | null {
 }
 
 async function clearOfflineDataAfterSignOut(uid: string): Promise<void> {
+  const [firestore, firebase, vaultModule, offlineStorage] = await Promise.all([
+    import('firebase/firestore'),
+    import('../../services/firebase/config'),
+    import('../../services/ai/vault'),
+    import('../../services/firebase/offlineStorage'),
+  ]);
+  const { clearIndexedDbPersistence, terminate } = firestore;
+  const { db } = firebase;
+  const { AiVault } = vaultModule;
+  const { clearLegacyVaultRemnants, clearOfflineDeviceData } = offlineStorage;
   const vault = new AiVault(uid);
   await clearOfflineDeviceData({
     terminateFirestore: () => terminate(db),
@@ -116,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (currentUser) {
         try {
+          const { userRepository } = await import('../../services/firebase/db');
           await userRepository.getOrCreateProfile(
             currentUser.uid,
             currentUser.email || '',
@@ -175,8 +177,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const signedOutUserId = auth.currentUser?.uid ?? user?.uid ?? null;
-    const clearOfflineData = shouldClearOfflineDataAfterSignOut(
-      getClearOfflineDataOnSignOutPreference(),
+    const offlineStorage = await import('../../services/firebase/offlineStorage');
+    const clearOfflineData = offlineStorage.shouldClearOfflineDataAfterSignOut(
+      offlineStorage.getClearOfflineDataOnSignOutPreference(),
       signedOutUserId,
     );
     beginAuthTransition(null);

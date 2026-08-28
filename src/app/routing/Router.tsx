@@ -1,8 +1,9 @@
 import React from 'react';
 import { LoadingScreen } from '../../components/ui/LoadingState';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
-import { ProtectedRoute } from './ProtectedRoute';
 import { LoginScreen } from '../../features/auth/LoginScreen';
+const ProtectedRoute = React.lazy(() => import('./ProtectedRoute').then(m => ({ default: m.ProtectedRoute })));
+const AuthenticatedProviders = React.lazy(() => import('./AuthenticatedProviders').then(m => ({ default: m.AuthenticatedProviders })));
 const DashboardScreen = React.lazy(() => import('../../features/dashboard/DashboardScreen').then(m => ({ default: m.DashboardScreen })));
 const AddReceiptScreen = React.lazy(() => import('../../features/import/AddReceiptScreen').then(m => ({ default: m.AddReceiptScreen })));
 const InboxScreen = React.lazy(() => import('../../features/inbox/InboxScreen').then(m => ({ default: m.InboxScreen })));
@@ -11,9 +12,6 @@ const ReviewReceiptScreen = React.lazy(() => import('../../features/receipts/Rev
 const ReportsScreen = React.lazy(() => import('../../features/reports/ReportsScreen').then(m => ({ default: m.ReportsScreen })));
 const SettingsScreen = React.lazy(() => import('../../features/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
 import { AuthProvider, useAuth } from '../../features/auth/AuthContext';
-import { AiKeysProvider } from '../../features/settings/ai/AiKeysContext';
-import { ReceiptQueueProvider } from '../../features/receipts/queue/ReceiptQueueContext';
-import { PwaUpdateProvider } from '../../features/pwa/PwaUpdateProvider';
 
 const router = createBrowserRouter([
   {
@@ -21,7 +19,7 @@ const router = createBrowserRouter([
     element: <LoginScreen />
   },
   {
-    element: <ProtectedRoute />,
+    element: <React.Suspense fallback={<LoadingScreen />}><ProtectedRoute /></React.Suspense>,
     children: [
       { path: "/", element: <React.Suspense fallback={<LoadingScreen />}><DashboardScreen /></React.Suspense> },
       { path: "/add", element: <React.Suspense fallback={<LoadingScreen />}><AddReceiptScreen /></React.Suspense> },
@@ -47,16 +45,15 @@ export function AppRouter() {
 }
 
 function SessionProviders() {
-  const { sessionEpoch } = useAuth();
+  const { user, loading, sessionEpoch } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user) return <RouterProvider router={router} />;
+
   return (
-    <React.Fragment key={sessionEpoch}>
-      <AiKeysProvider>
-        <ReceiptQueueProvider>
-          <PwaUpdateProvider>
-            <RouterProvider router={router} />
-          </PwaUpdateProvider>
-        </ReceiptQueueProvider>
-      </AiKeysProvider>
-    </React.Fragment>
+    <React.Suspense fallback={<LoadingScreen />}>
+      <AuthenticatedProviders key={sessionEpoch}>
+        <RouterProvider router={router} />
+      </AuthenticatedProviders>
+    </React.Suspense>
   );
 }

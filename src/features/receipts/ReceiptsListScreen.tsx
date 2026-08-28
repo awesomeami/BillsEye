@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { formatDate } from '../../utilities/config';
 const safeParseMajorToMinor = (val: string) => {
@@ -23,10 +23,13 @@ import { getReceiptItemCategoryLabel } from '../../domain/categories';
 import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 
+const RECEIPTS_PAGE_SIZE = 50;
+
 export function ReceiptsListScreen() {
   const sessionActions = useClientSessionActionGuard();
   const { 
     filteredReceipts,
+    isFiltering,
     receipts,
     loading, 
     error, 
@@ -46,6 +49,15 @@ export function ReceiptsListScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptDocument | null>(null);
   const [receiptToDelete, setReceiptToDelete] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(RECEIPTS_PAGE_SIZE);
+  const visibleReceipts = useMemo(
+    () => filteredReceipts.slice(0, visibleCount),
+    [filteredReceipts, visibleCount],
+  );
+
+  useEffect(() => {
+    setVisibleCount(RECEIPTS_PAGE_SIZE);
+  }, [filteredReceipts]);
 
   useEffect(() => {
     if (loading) return;
@@ -168,8 +180,13 @@ export function ReceiptsListScreen() {
               className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               placeholder="Search merchant, items, notes..."
               value={filters.searchQuery}
+              aria-describedby="receipt-search-status"
+              aria-busy={isFiltering}
               onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
             />
+            <span id="receipt-search-status" className="sr-only" aria-live="polite">
+              {isFiltering ? 'Updating receipt results' : `${filteredReceipts.length} receipt results`}
+            </span>
           </div>
             <button
             onClick={() => setShowFilters(!showFilters)}
@@ -251,7 +268,7 @@ export function ReceiptsListScreen() {
           </div>
         ) : (
           <ul className="divide-y divide-gray-200">
-            {filteredReceipts.map((receipt) => {
+            {visibleReceipts.map((receipt) => {
               const hasWarning = receipt.warnings.length > 0 || receipt.ambiguousFields.length > 0 || receipt.reconciliationStatus === 'mismatched';
               const categories = Array.from(new Set(
                 receipt.items
@@ -260,7 +277,7 @@ export function ReceiptsListScreen() {
               ));
 
               return (
-                <li key={receipt.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors group">
+                <li key={receipt.id} className="render-lazy border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors group">
     <button onClick={() => setSelectedReceipt(receipt)} aria-label={`View details for ${receipt.merchantNormalized || receipt.merchantRaw || 'Unknown Merchant'}`} className="w-full text-left p-4 sm:px-4 focus:outline-none focus:bg-gray-50 focus:ring-2 focus:ring-inset focus:ring-blue-500">
       
                   {/* Mobile View */}
@@ -327,6 +344,20 @@ export function ReceiptsListScreen() {
               );
             })}
           </ul>
+        )}
+        {visibleCount < filteredReceipts.length && (
+          <div className="border-t border-gray-200 bg-gray-50 p-3 text-center">
+            <p className="mb-2 text-sm text-gray-600" aria-live="polite">
+              Showing {visibleReceipts.length} of {filteredReceipts.length} receipts
+            </p>
+            <button
+              type="button"
+              className="touch-target rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100"
+              onClick={() => setVisibleCount(current => current + RECEIPTS_PAGE_SIZE)}
+            >
+              Show 50 more receipts
+            </button>
+          </div>
         )}
       </div>
 
