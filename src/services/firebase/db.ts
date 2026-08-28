@@ -48,6 +48,15 @@ import {
 import { replaceCategoryInReceiptWithRetry } from '../../domain/categoryReplacement';
 import { SequencedAsyncSubscription } from './subscriptionIsolation';
 
+export class ReceiptRevisionConflictError extends Error {
+  readonly code = 'receipt-revision-conflict';
+
+  constructor() {
+    super('Conflict: Receipt was updated by another device.');
+    this.name = 'ReceiptRevisionConflictError';
+  }
+}
+
 const processTimestamp = (value: unknown) => {
   if (value && typeof (value as { toDate?: unknown }).toDate === 'function') {
     return (value as { toDate: () => Date }).toDate().toISOString();
@@ -327,7 +336,7 @@ export const receiptRepository = {
     };
   },
 
-  async updateReceipt(uid: string, receiptId: string, data: Partial<ReceiptDocument>, currentVersion?: number): Promise<void> {
+  async updateReceipt(uid: string, receiptId: string, data: Partial<ReceiptDocument>, currentVersion?: number): Promise<ReceiptDocument> {
     const auth = getAuth();
     const docRef = doc(db, `users/${uid}/receipts`, receiptId);
     
@@ -336,7 +345,7 @@ export const receiptRepository = {
         getDocs(collection(docRef, 'items')),
         loadUserCategories(uid),
       ]);
-      await runTransaction(db, async (transaction) => {
+      return await runTransaction(db, async (transaction) => {
         const docSnap = await transaction.get(docRef);
         if (!docSnap.exists()) {
           throw new Error('Receipt no longer exists.');
@@ -363,7 +372,7 @@ export const receiptRepository = {
           });
         }
         if (currentVersion !== undefined && current.data.revision !== currentVersion) {
-          throw new Error('Conflict: Receipt was updated by another device. Please refresh and try again.');
+          throw new ReceiptRevisionConflictError();
         }
 
         const updatePayload: Record<string, unknown> = { ...data };
@@ -411,9 +420,10 @@ export const receiptRepository = {
         validated.items.forEach((item, index) => {
           transaction.set(doc(docRef, 'items', String(index)), parseStoredReceiptItem(item));
         });
+        return validated;
       });
     } catch (err) {
-      if (err instanceof Error && err.message.startsWith('Conflict:')) {
+      if (err instanceof ReceiptRevisionConflictError) {
         throw err;
       }
       handleFirestoreError(err, OperationType.UPDATE, `users/${uid}/receipts/${receiptId}`, auth);
@@ -600,7 +610,9 @@ export const categoryRepository = {
         try {
           await replaceCategoryInReceiptWithRetry(receipt, oldCategory, newCategoryId, {
             loadLatest: receiptId => receiptRepository.getReceipt(uid, receiptId),
-            save: (receiptId, update, revision) => receiptRepository.updateReceipt(uid, receiptId, update, revision),
+            save: async (receiptId, update, revision) => {
+              await receiptRepository.updateReceipt(uid, receiptId, update, revision);
+            },
           });
         } catch {
           failedReceiptIds.push(receipt.id);

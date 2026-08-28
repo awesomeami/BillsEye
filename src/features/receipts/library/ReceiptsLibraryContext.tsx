@@ -33,7 +33,7 @@ interface ReceiptsLibraryContextType {
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   setSort: React.Dispatch<React.SetStateAction<SortState>>;
   deleteReceipt: (id: string) => Promise<void>;
-  updateReceipt: (id: string, data: Partial<ReceiptDocument>, currentVersion?: number) => Promise<void>;
+  updateReceipt: (id: string, data: Partial<ReceiptDocument>, currentVersion?: number) => Promise<ReceiptDocument>;
 }
 
 const ReceiptsLibraryContext = createContext<ReceiptsLibraryContextType | undefined>(undefined);
@@ -165,8 +165,8 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
   };
 
   const updateReceipt = async (id: string, data: Partial<ReceiptDocument>, currentVersion?: number) => {
-    if (!user) return;
-    await receiptRepository.updateReceipt(user.uid, id, data, currentVersion);
+    if (!user) throw new Error('You must be signed in to update a receipt.');
+    return receiptRepository.updateReceipt(user.uid, id, data, currentVersion);
   };
 
   return (

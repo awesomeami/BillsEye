@@ -12,6 +12,22 @@ type ReceiptListener = (receipts: ReceiptDocument[]) => void;
 type CategoryListener = (categories: CategoryDocument[]) => void;
 type SettingsListener = (settings: AppSettingsDocument) => void;
 
+export class ReceiptRevisionConflictError extends Error {
+  readonly code = 'receipt-revision-conflict';
+
+  constructor() {
+    super('Conflict: Receipt was updated by another device.');
+    this.name = 'ReceiptRevisionConflictError';
+  }
+}
+
+function shouldForceReceiptConflict(): boolean {
+  const target = globalThis as typeof globalThis & { __E2E_FORCE_RECEIPT_CONFLICT__?: boolean };
+  if (!target.__E2E_FORCE_RECEIPT_CONFLICT__) return false;
+  target.__E2E_FORCE_RECEIPT_CONFLICT__ = false;
+  return true;
+}
+
 const receiptsByUser = new Map<string, Map<string, ReceiptDocument>>();
 const categoriesByUser = new Map<string, Map<string, CategoryDocument>>();
 const aliasesByUser = new Map<string, Map<string, AliasDocument>>();
@@ -99,11 +115,20 @@ export const receiptRepository = {
     userMap(receiptsByUser, uid).set(receipt.id, receipt);
     emitReceipts(uid);
   },
-  async updateReceipt(uid: string, receiptId: string, update: Partial<ReceiptDocument>, currentVersion?: number): Promise<void> {
+  async updateReceipt(uid: string, receiptId: string, update: Partial<ReceiptDocument>, currentVersion?: number): Promise<ReceiptDocument> {
     const current = userMap(receiptsByUser, uid).get(receiptId);
     if (!current) throw new Error('Receipt no longer exists.');
+    if (shouldForceReceiptConflict()) {
+      userMap(receiptsByUser, uid).set(receiptId, {
+        ...current,
+        merchantRaw: 'Remote update',
+        revision: current.revision + 1,
+      });
+      emitReceipts(uid);
+      throw new ReceiptRevisionConflictError();
+    }
     if (currentVersion !== undefined && currentVersion !== current.revision) {
-      throw new Error('Conflict: Receipt was updated by another device.');
+      throw new ReceiptRevisionConflictError();
     }
     const status = update.status ?? current.status;
     const updated = ReceiptSchema.parse({
@@ -116,6 +141,7 @@ export const receiptRepository = {
     });
     userMap(receiptsByUser, uid).set(receiptId, updated);
     emitReceipts(uid);
+    return updated;
   },
   async deleteReceipt(uid: string, receiptId: string): Promise<void> {
     userMap(receiptsByUser, uid).delete(receiptId);
