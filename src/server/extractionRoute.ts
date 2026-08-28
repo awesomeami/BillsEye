@@ -45,8 +45,17 @@ const upload = multer({
 
 const generateRequestId = () => Math.random().toString(36).substring(2, 10);
 
-const redactGeminiKeys = (text: string) => text.replace(/AIza[a-zA-Z0-9_-]+/g, '[REDACTED_KEY]');
-const SENSITIVE_LOG_FIELDS = new Set(['key', 'geminikey', 'apikey', 'token', 'authorization']);
+const redactGeminiKeys = (text: string) => text
+  .replace(/AIza[a-zA-Z0-9_-]+/g, '[REDACTED_KEY]')
+  .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
+  .replace(/\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g, '[REDACTED_TOKEN]')
+  .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[REDACTED_EMAIL]')
+  .replace(/\busers\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*/gi, 'users/[REDACTED_PATH]')
+  .replace(/\b(uid|userId|email|providerEmail|token|credential)\s*[:=]\s*[^,;\s}]+/gi, '$1=[REDACTED]')
+  .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[REDACTED_OPAQUE_VALUE]');
+const SENSITIVE_LOG_FIELDS = new Set([
+  'authorization', 'credential', 'email', 'geminikey', 'apikey', 'key', 'provideremail', 'token', 'uid', 'userid'
+]);
 
 const redactLogValue = (value: unknown): unknown => {
   if (typeof value === 'string') return redactGeminiKeys(value);

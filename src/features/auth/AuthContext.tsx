@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
@@ -23,6 +23,7 @@ export interface AuthenticatedUser {
 interface AuthContextType {
   user: AuthenticatedUser | null;
   loading: boolean;
+  sessionEpoch: number;
   signIn: () => Promise<void>;
   reauthenticateAndGetIdToken: () => Promise<string>;
   signOut: () => Promise<void>;
@@ -52,42 +53,47 @@ function getErrorCode(error: unknown): string | null {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthenticatedUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionEpoch, setSessionEpoch] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const { showToast } = useToast();
+  const { showToast, clearToasts } = useToast();
+  const mountedRef = useRef(false);
+  const authGenerationRef = useRef(0);
+
+  const beginAuthTransition = useCallback((nextUser: AuthenticatedUser | null) => {
+    ImageSessionStore.setActiveUser(null);
+    clearToasts();
+    setUser(nextUser);
+    setError(null);
+    setLoading(true);
+    setSessionEpoch(epoch => epoch + 1);
+    ImageSessionStore.setActiveUser(nextUser?.uid ?? null);
+    return ++authGenerationRef.current;
+  }, [clearToasts]);
 
   useEffect(() => {
+    mountedRef.current = true;
     if (useE2eMocks) {
       ImageSessionStore.setActiveUser(null);
       setLoading(false);
-      return () => ImageSessionStore.setActiveUser(null);
+      return () => {
+        mountedRef.current = false;
+        authGenerationRef.current += 1;
+        ImageSessionStore.setActiveUser(null);
+      };
     }
 
     // Handle redirect result for mobile browsers
     getRedirectResult(auth)
-      .then(async (result) => {
-        if (result?.user) {
-          try {
-            await userRepository.getOrCreateProfile(
-              result.user.uid,
-              result.user.email || '',
-              result.user.displayName
-            );
-          } catch {
-            console.error('Failed to initialize user profile after redirect.');
-            showToast("We couldn't set up your account profile. Please try refreshing.", 'error');
-          }
-        }
-      })
+      .then(() => undefined)
       .catch((err: unknown) => {
+        if (!mountedRef.current) return;
         console.error('Redirect authentication failed.');
         setError(getErrorMessage(err, 'Authentication failed.'));
         showToast('Authentication failed. Please try again.', 'error');
       });
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      // Session images are strictly in-memory and must never cross an auth boundary.
-      ImageSessionStore.setActiveUser(currentUser?.uid ?? null);
-      setUser(currentUser);
+      const generation = beginAuthTransition(currentUser);
       
       if (currentUser) {
         try {
@@ -97,37 +103,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             currentUser.displayName
           );
         } catch {
+          if (!mountedRef.current || generation !== authGenerationRef.current) return;
           console.error('Failed to initialize user profile.');
           showToast("We couldn't set up your account profile. Please try refreshing.", 'error');
         }
       }
       
-      setLoading(false);
+      if (mountedRef.current && generation === authGenerationRef.current) setLoading(false);
     });
 
     return () => {
       unsubscribe();
+      mountedRef.current = false;
+      authGenerationRef.current += 1;
       ImageSessionStore.setActiveUser(null);
     };
-  }, [showToast]);
+  }, [beginAuthTransition, showToast]);
 
   const signIn = async () => {
     if (useE2eMocks) {
-      ImageSessionStore.setActiveUser(e2eUser.uid);
-      setUser(e2eUser);
+      beginAuthTransition(e2eUser);
+      setLoading(false);
       return;
     }
     try {
       setError(null);
       // Attempt popup first
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        await userRepository.getOrCreateProfile(
-          result.user.uid,
-          result.user.email || '',
-          result.user.displayName
-        );
-      }
+      await signInWithPopup(auth, googleProvider);
     } catch (err: unknown) {
       console.warn('Popup sign in was unavailable; evaluating redirect fallback.');
       const errorCode = getErrorCode(err);
@@ -149,13 +151,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     if (useE2eMocks) {
-      ImageSessionStore.setActiveUser(null);
-      setUser(null);
+      beginAuthTransition(null);
+      setLoading(false);
       return;
     }
+    beginAuthTransition(null);
     try {
       await firebaseSignOut(auth);
     } catch (err: unknown) {
+      const currentUser = auth.currentUser;
+      beginAuthTransition(currentUser);
+      setLoading(false);
       setError(getErrorMessage(err, 'Failed to sign out.'));
       showToast('Failed to sign out', 'error');
     }
@@ -180,7 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, reauthenticateAndGetIdToken, signOut, error }}>
+    <AuthContext.Provider value={{ user, loading, sessionEpoch, signIn, reauthenticateAndGetIdToken, signOut, error }}>
       {children}
     </AuthContext.Provider>
   );

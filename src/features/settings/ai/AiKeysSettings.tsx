@@ -126,16 +126,16 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
 
       {legacySlotIds.length > 0 && (
         <div className="bg-red-50 border border-red-200 p-4 rounded-xl text-sm text-red-900 space-y-3">
-          <p className="font-medium">Legacy unencrypted key records need attention.</p>
-          <p>For safety, existing plaintext records are not loaded. Re-enter each listed key to replace it with encryption, or remove the legacy records from this device.</p>
+          <p className="font-medium">Legacy key slots need re-entry.</p>
+          <p>Legacy plaintext key material was removed from this device. Re-enter each listed key to save a new encrypted record, or dismiss these reminders.</p>
           <button onClick={() => {
-            if (window.confirm('Remove all legacy unencrypted key records from this device? This cannot be undone.')) {
+            if (window.confirm('Dismiss all legacy key re-entry reminders on this device?')) {
               void clearLegacyKeys()
-                .then(() => showToast('Legacy unencrypted key records removed.', 'success'))
-                .catch(() => showToast('Could not remove legacy key records.', 'error'));
+                .then(() => showToast('Legacy key reminders dismissed.', 'success'))
+                .catch(() => showToast('Could not dismiss legacy key reminders.', 'error'));
             }
           }} className="px-3 py-2 border border-red-300 rounded-lg hover:bg-red-100">
-            Remove legacy records
+            Dismiss reminders
           </button>
         </div>
       )}
@@ -172,6 +172,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
                       type="checkbox" 
                       className="sr-only" 
                       checked={slot.isEnabled}
+                      disabled={slot.requiresMigration}
                       onChange={(e) => toggleKey(slot.slotId, e.target.checked)}
                     />
                     <div className={`block w-10 h-6 rounded-full transition-colors ${slot.isEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}></div>

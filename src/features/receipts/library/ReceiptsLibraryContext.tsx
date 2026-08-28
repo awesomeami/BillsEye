@@ -1,8 +1,22 @@
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { receiptRepository, categoryRepository, settingsRepository } from '../../../services/firebase/db';
 import { ReceiptDocument, CategoryDocument, AppSettingsDocument, AppSettingsSchema } from '../../../domain/schema';
 import { filterAndSortReceipts, FilterState, SortState } from './libraryUtils';
+import { ActiveSessionGuard } from '../../../services/firebase/subscriptionIsolation';
+
+const initialFilters: FilterState = {
+  searchQuery: '',
+  dateStart: null,
+  dateEnd: null,
+  merchant: null,
+  category: null,
+  item: null,
+  paymentMethod: null,
+  amountMin: null,
+  amountMax: null,
+  hasWarning: null,
+};
 
 interface ReceiptsLibraryContextType {
   receipts: ReceiptDocument[];
@@ -25,7 +39,9 @@ interface ReceiptsLibraryContextType {
 const ReceiptsLibraryContext = createContext<ReceiptsLibraryContextType | undefined>(undefined);
 
 export function ReceiptsLibraryProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, sessionEpoch } = useAuth();
+  const userId = user?.uid ?? null;
+  const sessionGuardRef = useRef(new ActiveSessionGuard());
   const [receipts, setReceipts] = useState<ReceiptDocument[]>([]);
   const [pendingReceipts, setPendingReceipts] = useState<ReceiptDocument[]>([]);
   const [categories, setCategories] = useState<CategoryDocument[]>([]);
@@ -35,43 +51,46 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
   const [syncState, setSyncState] = useState<'syncing' | 'synced' | 'offline' | 'error'>('syncing');
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
-  const [filters, setFilters] = useState<FilterState>({
-    searchQuery: '',
-    dateStart: null,
-    dateEnd: null,
-    merchant: null,
-    category: null,
-    item: null,
-    paymentMethod: null,
-    amountMin: null,
-    amountMax: null,
-    hasWarning: null,
-  });
+  const [filters, setFilters] = useState<FilterState>(initialFilters);
 
   const [sort, setSort] = useState<SortState>({ field: 'date', order: 'desc' });
 
   useEffect(() => {
-    if (!user) {
+    const sessionGuard = sessionGuardRef.current;
+    const resetState = (isLoading: boolean) => {
       setReceipts([]);
       setPendingReceipts([]);
       setCategories([]);
       setSettings(AppSettingsSchema.parse({}));
-      setLoading(false);
+      setLoading(isLoading);
+      setError(null);
+      setSyncState(isLoading ? 'syncing' : 'synced');
+      setLastSyncedAt(null);
+      setFilters(initialFilters);
+      setSort({ field: 'date', order: 'desc' });
+    };
+
+    sessionGuard.invalidate();
+    if (!userId) {
+      resetState(false);
       return;
     }
 
-    setSyncState('syncing');
+    resetState(true);
+    const scope = sessionGuard.activate(userId);
+    const isActive = () => sessionGuard.isActive(scope);
     
     let isInitialReceiptLoad = true;
     let isInitialPendingLoad = true;
 
     const checkLoading = () => {
-      if (!isInitialReceiptLoad && !isInitialPendingLoad) {
+      if (isActive() && !isInitialReceiptLoad && !isInitialPendingLoad) {
         setLoading(false);
       }
     };
 
-    const unsubReceipts = receiptRepository.subscribeToReceipts(user.uid, (data) => {
+    const unsubReceipts = receiptRepository.subscribeToReceipts(userId, (data) => {
+      if (!isActive()) return;
       setReceipts(data);
       setSyncState('synced');
       setLastSyncedAt(new Date());
@@ -80,7 +99,7 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
         checkLoading();
       }
     }, (err) => {
-      console.error(err);
+      if (!isActive()) return;
       if (err.message.includes('offline')) {
         setSyncState('offline');
       } else {
@@ -91,35 +110,39 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
       checkLoading();
     });
 
-    const unsubPending = receiptRepository.subscribeToPendingReceipts(user.uid, (data) => {
+    const unsubPending = receiptRepository.subscribeToPendingReceipts(userId, (data) => {
+      if (!isActive()) return;
       setPendingReceipts(data);
       if (isInitialPendingLoad) {
         isInitialPendingLoad = false;
         checkLoading();
       }
-    }, (err) => {
-      console.error(err);
+    }, () => {
+      if (!isActive()) return;
       isInitialPendingLoad = false;
       checkLoading();
     });
 
-    const unsubCategories = categoryRepository.subscribeToCategories(user.uid, (data) => {
-      setCategories(data);
-    }, (err) => {
-      console.error(err);
+    const unsubCategories = categoryRepository.subscribeToCategories(userId, (data) => {
+      if (isActive()) setCategories(data);
+    }, () => {
+      if (isActive()) setError(new Error('Could not load categories.'));
     });
 
-    const unsubSettings = settingsRepository.subscribeToSettings(user.uid, setSettings, (err) => {
-      console.error(err);
+    const unsubSettings = settingsRepository.subscribeToSettings(userId, data => {
+      if (isActive()) setSettings(data);
+    }, () => {
+      if (isActive()) setError(new Error('Could not load settings.'));
     });
 
     return () => {
+      sessionGuard.invalidate(scope);
       unsubReceipts();
       unsubPending();
       unsubCategories();
       unsubSettings();
     };
-  }, [user]);
+  }, [sessionEpoch, userId]);
 
   useEffect(() => {
     const handleOnline = () => setSyncState('syncing');

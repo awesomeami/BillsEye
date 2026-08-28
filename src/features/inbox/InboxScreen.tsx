@@ -7,8 +7,10 @@ import { Link } from 'react-router-dom';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ReceiptDocument } from '../../domain/schema';
 import { ImageSessionStore } from '../../utils/imageSessionStore';
+import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
 
 export function InboxScreen() {
+  const sessionActions = useClientSessionActionGuard();
   const { showToast } = useToast();
   const { pendingReceipts, updateReceipt, deleteReceipt } = useReceiptsLibrary();
   
@@ -16,28 +18,37 @@ export function InboxScreen() {
 
   const handleDelete = async () => {
     if (deleteId) {
+      const scope = sessionActions.capture();
+      if (!scope) return;
+      const receiptId = deleteId;
       try {
-        await deleteReceipt(deleteId);
-        ImageSessionStore.delete(deleteId);
-      } catch (err) {
-        console.error("Failed to delete receipt:", err);
+        await deleteReceipt(receiptId);
+        if (!sessionActions.isActive(scope)) return;
+        ImageSessionStore.deleteForUser(scope.uid, receiptId);
+      } catch {
+        if (!sessionActions.isActive(scope)) return;
+        console.error('Failed to delete receipt.');
         showToast("Failed to delete receipt. Please try again.", "error");
       } finally {
-        setDeleteId(null);
+        if (sessionActions.isActive(scope)) setDeleteId(null);
       }
     }
   };
 
   const handleConfirm = async (receipt: ReceiptDocument) => {
+    const scope = sessionActions.capture();
+    if (!scope) return;
     try {
       await updateReceipt(receipt.id, {
         // The repository supplies serverTimestamp() when confirmation changes,
         // so Firestore receives a timestamp rather than a client-side value.
         status: 'confirmed'
       }, receipt.revision);
-      ImageSessionStore.delete(receipt.id);
-    } catch (err) {
-      console.error("Failed to confirm receipt:", err);
+      if (!sessionActions.isActive(scope)) return;
+      ImageSessionStore.deleteForUser(scope.uid, receipt.id);
+    } catch {
+      if (!sessionActions.isActive(scope)) return;
+      console.error('Failed to confirm receipt.');
       showToast("Failed to confirm receipt. It may have been updated on another device.", "error");
     }
   };

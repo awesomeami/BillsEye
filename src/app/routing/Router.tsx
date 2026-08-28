@@ -10,7 +10,7 @@ const ReceiptsListScreen = React.lazy(() => import('../../features/receipts/Rece
 const ReviewReceiptScreen = React.lazy(() => import('../../features/receipts/ReviewReceiptScreen').then(m => ({ default: m.ReviewReceiptScreen })));
 const ReportsScreen = React.lazy(() => import('../../features/reports/ReportsScreen').then(m => ({ default: m.ReportsScreen })));
 const SettingsScreen = React.lazy(() => import('../../features/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
-import { AuthProvider } from '../../features/auth/AuthContext';
+import { AuthProvider, useAuth } from '../../features/auth/AuthContext';
 import { AiKeysProvider } from '../../features/settings/ai/AiKeysContext';
 import { ReceiptQueueProvider } from '../../features/receipts/queue/ReceiptQueueContext';
 
@@ -40,11 +40,20 @@ const router = createBrowserRouter([
 export function AppRouter() {
   return (
     <AuthProvider>
+      <SessionProviders />
+    </AuthProvider>
+  );
+}
+
+function SessionProviders() {
+  const { sessionEpoch } = useAuth();
+  return (
+    <React.Fragment key={sessionEpoch}>
       <AiKeysProvider>
         <ReceiptQueueProvider>
           <RouterProvider router={router} />
         </ReceiptQueueProvider>
       </AiKeysProvider>
-    </AuthProvider>
+    </React.Fragment>
   );
 }

@@ -101,4 +101,29 @@ describe('Firestore Error Handling & Formatting', () => {
       }
     );
   });
+
+  test('logs only the operation and an allowlisted code', () => {
+    const originalConsoleError = console.error;
+    const calls: unknown[][] = [];
+    console.error = (...args: unknown[]) => calls.push(args);
+    try {
+      assert.throws(() => handleFirestoreError(
+        {
+          code: 'firebase/permission-denied',
+          message: 'Bearer private-token for user-private@example.com at users/private-uid/receipts/private-doc',
+        },
+        OperationType.GET,
+        'users/private-uid/receipts/private-doc',
+        fakeAuth,
+      ));
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    const serialized = JSON.stringify(calls);
+    assert.match(serialized, /get/);
+    assert.match(serialized, /permission-denied/);
+    assert.doesNotMatch(serialized, /private-uid|private-doc|example\.com|Bearer|providerData|private-token/);
+  });
+
 });

@@ -11,13 +11,9 @@ export interface AiKeySlot {
   requiresMigration?: boolean;
 }
 
-/** Historical IndexedDB shape. It is read only to offer removal/re-entry, never used as a key source. */
-export interface LegacyPlaintextKeyRecord {
+/** Keyless metadata retained after legacy plaintext material is removed. */
+export interface LegacyKeyReentryMetadata {
   slotId: number;
-  label?: string;
-  maskedKey: string;
-  key: string;
-  isEnabled: boolean;
 }
 
 export interface EncryptedKeyRecord {
@@ -40,7 +36,7 @@ export type VaultState = 'unconfigured' | 'locked' | 'unlocked' | 'migration-req
 export interface VaultInspection {
   metadata: VaultMetadata | null;
   encryptedKeys: EncryptedKeyRecord[];
-  legacyKeys: Array<Omit<LegacyPlaintextKeyRecord, 'key'>>;
+  legacyKeys: LegacyKeyReentryMetadata[];
 }
 
 export interface AiRequestError {

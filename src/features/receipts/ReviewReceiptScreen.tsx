@@ -16,6 +16,7 @@ import {
   resolveReceiptItemCategoryId,
 } from '../../domain/categories';
 import { useReceiptsLibrary } from './library/ReceiptsLibraryContext';
+import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
 
 type ReceiptItem = ReceiptDocument['items'][number];
 
@@ -41,6 +42,7 @@ export function ReviewReceiptScreen() {
   const { showToast } = useToast();
   const { id } = useParams();
   const { user } = useAuth();
+  const sessionActions = useClientSessionActionGuard();
   const { categories, settings } = useReceiptsLibrary();
   const navigate = useNavigate();
   
@@ -55,6 +57,8 @@ export function ReviewReceiptScreen() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageUrlRef = useRef<string | null>(null);
+  const activeReceiptIdRef = useRef<string | null>(id ?? null);
+  activeReceiptIdRef.current = id ?? null;
 
   const clearImagePreview = useCallback(() => {
     if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
@@ -102,7 +106,7 @@ export function ReviewReceiptScreen() {
             if (isCurrent) setDuplicates(possibleDups.filter(d => d.id !== data.id));
           }
 
-          const sessionImage = ImageSessionStore.get(id);
+          const sessionImage = ImageSessionStore.getForUser(user.uid, id);
           if (isCurrent && sessionImage) setImagePreview(sessionImage);
         } else {
           if (isCurrent) setError('Receipt not found or cannot be reviewed safely.');
@@ -123,21 +127,28 @@ export function ReviewReceiptScreen() {
 
   const handleReattach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !receipt) return;
+    if (!file || !receipt || !user) return;
+    const scope = sessionActions.capture();
+    if (!scope) return;
+    const receiptId = receipt.id;
+    const isActiveReceipt = () => sessionActions.isActive(scope) && activeReceiptIdRef.current === receiptId;
     setReattachError(null);
     try {
       const { blob: processedBlob } = await preprocessImage(file);
+      if (!isActiveReceipt()) return;
       const hash = await createSha256Hash(processedBlob);
+      if (!isActiveReceipt()) return;
       if (hash === receipt.sourceSha256) {
-        ImageSessionStore.set(receipt.id, processedBlob);
+        ImageSessionStore.setForUser(scope.uid, receiptId, processedBlob);
         setImagePreview(processedBlob);
       } else {
         setReattachError('Hash mismatch. This is not the original file.');
       }
     } catch (err: unknown) {
+      if (!isActiveReceipt()) return;
       setReattachError(getErrorMessage(err, 'Could not prepare the selected image.'));
     }
-    if (e.target) e.target.value = '';
+    if (isActiveReceipt() && e.target) e.target.value = '';
   };
 
   const updateField = <K extends keyof ReceiptDocument>(field: K, value: ReceiptDocument[K]) => {
@@ -213,6 +224,10 @@ export function ReviewReceiptScreen() {
 
   const handleSave = async (status: 'confirmed' | 'pendingReview' = 'confirmed') => {
     if (!user || !receipt) return;
+    const scope = sessionActions.capture();
+    if (!scope) return;
+    const receiptId = receipt.id;
+    const isActiveReceipt = () => sessionActions.isActive(scope) && activeReceiptIdRef.current === receiptId;
     setIsSaving(true);
 
     if (APP_CONFIG.currency === 'PKR' && formData.currency !== 'PKR') {
@@ -238,32 +253,40 @@ export function ReviewReceiptScreen() {
         delete payload.confirmedAt;
       }
 
-      await receiptRepository.updateReceipt(user.uid, receipt.id, payload, receipt.revision);
+      await receiptRepository.updateReceipt(scope.uid, receiptId, payload, receipt.revision);
+      if (!isActiveReceipt()) return;
       if (status === 'confirmed') {
-        ImageSessionStore.delete(receipt.id);
+        ImageSessionStore.deleteForUser(scope.uid, receiptId);
         clearImagePreview();
         navigate('/');
       } else {
         showToast("Saved successfully!", "success");
       }
     } catch (e: unknown) {
-      console.error(e);
+      if (!isActiveReceipt()) return;
+      console.error('Failed to save receipt.');
       showToast(getErrorMessage(e, 'Failed to save receipt. Conflict may have occurred.'), "error");
     } finally {
-      setIsSaving(false);
+      if (isActiveReceipt()) setIsSaving(false);
     }
   };
 
   const handleDelete = async () => {
     if (!user || !receipt) return;
+    const scope = sessionActions.capture();
+    if (!scope) return;
+    const receiptId = receipt.id;
+    const isActiveReceipt = () => sessionActions.isActive(scope) && activeReceiptIdRef.current === receiptId;
     if (window.confirm('Delete this receipt?')) {
       try {
-        await receiptRepository.deleteReceipt(user.uid, receipt.id);
-        ImageSessionStore.delete(receipt.id);
+        await receiptRepository.deleteReceipt(scope.uid, receiptId);
+        if (!isActiveReceipt()) return;
+        ImageSessionStore.deleteForUser(scope.uid, receiptId);
         clearImagePreview();
         navigate('/');
-      } catch (e) {
-        console.error(e);
+      } catch {
+        if (!isActiveReceipt()) return;
+        console.error('Failed to delete receipt.');
         showToast("Failed to delete receipt", "error");
       }
     }

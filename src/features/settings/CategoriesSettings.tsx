@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useToast } from '../../components/ui/Toast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ChevronRight, Plus, Trash2, Edit2, Check, X, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { categoryRepository } from '../../services/firebase/db';
 import { CategoryDocument } from '../../domain/schema';
+import { ActiveSessionGuard, SessionScope } from '../../services/firebase/subscriptionIsolation';
 
 export function CategoriesSettings({ onBack }: { onBack: () => void }) {
-  const { user } = useAuth();
+  const { user, sessionEpoch } = useAuth();
+  const userId = user?.uid ?? null;
+  const sessionGuardRef = useRef(new ActiveSessionGuard());
+  const sessionScopeRef = useRef<SessionScope | null>(null);
   const { showToast } = useToast();
   const [confirmAction, setConfirmAction] = useState<{ message: string, action: () => void } | null>(null);
   const [categories, setCategories] = useState<CategoryDocument[]>([]);
@@ -26,35 +30,68 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
   const [referenceCounts, setReferenceCounts] = useState({ receiptItems: 0, aliases: 0 });
 
   useEffect(() => {
-    if (!user) return;
-    const unsub = categoryRepository.subscribeToCategories(user.uid, (data) => {
+    const sessionGuard = sessionGuardRef.current;
+    sessionGuard.invalidate();
+    sessionScopeRef.current = null;
+    setCategories([]);
+    setLoading(Boolean(userId));
+    setError('');
+    setConfirmAction(null);
+    setEditingId(null);
+    setEditName('');
+    setIsAdding(false);
+    setNewName('');
+    setDeletingCategory(null);
+    setReplacementCategory('');
+    setReferenceCounts({ receiptItems: 0, aliases: 0 });
+    if (!userId) return;
+    const scope = sessionGuard.activate(userId);
+    sessionScopeRef.current = scope;
+    const unsub = categoryRepository.subscribeToCategories(userId, (data) => {
+      if (!sessionGuard.isActive(scope)) return;
       setCategories([...data].sort((a, b) => a.order - b.order));
       setLoading(false);
     }, (err) => {
+      if (!sessionGuard.isActive(scope)) return;
       setError(err.message);
       setLoading(false);
     });
-    return () => unsub();
-  }, [user]);
+    return () => {
+      sessionGuard.invalidate(scope);
+      if (sessionScopeRef.current === scope) sessionScopeRef.current = null;
+      unsub();
+    };
+  }, [sessionEpoch, userId]);
+
+  const isCurrentUser = (uid: string) => {
+    const scope = sessionScopeRef.current;
+    return Boolean(scope && scope.uid === uid && sessionGuardRef.current.isActive(scope));
+  };
 
   const handleAdd = async () => {
     if (!user || !newName.trim()) return;
+    const uid = user.uid;
     try {
-      await categoryRepository.addCategory(user.uid, newName.trim(), true);
+      await categoryRepository.addCategory(uid, newName.trim(), true);
+      if (!isCurrentUser(uid)) return;
       setNewName('');
       setIsAdding(false);
       setError('');
     } catch (addError: unknown) {
+      if (!isCurrentUser(uid)) return;
       setError(addError instanceof Error ? addError.message : 'Could not create category.');
     }
   };
 
   const handleUpdate = async (id: string) => {
     if (!user || !editName.trim()) return;
+    const uid = user.uid;
     try {
-      await categoryRepository.renameCategory(user.uid, id, editName.trim());
+      await categoryRepository.renameCategory(uid, id, editName.trim());
+      if (!isCurrentUser(uid)) return;
       setEditingId(null);
     } catch (renameError: unknown) {
+      if (!isCurrentUser(uid)) return;
       setError(renameError instanceof Error ? renameError.message : 'Could not rename category.');
     }
   };
@@ -66,7 +103,9 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
 
   const checkUsageAndPromptDelete = async (cat: CategoryDocument) => {
     if (!user) return;
-    const counts = await categoryRepository.getReferenceCounts(user.uid, cat);
+    const uid = user.uid;
+    const counts = await categoryRepository.getReferenceCounts(uid, cat);
+    if (!isCurrentUser(uid)) return;
     if (counts.receiptItems > 0 || counts.aliases > 0) {
       setReferenceCounts(counts);
       setDeletingCategory(cat);
@@ -76,9 +115,11 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
         message: `Delete category "${cat.name}"?`,
         action: async () => {
           try {
-            await categoryRepository.deleteCategory(user.uid, cat.id);
+            await categoryRepository.deleteCategory(uid, cat.id);
+            if (!isCurrentUser(uid)) return;
             showToast("Category deleted", "success");
           } catch (deleteError: unknown) {
+            if (!isCurrentUser(uid)) return;
             showToast(`Failed to delete category: ${deleteError instanceof Error ? deleteError.message : 'Unknown error'}`, 'error');
           }
         }
@@ -88,13 +129,16 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
 
   const confirmDeleteWithReplacement = async () => {
     if (!user || !deletingCategory || !replacementCategory) return;
+    const uid = user.uid;
     
     // 1. Update all receipts using this category
     try {
-      await categoryRepository.replaceCategory(user.uid, deletingCategory.id, replacementCategory);
+      await categoryRepository.replaceCategory(uid, deletingCategory.id, replacementCategory);
+      if (!isCurrentUser(uid)) return;
       setDeletingCategory(null);
       showToast('Category references were moved and the old category was deleted.', 'success');
     } catch (replaceError: unknown) {
+      if (!isCurrentUser(uid)) return;
       setError(replaceError instanceof Error ? replaceError.message : 'Could not replace this category safely.');
     }
   };

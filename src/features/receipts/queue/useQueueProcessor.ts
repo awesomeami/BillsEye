@@ -28,7 +28,7 @@ const productionQueueAttemptServices: QueueAttemptServices = {
   findByHash: (userId, sha256) => receiptRepository.findByHash(userId, sha256),
   extractReceipt: (key, file, signal) => ExtractionClient.extractReceipt(key, file, signal),
   createReceipt: (userId, receipt) => receiptRepository.createReceipt(userId, receipt),
-  storeImage: (receiptId, image) => ImageSessionStore.set(receiptId, image),
+  storeImage: (userId, receiptId, image) => ImageSessionStore.setForUser(userId, receiptId, image),
   renderPdfPage: async (file, pageNumber) => {
     const { renderPdfPageToImage } = await import('../../../utils/pdfProcessor');
     return renderPdfPageToImage(file, pageNumber);
@@ -89,4 +89,10 @@ export const useQueueProcessor = ({
   useEffect(() => {
     runnerRef.current?.wake();
   }, [state, userId, executor, getDecryptedKey, rotationManager]);
+
+  useEffect(() => () => {
+    activeUserIdRef.current = null;
+    sessionVersionRef.current += 1;
+    latestRef.current = { ...latestRef.current, state: [], user: null, executor: null };
+  }, []);
 };

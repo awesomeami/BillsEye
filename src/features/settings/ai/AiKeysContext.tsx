@@ -52,11 +52,15 @@ export function AiKeysProvider({ children }: { children: React.ReactNode }) {
   const legacySlotIdsRef = useRef<Set<number>>(new Set());
   const authGenerationRef = useRef(0);
 
-  const clearKeyMaterial = () => {
+  const clearKeyMaterialRefs = () => {
     memoryKeysRef.current = {};
     cryptoKeyRef.current = null;
     encryptedSlotIdsRef.current = new Set();
     legacySlotIdsRef.current = new Set();
+  };
+
+  const clearKeyMaterial = () => {
+    clearKeyMaterialRefs();
     setSlots([]);
     setLegacySlotIds([]);
     setActiveKeyIndex(null);
@@ -82,9 +86,9 @@ export function AiKeysProvider({ children }: { children: React.ReactNode }) {
         .filter(record => !encryptedSlotIdsRef.current.has(record.slotId))
         .map(record => ({
           slotId: record.slotId,
-          label: record.label,
-          maskedKey: CryptoUtils.redactString(record.maskedKey || '••••••••'),
-          isEnabled: record.isEnabled,
+          label: `Key slot ${record.slotId}`,
+          maskedKey: '••••••••',
+          isEnabled: false,
           isSessionOnly: false,
           status: 'untested' as const,
           requiresMigration: true
@@ -98,21 +102,29 @@ export function AiKeysProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const generation = ++authGenerationRef.current;
+    const disposeSession = () => {
+      authGenerationRef.current += 1;
+      vaultRef.current = null;
+      clearKeyMaterialRefs();
+      rotationManagerRef.current.updateSlots([]);
+      rotationManagerRef.current.setOnSlotsChanged(() => undefined);
+    };
     clearKeyMaterial();
     if (useE2eMocks && user) {
       rotationManagerRef.current.updateSlots([e2eKeySlot]);
       setSlots([e2eKeySlot]);
       setVaultState('unlocked');
-      return;
+      return disposeSession;
     }
     if (!user) {
       vaultRef.current = null;
       setVaultState('unconfigured');
-      return;
+      return disposeSession;
     }
     const vault = new AiVault(user.uid);
     vaultRef.current = vault;
     void loadVault(vault, generation);
+    return disposeSession;
     // The generation check in loadVault prevents an old user's async read from winning a later auth transition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
@@ -277,6 +289,7 @@ export function AiKeysProvider({ children }: { children: React.ReactNode }) {
   const toggleKey = async (slotId: number, isEnabled: boolean) => {
     const vault = vaultRef.current;
     const slot = slots.find(candidate => candidate.slotId === slotId);
+    if (slot?.requiresMigration) return;
     if (slot && !slot.isSessionOnly && vault) {
       await vault.updateKeyEnabled(slotId, isEnabled);
     }

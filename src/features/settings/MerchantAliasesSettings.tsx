@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { aliasRepository } from '../../services/firebase/db';
@@ -6,9 +6,13 @@ import { AliasDocument } from '../../domain/schema';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
+import { ActiveSessionGuard, SessionScope } from '../../services/firebase/subscriptionIsolation';
 
 export function MerchantAliasesSettings({ onBack }: { onBack: () => void }) {
-  const { user } = useAuth();
+  const { user, sessionEpoch } = useAuth();
+  const userId = user?.uid ?? null;
+  const sessionGuardRef = useRef(new ActiveSessionGuard());
+  const sessionScopeRef = useRef<SessionScope | null>(null);
   const { categories } = useReceiptsLibrary();
   const { showToast } = useToast();
   const [aliases, setAliases] = useState<AliasDocument[]>([]);
@@ -24,14 +28,35 @@ export function MerchantAliasesSettings({ onBack }: { onBack: () => void }) {
   );
 
   useEffect(() => {
-    if (!user) {
-      setAliases([]);
-      return;
-    }
-    return aliasRepository.subscribeToAliases(user.uid, setAliases, aliasError => {
+    const sessionGuard = sessionGuardRef.current;
+    sessionGuard.invalidate();
+    sessionScopeRef.current = null;
+    setAliases([]);
+    setMerchant('');
+    setCategoryId('');
+    setSaving(false);
+    setError('');
+    setAliasToDelete(null);
+    if (!userId) return;
+    const scope = sessionGuard.activate(userId);
+    sessionScopeRef.current = scope;
+    const unsubscribe = aliasRepository.subscribeToAliases(userId, data => {
+      if (sessionGuard.isActive(scope)) setAliases(data);
+    }, aliasError => {
+      if (!sessionGuard.isActive(scope)) return;
       setError(aliasError.message || 'Could not load merchant aliases.');
     });
-  }, [user]);
+    return () => {
+      sessionGuard.invalidate(scope);
+      if (sessionScopeRef.current === scope) sessionScopeRef.current = null;
+      unsubscribe();
+    };
+  }, [sessionEpoch, userId]);
+
+  const isCurrentUser = (uid: string) => {
+    const scope = sessionScopeRef.current;
+    return Boolean(scope && scope.uid === uid && sessionGuardRef.current.isActive(scope));
+  };
 
   useEffect(() => {
     if (!categoryId && activeCategories.length > 0) {
@@ -41,28 +66,34 @@ export function MerchantAliasesSettings({ onBack }: { onBack: () => void }) {
 
   const saveAlias = async () => {
     if (!user || !merchant.trim() || !categoryId) return;
+    const uid = user.uid;
     setSaving(true);
     setError('');
     try {
-      await aliasRepository.setAlias(user.uid, merchant, categoryId);
+      await aliasRepository.setAlias(uid, merchant, categoryId);
+      if (!isCurrentUser(uid)) return;
       setMerchant('');
       showToast('Merchant alias saved.', 'success');
     } catch (saveError: unknown) {
+      if (!isCurrentUser(uid)) return;
       setError(saveError instanceof Error ? saveError.message : 'Could not save this alias.');
     } finally {
-      setSaving(false);
+      if (isCurrentUser(uid)) setSaving(false);
     }
   };
 
   const deleteAlias = async () => {
     if (!user || !aliasToDelete) return;
+    const uid = user.uid;
     try {
-      await aliasRepository.deleteAlias(user.uid, aliasToDelete.id);
+      await aliasRepository.deleteAlias(uid, aliasToDelete.id);
+      if (!isCurrentUser(uid)) return;
       showToast('Merchant alias deleted.', 'success');
     } catch (deleteError: unknown) {
+      if (!isCurrentUser(uid)) return;
       setError(deleteError instanceof Error ? deleteError.message : 'Could not delete this alias.');
     } finally {
-      setAliasToDelete(null);
+      if (isCurrentUser(uid)) setAliasToDelete(null);
     }
   };
 

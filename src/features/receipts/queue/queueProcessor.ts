@@ -15,7 +15,7 @@ export interface QueueAttemptServices {
   findByHash: (userId: string, sha256: string) => Promise<Array<{ id: string }>>;
   extractReceipt: (key: string, file: File, signal: AbortSignal) => Promise<QueueExtractionResult>;
   createReceipt: (userId: string, receipt: ReceiptDocument) => Promise<unknown>;
-  storeImage: (receiptId: string, image: Blob) => void;
+  storeImage: (userId: string, receiptId: string, image: Blob) => void;
   renderPdfPage: (file: File, pageNumber: number) => Promise<Blob>;
   createReceiptId: () => string;
   now: () => string;
@@ -165,7 +165,7 @@ export async function processQueueAttempt({
     ensureAttemptIsActive(abortController.signal, isSessionActive);
     await services.createReceipt(userId, receiptDoc);
     ensureAttemptIsActive(abortController.signal, isSessionActive);
-    services.storeImage(newReceiptId, processedBlob);
+    services.storeImage(userId, newReceiptId, processedBlob);
     dispatch({
       type: 'UPDATE_ITEM',
       id,
@@ -173,6 +173,7 @@ export async function processQueueAttempt({
     });
     return 'continue';
   } catch (error: unknown) {
+    if (!isSessionActive()) return 'stopped';
     const { name, message, status } = errorDetails(error);
     if (name === 'AbortError') {
       if (isSessionActive()) dispatch({ type: 'CANCEL_ITEM', id });

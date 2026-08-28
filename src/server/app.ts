@@ -61,7 +61,7 @@ app.get('/api/health', (req, res) => {
 app.all('/api/*', (req, res) => res.status(404).json({ error: 'Not Found' }));
 
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Server Error:', err.message);
+  console.error('Unhandled server error.');
   if (err.type === 'entity.too.large') {
     return res.status(413).json({ error: 'Payload Too Large' });
   }

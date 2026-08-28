@@ -14,6 +14,7 @@ import {
   QueryDocumentSnapshot,
   SnapshotOptions,
   FirestoreDataConverter,
+  QuerySnapshot,
   serverTimestamp,
   runTransaction,
   writeBatch,
@@ -45,6 +46,7 @@ import {
   normalizeMerchantName,
 } from '../../domain/categories';
 import { replaceCategoryInReceiptWithRetry } from '../../domain/categoryReplacement';
+import { SequencedAsyncSubscription } from './subscriptionIsolation';
 
 const processTimestamp = (value: unknown) => {
   if (value && typeof (value as { toDate?: unknown }).toDate === 'function') {
@@ -106,7 +108,7 @@ export const converters = {
       data.lastLoginAt = processTimestamp(data.lastLoginAt);
       const parsed = UserProfileSchema.safeParse(data);
       if (!parsed.success) {
-        console.error("Malformed UserProfile:", snapshot.id, parsed.error);
+        console.error('Stored user profile validation failed.');
         throw new Error("Malformed UserProfile");
       }
       return parsed.data;
@@ -121,7 +123,7 @@ export const converters = {
       
       const parsed = ReceiptSchema.safeParse(data);
       if (!parsed.success) {
-        console.error("Malformed Receipt:", snapshot.id, parsed.error);
+        console.error('Stored receipt validation failed.');
         return { _malformed: true, id: snapshot.id, error: parsed.error };
       }
       return parsed.data;
@@ -135,7 +137,7 @@ export const converters = {
       data.createdAt = processTimestamp(data.createdAt);
       const parsed = CategorySchema.safeParse(data);
       if (!parsed.success) {
-        console.error("Malformed Category:", snapshot.id, parsed.error);
+        console.error('Stored category validation failed.');
         return { _malformed: true, id: snapshot.id, error: parsed.error };
       }
       return parsed.data;
@@ -158,7 +160,7 @@ const hydrateReceiptItems = async (receiptRef: ReturnType<typeof doc>, data: Doc
   const normalized = normalizeReceiptTimestamps(data);
   const parsed = ReceiptSchema.safeParse(normalized);
   if (!parsed.success) {
-    console.error('Malformed Receipt:', receiptRef.id, parsed.error);
+    console.error('Stored receipt validation failed.');
     return { _malformed: true, id: receiptRef.id, error: parsed.error };
   }
 
@@ -174,9 +176,9 @@ const hydrateReceiptItems = async (receiptRef: ReturnType<typeof doc>, data: Doc
       .sort((left, right) => Number(left.id) - Number(right.id))
       .map(item => parseStoredReceiptItem(item.data()));
     return { ...parsed.data, items };
-  } catch (error) {
-    console.error('Malformed Receipt items:', receiptRef.id, error);
-    return { _malformed: true, id: receiptRef.id, error };
+  } catch {
+    console.error('Stored receipt item validation failed.');
+    return { _malformed: true, id: receiptRef.id };
   }
 };
 
@@ -212,7 +214,8 @@ export const userRepository = {
 
     if (userSnap.exists()) {
       const current = userSnap.data();
-      setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true }).catch(console.warn);
+      setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true })
+        .catch(() => console.warn('Could not update the profile login timestamp.'));
       return current;
     }
 
@@ -226,7 +229,7 @@ export const userRepository = {
     };
     try {
       await setDoc(userRef, newProfile as any);
-      this.seedDefaultCategories(uid).catch(console.warn);
+      this.seedDefaultCategories(uid).catch(() => console.warn('Could not seed default categories.'));
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${uid}`, auth);
     }
@@ -273,16 +276,27 @@ export const receiptRepository = {
     // We order by transactionDate descending
     const q = query(receiptsRef, where('status', '==', 'confirmed'), orderBy('transactionDate', 'desc'));
     
-    return onSnapshot(q, async (snapshot) => {
-      const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
-      onUpdate(receipts.filter(receipt => !receipt._malformed));
+    const sequencer = new SequencedAsyncSubscription<QuerySnapshot<DocumentData>, ReceiptDocument[]>({
+      hydrate: async snapshot => {
+        const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
+        return receipts.filter(receipt => !receipt._malformed);
+      },
+      onUpdate,
+      onError: error => onError(error instanceof Error ? error : new Error('Could not load receipts.')),
+    });
+    const unsubscribe = onSnapshot(q, snapshot => {
+      sequencer.next(snapshot);
     }, (error) => {
       try {
         handleFirestoreError(error, OperationType.LIST, `users/${uid}/receipts`, auth);
       } catch (e: any) {
-        onError(e);
+        sequencer.fail(e);
       }
     });
+    return () => {
+      sequencer.deactivate();
+      unsubscribe();
+    };
   },
 
   subscribeToPendingReceipts(uid: string, onUpdate: (receipts: ReceiptDocument[]) => void, onError: (error: Error) => void) {
@@ -290,16 +304,27 @@ export const receiptRepository = {
     const receiptsRef = collection(db, `users/${uid}/receipts`);
     const q = query(receiptsRef, where('status', '==', 'pendingReview'), orderBy('createdAt', 'desc'));
     
-    return onSnapshot(q, async (snapshot) => {
-      const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
-      onUpdate(receipts.filter(receipt => !receipt._malformed));
+    const sequencer = new SequencedAsyncSubscription<QuerySnapshot<DocumentData>, ReceiptDocument[]>({
+      hydrate: async snapshot => {
+        const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
+        return receipts.filter(receipt => !receipt._malformed);
+      },
+      onUpdate,
+      onError: error => onError(error instanceof Error ? error : new Error('Could not load pending receipts.')),
+    });
+    const unsubscribe = onSnapshot(q, snapshot => {
+      sequencer.next(snapshot);
     }, (error) => {
       try {
         handleFirestoreError(error, OperationType.LIST, `users/${uid}/receipts`, auth);
       } catch (e: any) {
-        onError(e);
+        sequencer.fail(e);
       }
     });
+    return () => {
+      sequencer.deactivate();
+      unsubscribe();
+    };
   },
 
   async updateReceipt(uid: string, receiptId: string, data: Partial<ReceiptDocument>, currentVersion?: number): Promise<void> {
@@ -603,15 +628,21 @@ export const categoryRepository = {
     const categoriesRef = collection(db, `users/${uid}/categories`).withConverter(converters.category);
     const q = query(categoriesRef, orderBy('order', 'asc'));
     
-    return onSnapshot(q, (snapshot) => {
-      onUpdate(snapshot.docs.map(doc => doc.data()));
+    let active = true;
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (active) onUpdate(snapshot.docs.map(doc => doc.data()));
     }, (error) => {
+      if (!active) return;
       try {
         handleFirestoreError(error, OperationType.LIST, `users/${uid}/categories`, auth);
       } catch (e: any) {
         onError(e);
       }
     });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   },
 
   async deleteCategory(uid: string, categoryId: string): Promise<void> {
@@ -673,7 +704,8 @@ export const aliasRepository = {
   subscribeToAliases(uid: string, onUpdate: (aliases: AliasDocument[]) => void, onError: (error: Error) => void) {
     const auth = getAuth();
     const aliasesRef = collection(db, `users/${uid}/aliases`);
-    return onSnapshot(aliasesRef, snapshot => {
+    let active = true;
+    const unsubscribe = onSnapshot(aliasesRef, snapshot => {
       const aliases = snapshot.docs.flatMap(aliasSnapshot => {
         const parsed = AliasSchema.safeParse({
           ...aliasSnapshot.data(),
@@ -682,14 +714,19 @@ export const aliasRepository = {
         });
         return parsed.success ? [parsed.data] : [];
       });
-      onUpdate(aliases.sort((left, right) => left.merchantNormalized.localeCompare(right.merchantNormalized)));
+      if (active) onUpdate(aliases.sort((left, right) => left.merchantNormalized.localeCompare(right.merchantNormalized)));
     }, error => {
+      if (!active) return;
       try {
         handleFirestoreError(error, OperationType.LIST, `users/${uid}/aliases`, auth);
       } catch (handled) {
         onError(handled as Error);
       }
     });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   },
 
   async getAliasForMerchant(uid: string, merchantName: string): Promise<AliasDocument | null> {
@@ -757,14 +794,20 @@ export const settingsRepository = {
   subscribeToSettings(uid: string, onUpdate: (settings: AppSettingsDocument) => void, onError: (error: Error) => void) {
     const auth = getAuth();
     const docRef = doc(db, `users/${uid}/settings/default`).withConverter(converters.settings);
-    return onSnapshot(docRef, snapshot => {
-      onUpdate(snapshot.exists() ? snapshot.data() : AppSettingsSchema.parse({}));
+    let active = true;
+    const unsubscribe = onSnapshot(docRef, snapshot => {
+      if (active) onUpdate(snapshot.exists() ? snapshot.data() : AppSettingsSchema.parse({}));
     }, error => {
+      if (!active) return;
       try {
         handleFirestoreError(error, OperationType.GET, `users/${uid}/settings/default`, auth);
       } catch (handled) {
         onError(handled as Error);
       }
     });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }
 };

@@ -7,80 +7,69 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  };
+const SAFE_FIRESTORE_CODES = new Set([
+  'already-exists',
+  'cancelled',
+  'deadline-exceeded',
+  'failed-precondition',
+  'not-found',
+  'permission-denied',
+  'resource-exhausted',
+  'unauthenticated',
+  'unavailable',
+]);
+
+export function sanitizeFirestoreErrorCode(error: unknown): string {
+  const rawCode = typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code?: unknown }).code ?? '')
+    : '';
+  const normalized = rawCode.toLowerCase().split('/').pop() ?? '';
+  return SAFE_FIRESTORE_CODES.has(normalized) ? normalized : 'unknown';
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null, auth: any): never {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth?.currentUser?.uid,
-      email: auth?.currentUser?.email,
-      emailVerified: auth?.currentUser?.emailVerified,
-      isAnonymous: auth?.currentUser?.isAnonymous,
-      tenantId: auth?.currentUser?.tenantId,
-      providerInfo: auth?.currentUser?.providerData?.map((provider: any) => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  _path: string | null,
+  _auth: unknown,
+): never {
+  const code = sanitizeFirestoreErrorCode(error);
+  console.error('Firestore operation failed.', { operationType, code });
 
-  const code = (error as any)?.code || '';
   const rawMsg = error instanceof Error ? error.message : String(error);
 
   let friendlyMessage = 'An unexpected database error occurred. Please try again.';
 
   if (
     code === 'permission-denied' ||
-    code.includes('permission-denied') ||
     rawMsg.includes('Missing or insufficient permissions') ||
     rawMsg.includes('permission-denied')
   ) {
     friendlyMessage = "You don't have permission to do that.";
   } else if (
     code === 'unavailable' ||
-    code.includes('unavailable') ||
     rawMsg.includes('offline') ||
     rawMsg.includes('unavailable') ||
     rawMsg.includes('the client is offline')
   ) {
     friendlyMessage = "You're offline — changes will sync later.";
-  } else if (code === 'not-found' || code.includes('not-found') || rawMsg.includes('not-found')) {
+  } else if (code === 'not-found' || rawMsg.includes('not-found')) {
     friendlyMessage = 'The requested item was not found.';
   } else if (
     code === 'resource-exhausted' ||
-    code.includes('resource-exhausted') ||
     rawMsg.includes('Quota exceeded') ||
     rawMsg.includes('resource-exhausted')
   ) {
     friendlyMessage = 'Database quota exceeded. Please try again later.';
-  } else if (code === 'unauthenticated' || code.includes('unauthenticated') || rawMsg.includes('unauthenticated')) {
+  } else if (code === 'unauthenticated' || rawMsg.includes('unauthenticated')) {
     friendlyMessage = 'Authentication required. Please sign in again.';
-  } else if (code === 'already-exists' || code.includes('already-exists')) {
+  } else if (code === 'already-exists') {
     friendlyMessage = 'This item already exists.';
-  } else if (code === 'deadline-exceeded' || code.includes('deadline-exceeded')) {
+  } else if (code === 'deadline-exceeded') {
     friendlyMessage = 'Database operation timed out. Please try again.';
-  } else if (code === 'failed-precondition' || code.includes('failed-precondition')) {
+  } else if (code === 'failed-precondition') {
     friendlyMessage = 'Database operation failed. Please check your data and try again.';
-  } else if (code === 'cancelled' || code.includes('cancelled')) {
+  } else if (code === 'cancelled') {
     friendlyMessage = 'Operation was cancelled.';
   }
 

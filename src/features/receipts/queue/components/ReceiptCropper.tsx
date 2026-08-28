@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Cropper from 'react-easy-crop';
 import { getCroppedImg } from '../../../../utils/imageUtils';
 
@@ -14,6 +14,16 @@ export function ReceiptCropper({ imageSrc, onSave, onCancel }: Props) {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const mountedRef = useRef(true);
+  const activeImageSrcRef = useRef(imageSrc);
+  activeImageSrcRef.current = imageSrc;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
     setCroppedAreaPixels(croppedAreaPixels);
@@ -21,14 +31,16 @@ export function ReceiptCropper({ imageSrc, onSave, onCancel }: Props) {
 
   const handleSave = async () => {
     if (!croppedAreaPixels) return;
+    const source = imageSrc;
     setProcessing(true);
     try {
-      const croppedBlob = await getCroppedImg(imageSrc, croppedAreaPixels, rotation);
+      const croppedBlob = await getCroppedImg(source, croppedAreaPixels, rotation);
+      if (!mountedRef.current || activeImageSrcRef.current !== source) return;
       onSave(croppedBlob);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      console.error('Failed to crop receipt image.');
     } finally {
-      setProcessing(false);
+      if (mountedRef.current && activeImageSrcRef.current === source) setProcessing(false);
     }
   };
 

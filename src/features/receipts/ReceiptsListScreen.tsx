@@ -20,8 +20,10 @@ import { ReceiptDetailModal } from './library/ReceiptDetailModal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { getReceiptItemCategoryLabel } from '../../domain/categories';
+import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
 
 export function ReceiptsListScreen() {
+  const sessionActions = useClientSessionActionGuard();
   const { 
     filteredReceipts,
     receipts,
@@ -84,16 +86,20 @@ export function ReceiptsListScreen() {
   const handleDelete = async () => {
     const id = receiptToDelete;
     if (!id) return;
+    const scope = sessionActions.capture();
+    if (!scope) return;
 
     try {
       await deleteReceipt(id);
+      if (!sessionActions.isActive(scope)) return;
       if (selectedReceipt?.id === id) closeReceiptModal();
       showToast('Receipt deleted.', 'success');
-    } catch (deleteError) {
-      console.error('Failed to delete receipt:', deleteError);
+    } catch {
+      if (!sessionActions.isActive(scope)) return;
+      console.error('Failed to delete receipt.');
       showToast('Could not delete this receipt. Please try again.', 'error');
     } finally {
-      setReceiptToDelete(null);
+      if (sessionActions.isActive(scope)) setReceiptToDelete(null);
     }
   };
 

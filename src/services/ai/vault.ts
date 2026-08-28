@@ -1,6 +1,6 @@
 import {
   EncryptedKeyRecord,
-  LegacyPlaintextKeyRecord,
+  LegacyKeyReentryMetadata,
   VaultInspection,
   VaultMetadata,
   VaultState
@@ -11,6 +11,11 @@ const DB_VERSION = 1;
 const metadataId = (uid: string) => `${uid}_metadata`;
 
 type StoredVaultEntry = Record<string, unknown> & { id: string; uid: string };
+export type LegacyReentryMarker = StoredVaultEntry & {
+  recordType: 'reentry-required';
+  slotId: number;
+  requiresReentry: true;
+};
 
 /**
  * Keeps cleanup scoped to the authenticated user's records, including vault
@@ -29,6 +34,41 @@ export function isEncryptedVaultRecord(value: unknown): value is EncryptedKeyRec
     typeof record.ciphertextBase64 === 'string' &&
     typeof record.ivBase64 === 'string'
   );
+}
+
+export function isLegacyReentryMarker(value: unknown): value is LegacyReentryMarker {
+  const record = value as Partial<LegacyReentryMarker> | null;
+  return Boolean(
+    record &&
+    typeof record.id === 'string' &&
+    typeof record.uid === 'string' &&
+    record.recordType === 'reentry-required' &&
+    typeof record.slotId === 'number' &&
+    record.requiresReentry === true
+  );
+}
+
+export function createLegacyReentryMarker(entry: StoredVaultEntry): LegacyReentryMarker {
+  if (typeof entry.slotId !== 'number') throw new Error('Legacy vault record is missing its slot identifier.');
+  return {
+    id: entry.id,
+    uid: entry.uid,
+    recordType: 'reentry-required',
+    slotId: entry.slotId,
+    requiresReentry: true,
+  };
+}
+
+export function getLegacyVaultReplacement(entry: StoredVaultEntry): LegacyReentryMarker | null {
+  if (entry.recordType === 'metadata' || isEncryptedVaultRecord(entry) || isLegacyReentryMarker(entry)) return null;
+  return typeof entry.slotId === 'number' ? createLegacyReentryMarker(entry) : null;
+}
+
+export function planLegacyVaultReplacements(entries: StoredVaultEntry[]): LegacyReentryMarker[] {
+  return entries.flatMap(entry => {
+    const replacement = getLegacyVaultReplacement(entry);
+    return replacement ? [replacement] : [];
+  });
 }
 
 export function shouldPersistKey(isSessionOnly: boolean) {
@@ -97,37 +137,57 @@ export class AiVault {
   }
 
   async getInspection(): Promise<VaultInspection> {
-    const entries = await this.getEntriesForUser();
-    const metadataEntry = entries.find(entry => entry.id === metadataId(this.uid) && entry.recordType === 'metadata');
-    const metadata = metadataEntry && metadataEntry.metadataVersion === 2 && typeof metadataEntry.saltBase64 === 'string'
-      ? { metadataVersion: 2 as const, saltBase64: metadataEntry.saltBase64 }
-      : null;
+    const db = await this.initDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction('encrypted_keys', 'readwrite');
+      const store = transaction.objectStore('encrypted_keys');
+      const request = store.getAll();
+      let inspection: VaultInspection | null = null;
 
-    const encryptedKeys: EncryptedKeyRecord[] = [];
-    const legacyKeys: Array<Omit<LegacyPlaintextKeyRecord, 'key'>> = [];
-    for (const entry of entries) {
-      if (entry.id === metadataId(this.uid)) continue;
-      if (isEncryptedVaultRecord(entry)) {
-        encryptedKeys.push({
-          slotId: entry.slotId,
-          label: entry.label,
-          maskedKey: entry.maskedKey,
-          isEnabled: entry.isEnabled,
-          recordVersion: 2,
-          ciphertextBase64: entry.ciphertextBase64,
-          ivBase64: entry.ivBase64
-        });
-      } else if (typeof entry.slotId === 'number') {
-        // Never return a legacy record's plaintext `key` to application memory.
-        legacyKeys.push({
-          slotId: entry.slotId,
-          label: typeof entry.label === 'string' ? entry.label : undefined,
-          maskedKey: typeof entry.maskedKey === 'string' ? entry.maskedKey : '••••••••',
-          isEnabled: entry.isEnabled !== false
-        });
-      }
-    }
-    return { metadata, encryptedKeys, legacyKeys };
+      request.onsuccess = () => {
+        const allEntries = (request.result || []) as StoredVaultEntry[];
+        const entries = selectVaultEntriesForUser(allEntries, this.uid);
+        const metadataEntry = entries.find(entry => entry.id === metadataId(this.uid) && entry.recordType === 'metadata');
+        const metadata = metadataEntry && metadataEntry.metadataVersion === 2 && typeof metadataEntry.saltBase64 === 'string'
+          ? { metadataVersion: 2 as const, saltBase64: metadataEntry.saltBase64 }
+          : null;
+        const encryptedKeys: EncryptedKeyRecord[] = [];
+        const legacyKeys: LegacyKeyReentryMetadata[] = [];
+
+        for (const entry of entries) {
+          if (entry.id === metadataId(this.uid) && entry.recordType === 'metadata') continue;
+          if (isEncryptedVaultRecord(entry)) {
+            encryptedKeys.push({
+              slotId: entry.slotId,
+              label: entry.label,
+              maskedKey: entry.maskedKey,
+              isEnabled: entry.isEnabled,
+              recordVersion: 2,
+              ciphertextBase64: entry.ciphertextBase64,
+              ivBase64: entry.ivBase64,
+            });
+          } else if (typeof entry.slotId === 'number') {
+            legacyKeys.push({ slotId: entry.slotId });
+          }
+        }
+        for (const replacement of planLegacyVaultReplacements(allEntries)) store.put(replacement);
+        for (const entry of allEntries) {
+          if (getLegacyVaultReplacement(entry)) {
+            for (const property of Object.keys(entry)) delete entry[property];
+          }
+        }
+        allEntries.length = 0;
+        entries.length = 0;
+        inspection = { metadata, encryptedKeys, legacyKeys };
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => {
+        if (inspection) resolve(inspection);
+        else reject(new Error('Could not inspect the local key vault.'));
+      };
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
   }
 
   async saveEncryptedKey(record: EncryptedKeyRecord): Promise<void> {
@@ -186,7 +246,7 @@ export class AiVault {
   async clearLegacyForUser(): Promise<void> {
     const entries = await this.getEntriesForUser();
     const legacyIds = entries
-      .filter(entry => entry.id !== metadataId(this.uid) && !isEncryptedVaultRecord(entry) && typeof entry.slotId === 'number')
+      .filter(entry => entry.recordType !== 'metadata' && !isEncryptedVaultRecord(entry) && typeof entry.slotId === 'number')
       .map(entry => entry.id);
     await this.deleteEntries(legacyIds);
   }

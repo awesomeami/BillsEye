@@ -17,10 +17,10 @@ interface ReceiptQueueContextType {
 
 const ReceiptQueueContext = createContext<ReceiptQueueContextType | null>(null);
 
-function disposeQueueItem(item: QueueItem) {
+function disposeQueueItem(item: QueueItem, ownerUid: string | null) {
   if (!item.abortController.signal.aborted) item.abortController.abort();
   if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
-  if (item.receiptId) ImageSessionStore.delete(item.receiptId);
+  if (item.receiptId && ownerUid) ImageSessionStore.deleteForUser(ownerUid, item.receiptId);
 }
 
 export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
@@ -33,11 +33,11 @@ export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
   const previousUserIdRef = useRef<string | null>(userId);
 
   const clearQueue = useCallback(() => {
-    itemsRef.current.forEach(disposeQueueItem);
+    itemsRef.current.forEach(item => disposeQueueItem(item, userId));
     itemsRef.current = [];
-    ImageSessionStore.clear();
+    if (userId) ImageSessionStore.clearForUser(userId);
     dispatch({ type: 'CLEAR_QUEUE' });
-  }, []);
+  }, [userId]);
 
   // Queue files and object URLs are owned by the active account only.
   useEffect(() => {
@@ -147,7 +147,7 @@ export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
 
   const removeItem = (id: string) => {
     const item = itemsRef.current.find(candidate => candidate.id === id);
-    if (item) disposeQueueItem(item);
+    if (item) disposeQueueItem(item, userId);
     itemsRef.current = itemsRef.current.filter(candidate => candidate.id !== id);
     dispatch({ type: 'REMOVE_ITEM', id });
   };
@@ -160,7 +160,8 @@ export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
 
   const updateCroppedImage = (id: string, newBlob: Blob) => {
     const item = itemsRef.current.find(i => i.id === id);
-    if (item?.objectUrl) {
+    if (!item) return;
+    if (item.objectUrl) {
       URL.revokeObjectURL(item.objectUrl);
     }
     const objectUrl = URL.createObjectURL(newBlob);

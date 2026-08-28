@@ -8,18 +8,18 @@ export const ImageSessionStore = {
       activeUserId = userId;
     }
   },
-  set(receiptId: string, image: Blob) {
-    if (!activeUserId) return;
+  setForUser(userId: string, receiptId: string, image: Blob) {
+    if (activeUserId !== userId) return;
     sessionImages.set(receiptId, image);
   },
-  get(receiptId: string): Blob | undefined {
-    return sessionImages.get(receiptId);
+  getForUser(userId: string, receiptId: string): Blob | undefined {
+    return activeUserId === userId ? sessionImages.get(receiptId) : undefined;
   },
-  delete(receiptId: string) {
-    sessionImages.delete(receiptId);
+  deleteForUser(userId: string, receiptId: string) {
+    if (activeUserId === userId) sessionImages.delete(receiptId);
   },
-  clear() {
-    sessionImages.clear();
+  clearForUser(userId: string) {
+    if (activeUserId === userId) sessionImages.clear();
   },
   getActiveUserId() {
     return activeUserId;

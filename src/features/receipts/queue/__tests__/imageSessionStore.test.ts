@@ -4,21 +4,22 @@ import { ImageSessionStore } from '../../../../utils/imageSessionStore';
 
 describe('ImageSessionStore auth isolation', () => {
   afterEach(() => {
-    ImageSessionStore.clear();
     ImageSessionStore.setActiveUser(null);
   });
 
   test('does not retain an old user image after a session change or sign-out', () => {
     const image = new Blob(['private receipt'], { type: 'image/jpeg' });
     ImageSessionStore.setActiveUser('user-a');
-    ImageSessionStore.set('receipt-a', image);
-    assert.strictEqual(ImageSessionStore.get('receipt-a'), image);
+    ImageSessionStore.setForUser('user-a', 'receipt-a', image);
+    assert.strictEqual(ImageSessionStore.getForUser('user-a', 'receipt-a'), image);
 
     ImageSessionStore.setActiveUser('user-b');
-    assert.strictEqual(ImageSessionStore.get('receipt-a'), undefined);
+    assert.strictEqual(ImageSessionStore.getForUser('user-a', 'receipt-a'), undefined);
+    ImageSessionStore.setForUser('user-a', 'late-receipt-a', image);
+    assert.strictEqual(ImageSessionStore.getForUser('user-a', 'late-receipt-a'), undefined);
 
-    ImageSessionStore.set('receipt-b', image);
+    ImageSessionStore.setForUser('user-b', 'receipt-b', image);
     ImageSessionStore.setActiveUser(null);
-    assert.strictEqual(ImageSessionStore.get('receipt-b'), undefined);
+    assert.strictEqual(ImageSessionStore.getForUser('user-b', 'receipt-b'), undefined);
   });
 });
