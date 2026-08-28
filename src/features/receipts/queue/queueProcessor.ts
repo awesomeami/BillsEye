@@ -33,6 +33,46 @@ export interface QueueRotationManager {
   getEarliestRetryTime(): number | null;
 }
 
+export interface RetryTimer {
+  setTimeout(callback: () => void, delayMs: number): ReturnType<typeof setTimeout>;
+  clearTimeout(handle: ReturnType<typeof setTimeout>): void;
+}
+
+/** Schedules the earliest retry wake-up and is explicitly disposable on unmount. */
+export class QueueRetryScheduler {
+  private handle: ReturnType<typeof setTimeout> | null = null;
+  private scheduledFor: number | null = null;
+
+  constructor(
+    private readonly onRetryDue: () => void,
+    private readonly timers: RetryTimer = { setTimeout, clearTimeout },
+  ) {}
+
+  schedule(items: QueueItem[], now = Date.now()) {
+    const nextRetry = items.reduce<number | null>((earliest, item) => {
+      if (item.status !== 'retry-wait' || item.retryAfter === undefined) return earliest;
+      return earliest === null ? item.retryAfter : Math.min(earliest, item.retryAfter);
+    }, null);
+
+    if (nextRetry === this.scheduledFor && this.handle !== null) return;
+    this.cancel();
+    if (nextRetry === null) return;
+
+    this.scheduledFor = nextRetry;
+    this.handle = this.timers.setTimeout(() => {
+      this.handle = null;
+      this.scheduledFor = null;
+      this.onRetryDue();
+    }, Math.max(0, nextRetry - now));
+  }
+
+  cancel() {
+    if (this.handle !== null) this.timers.clearTimeout(this.handle);
+    this.handle = null;
+    this.scheduledFor = null;
+  }
+}
+
 export interface ProcessQueueAttemptOptions {
   item: QueueItem;
   userId: string;
@@ -231,12 +271,13 @@ export class SequentialQueueRunner {
   }
 
   private async run(item: QueueItem) {
-    let outcome: QueueProcessingOutcome = 'stopped';
     try {
-      outcome = await this.options.processItem(item);
+      await this.options.processItem(item);
     } finally {
       this.processingItemId = null;
-      if (outcome === 'continue' && this.options.canContinue()) {
+      // A delayed, cancelled, or failed item must never starve a later item
+      // that is already eligible. Session teardown leaves no eligible item.
+      if (this.options.canContinue()) {
         this.options.requestNext();
       }
     }

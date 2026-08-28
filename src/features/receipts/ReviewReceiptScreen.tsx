@@ -13,6 +13,7 @@ import { calculateReceiptTotals } from '../../domain/reconciliation';
 import { applyMerchantCategoryAlias, canonicalizeReceiptItemCategories, resolveReceiptItemCategoryId } from '../../domain/categories';
 import { useReceiptsLibrary } from './library/ReceiptsLibraryContext';
 import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
+import { useReceiptQueue } from './queue/ReceiptQueueContext';
 import {
   applyAuthoritativeReceiptSave,
   isReceiptEditorDirty,
@@ -76,6 +77,7 @@ export function ReviewReceiptScreen() {
   const userId = user?.uid;
   const { showToast } = useToast();
   const { categories, settings } = useReceiptsLibrary();
+  const { finalizeReceipt, releaseReceiptForReview } = useReceiptQueue();
   const sessionActions = useClientSessionActionGuard();
   const navigate = useNavigate();
   const [receipt, setReceipt] = useState<ReceiptDocument | null>(null);
@@ -98,6 +100,10 @@ export function ReviewReceiptScreen() {
   const imageUrlRef = useRef<string | null>(null);
   const activeReceiptIdRef = useRef<string | null>(id ?? null);
   activeReceiptIdRef.current = id ?? null;
+
+  useEffect(() => {
+    if (id) releaseReceiptForReview(id);
+  }, [id, releaseReceiptForReview]);
 
   const clearImagePreview = useCallback(() => {
     if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
@@ -305,7 +311,7 @@ export function ReviewReceiptScreen() {
       setMoneyText(editor.moneyText);
       setMoneyErrors({});
       if (status === 'confirmed') {
-        ImageSessionStore.deleteForUser(scope.uid, receiptId);
+        finalizeReceipt(receiptId);
         clearImagePreview();
         navigate('/');
       } else {
@@ -342,7 +348,7 @@ export function ReviewReceiptScreen() {
     try {
       await receiptRepository.deleteReceipt(scope.uid, receiptId);
       if (!active()) return;
-      ImageSessionStore.deleteForUser(scope.uid, receiptId);
+      finalizeReceipt(receiptId);
       clearImagePreview();
       navigate('/');
     } catch {

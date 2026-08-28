@@ -4,6 +4,7 @@ import {
   processQueueAttempt,
   QueueAttemptServices,
   QueueExecutor,
+  QueueRetryScheduler,
   QueueRotationManager,
   SequentialQueueRunner,
 } from './queueProcessor';
@@ -58,6 +59,7 @@ export const useQueueProcessor = ({
   latestRef.current = { state, dispatch, user, executor, getDecryptedKey, rotationManager };
 
   const runnerRef = useRef<SequentialQueueRunner | null>(null);
+  const retrySchedulerRef = useRef<QueueRetryScheduler | null>(null);
   if (!runnerRef.current) {
     runnerRef.current = new SequentialQueueRunner({
       getNextItem: () => latestRef.current.state.find(item => item.status === 'queued'),
@@ -86,11 +88,23 @@ export const useQueueProcessor = ({
     });
   }
 
+  if (!retrySchedulerRef.current) {
+    retrySchedulerRef.current = new QueueRetryScheduler(() => {
+      latestRef.current.dispatch({ type: 'RETRY_DUE', now: Date.now() });
+    });
+  }
+
   useEffect(() => {
     runnerRef.current?.wake();
   }, [state, userId, executor, getDecryptedKey, rotationManager]);
 
+  useEffect(() => {
+    retrySchedulerRef.current?.schedule(state);
+    return () => retrySchedulerRef.current?.cancel();
+  }, [state]);
+
   useEffect(() => () => {
+    retrySchedulerRef.current?.cancel();
     activeUserIdRef.current = null;
     sessionVersionRef.current += 1;
     latestRef.current = { ...latestRef.current, state: [], user: null, executor: null };

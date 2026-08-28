@@ -4,11 +4,13 @@ import { FileText, X } from 'lucide-react';
 interface Props {
   file: File;
   totalPages: number;
+  position?: number;
+  totalFiles?: number;
   onConfirm: (pages: number[]) => void;
   onCancel: () => void;
 }
 
-export function PdfPageSelector({ file, totalPages, onConfirm, onCancel }: Props) {
+export function PdfPageSelector({ file, totalPages, position, totalFiles, onConfirm, onCancel }: Props) {
   const [selectedPages, setSelectedPages] = useState<string>('1');
   const [error, setError] = useState('');
 
@@ -53,13 +55,13 @@ export function PdfPageSelector({ file, totalPages, onConfirm, onCancel }: Props
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+      <div role="dialog" aria-modal="true" aria-labelledby="pdf-page-selector-title" className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
         <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gray-50/50">
-          <h2 className="font-semibold flex items-center gap-2">
+          <h2 id="pdf-page-selector-title" className="font-semibold flex items-center gap-2">
             <FileText size={18} className="text-gray-500" />
             Select PDF Pages
           </h2>
-          <button onClick={onCancel} className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-lg transition-colors">
+          <button onClick={onCancel} aria-label="Skip this PDF" className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-lg transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -68,13 +70,15 @@ export function PdfPageSelector({ file, totalPages, onConfirm, onCancel }: Props
           <div>
             <p className="text-sm font-medium text-gray-900 mb-1">{file.name}</p>
             <p className="text-xs text-gray-500">This document has {totalPages} pages.</p>
+            {position !== undefined && totalFiles !== undefined && totalFiles > 1 && <p className="text-xs text-gray-500 mt-1">PDF {position} of {totalFiles}. Select pages for this file before moving to the next.</p>}
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="pdf-pages" className="block text-sm font-medium text-gray-700 mb-1">
               Pages to Extract (max 20)
             </label>
             <input 
+              id="pdf-pages"
               type="text" 
               value={selectedPages}
               onChange={(e) => { setSelectedPages(e.target.value); setError(''); }}

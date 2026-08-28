@@ -6,14 +6,15 @@ import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
 import { Link } from 'react-router-dom';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ReceiptDocument } from '../../domain/schema';
-import { ImageSessionStore } from '../../utils/imageSessionStore';
 import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
+import { useReceiptQueue } from '../receipts/queue/ReceiptQueueContext';
 
 export function InboxScreen() {
   const sessionActions = useClientSessionActionGuard();
   const { showToast } = useToast();
   const { pendingReceipts, updateReceipt, deleteReceipt } = useReceiptsLibrary();
+  const { finalizeReceipt } = useReceiptQueue();
   
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -25,7 +26,7 @@ export function InboxScreen() {
       try {
         await deleteReceipt(receiptId);
         if (!sessionActions.isActive(scope)) return;
-        ImageSessionStore.deleteForUser(scope.uid, receiptId);
+        finalizeReceipt(receiptId);
       } catch {
         if (!sessionActions.isActive(scope)) return;
         console.error('Failed to delete receipt.');
@@ -46,7 +47,7 @@ export function InboxScreen() {
         status: 'confirmed'
       }, receipt.revision);
       if (!sessionActions.isActive(scope)) return;
-      ImageSessionStore.deleteForUser(scope.uid, receipt.id);
+      finalizeReceipt(receipt.id);
     } catch {
       if (!sessionActions.isActive(scope)) return;
       console.error('Failed to confirm receipt.');

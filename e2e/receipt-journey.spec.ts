@@ -164,3 +164,25 @@ test('a concurrent receipt update preserves local edits and retries against the 
   await page.getByRole('button', { name: 'Save Draft' }).click();
   await expect(page.getByText('Draft saved.')).toBeVisible();
 });
+
+test('the in-memory queue continues across app navigation and releases an item on review', async ({ page }) => {
+  await mockExtraction(page);
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await page.getByRole('link', { name: 'Add Receipt' }).first().click();
+  await page.locator('input[type="file"][accept="image/jpeg,image/png,image/webp"]').first().setInputFiles(receiptImagePath);
+
+  await expect(page.getByRole('link', { name: 'Review' })).toBeVisible();
+  await page.getByRole('link', { name: 'Home' }).click();
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Add Receipt' }).first().click();
+  const review = page.getByRole('link', { name: 'Review' });
+  await expect(review).toBeVisible();
+  await review.click();
+  await expect(page.getByRole('heading', { name: 'Review Receipt' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Add Receipt' }).first().click();
+  await expect(page.getByText('Privacy & Memory Notice')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Review' })).toHaveCount(0);
+});

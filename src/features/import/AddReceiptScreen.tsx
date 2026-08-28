@@ -1,16 +1,17 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useToast } from '../../components/ui/Toast';
 import { Camera, Image as ImageIcon, FileText, Upload, X, RotateCw, Crop, CheckCircle2, AlertCircle, Clock, Search, ChevronRight, Slash } from 'lucide-react';
-import { useBlocker, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useReceiptQueue } from '../receipts/queue/ReceiptQueueContext';
-import { QueueItem, isRetryableQueueStatus, isTerminalQueueStatus } from '../receipts/queue/queueReducer';
+import { QueueItem, isRetryableQueueStatus } from '../receipts/queue/queueReducer';
 import { ReceiptCropper } from '../receipts/queue/components/ReceiptCropper';
 import { PdfPageSelector } from './PdfPageSelector';
+import { PdfSelectionRequest, preparePdfSelections } from './pdfSelectionQueue';
 
 export function AddReceiptScreen() {
   const { showToast } = useToast();
 
-  const { items, addFiles, addPdfPages, removeItem, cancelItem, retryItem, updateCroppedImage } = useReceiptQueue();
+  const { items, addFiles, addPdfPages, removeItem, releaseForReview, cancelItem, retryItem, updateCroppedImage } = useReceiptQueue();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -18,9 +19,8 @@ export function AddReceiptScreen() {
   
   const [dragActive, setDragActive] = useState(false);
   const [cropItem, setCropItem] = useState<QueueItem | null>(null);
-  const [pdfToProcess, setPdfToProcess] = useState<{ file: File, totalPages: number } | null>(null);
-
-  const hasActiveQueue = items.some(i => !isTerminalQueueStatus(i.status));
+  const [pdfSelections, setPdfSelections] = useState<PdfSelectionRequest[]>([]);
+  const pdfToProcess = pdfSelections[0] ?? null;
 
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
@@ -34,13 +34,6 @@ export function AddReceiptScreen() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
-
-  useBlocker(({ currentLocation, nextLocation }) => {
-    if (hasActiveQueue && currentLocation.pathname !== nextLocation.pathname) {
-      return !window.confirm('You have active receipts processing. If you leave, they will be discarded. Are you sure?');
-    }
-    return false;
-  });
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -61,14 +54,13 @@ export function AddReceiptScreen() {
     }
 
     if (pdfs.length > 0) {
-      // Only handle the first PDF for now to avoid multiple modals
-      const firstPdf = pdfs[0];
-      try {
-        const { getPdfPageCount } = await import('./../../utils/pdfProcessor');
-        const totalPages = await getPdfPageCount(firstPdf);
-        setPdfToProcess({ file: firstPdf, totalPages });
-      } catch {
-        showToast("Could not read PDF file.", "error");
+      const { getPdfPageCount } = await import('./../../utils/pdfProcessor');
+      const prepared = await preparePdfSelections(pdfs, getPdfPageCount);
+      if (prepared.selections.length > 0) {
+        setPdfSelections(current => [...current, ...prepared.selections]);
+      }
+      if (prepared.unreadableFiles.length > 0) {
+        showToast(`Could not read ${prepared.unreadableFiles.join(', ')}.`, 'error');
       }
     }
   };
@@ -90,7 +82,7 @@ export function AddReceiptScreen() {
     if (e.target) e.target.value = '';
   };
 
-  const retryFailed = () => {
+  const retryScheduled = () => {
     items.forEach(i => {
       if (isRetryableQueueStatus(i.status)) {
         retryItem(i.id);
@@ -125,6 +117,7 @@ export function AddReceiptScreen() {
         type="file" 
         ref={pdfInputRef} 
         className="hidden" 
+        multiple
         accept="application/pdf"
         onChange={handleFileChange}
       />
@@ -152,11 +145,16 @@ export function AddReceiptScreen() {
         <PdfPageSelector
           file={pdfToProcess.file}
           totalPages={pdfToProcess.totalPages}
+          position={1}
+          totalFiles={pdfSelections.length}
           onConfirm={(pages) => {
             addPdfPages(pdfToProcess.file, pages);
-            setPdfToProcess(null);
+            setPdfSelections(current => current.slice(1));
           }}
-          onCancel={() => setPdfToProcess(null)}
+          onCancel={() => {
+            showToast(`${pdfToProcess.file.name} was skipped.`, 'info');
+            setPdfSelections(current => current.slice(1));
+          }}
         />
       )}
 
@@ -183,7 +181,7 @@ export function AddReceiptScreen() {
             <div>
               <p className="font-medium">Privacy & Memory Notice</p>
               <p className="text-blue-700/80 mt-1">
-                Images are processed in memory only to protect your privacy. Original files are never saved permanently. If you refresh or close this page, pending uploads will be discarded. We do not support HEIC formats natively—please convert to JPG/PNG first.
+                Images are processed in memory only to protect your privacy. Original files are never saved permanently. Refreshing or closing the browser permanently drops queued uploads and temporary review images; a receipt already saved for review remains in your Inbox, but its image may need to be reattached. We do not support HEIC formats natively—please convert to JPG/PNG first.
               </p>
             </div>
           </div>
@@ -231,7 +229,7 @@ export function AddReceiptScreen() {
            <div className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-200">
              <div>
                <h3 className="font-bold text-gray-900">Processing Queue ({items.length})</h3>
-               <p className="text-sm text-gray-500">Keep this page open until finished.</p>
+               <p className="text-sm text-gray-500">You can navigate elsewhere while processing continues. Refreshing or closing the browser loses queued files and temporary review images.</p>
              </div>
              <div className="flex gap-2">
                 <button 
@@ -242,10 +240,10 @@ export function AddReceiptScreen() {
                 </button>
                 {items.some(i => isRetryableQueueStatus(i.status)) && (
                   <button 
-                    onClick={retryFailed}
+                    onClick={retryScheduled}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 cursor-pointer"
                   >
-                    Retry Failed
+                    Retry Now
                   </button>
                 )}
              </div>
@@ -255,9 +253,11 @@ export function AddReceiptScreen() {
              {items.map(item => (
                <QueueItemCard 
                  key={item.id} 
-                 item={item} 
-                 onRemove={() => removeItem(item.id)}
-                 onCrop={() => setCropItem(item)}
+               item={item}
+               onRemove={() => removeItem(item.id)}
+               onReview={() => releaseForReview(item.id)}
+               onRetry={() => retryItem(item.id)}
+               onCrop={() => setCropItem(item)}
                  onCancel={() => cancelItem(item.id)}
                />
              ))}
@@ -268,7 +268,7 @@ export function AddReceiptScreen() {
   );
 }
 
-function QueueItemCard({ item, onRemove, onCrop, onCancel }: { item: QueueItem, onRemove: () => void, onCrop: () => void, onCancel: () => void }) {
+function QueueItemCard({ item, onRemove, onReview, onRetry, onCrop, onCancel }: { item: QueueItem, onRemove: () => void, onReview: () => void, onRetry: () => void, onCrop: () => void, onCancel: () => void }) {
   const getStatusDisplay = () => {
     switch (item.status) {
       case 'queued': return { text: 'Waiting...', icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100' };
@@ -277,8 +277,8 @@ function QueueItemCard({ item, onRemove, onCrop, onCancel }: { item: QueueItem, 
       case 'extracting': return { text: 'Extracting data...', icon: RotateCw, color: 'text-purple-600', bg: 'bg-purple-100', spin: true };
       case 'needs-review': return { text: 'Needs Review', icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-100' };
       case 'duplicate': return { text: 'Exact Duplicate Skipped', icon: AlertCircle, color: 'text-orange-600', bg: 'bg-orange-100' };
-      case 'retry-wait': return { text: `Waiting to retry (Cooldown)`, icon: Clock, color: 'text-red-600', bg: 'bg-red-100' };
-      case 'failed-permanent': return { text: 'Failed', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-100' };
+      case 'retry-wait': return { text: 'Retry scheduled', icon: Clock, color: 'text-amber-700', bg: 'bg-amber-100' };
+      case 'failed-permanent': return { text: 'Could not process — choose another file', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-100' };
       case 'cancelled': return { text: 'Cancelled', icon: Slash, color: 'text-gray-500', bg: 'bg-gray-200' };
       default: return { text: item.status, icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100' };
     }
@@ -316,7 +316,7 @@ function QueueItemCard({ item, onRemove, onCrop, onCancel }: { item: QueueItem, 
             <span className={`flex items-center justify-center w-5 h-5 rounded-full ${statusInfo.bg} ${statusInfo.color}`}>
               <Icon size={12} className={statusInfo.spin ? 'animate-spin' : ''} />
             </span>
-            <span className={`text-xs font-medium ${statusInfo.color}`}>
+            <span role="status" className={`text-xs font-medium ${statusInfo.color}`}>
               {statusInfo.text}
               {item.retryAfter && item.status === 'retry-wait' ? ` (Earliest: ${new Date(item.retryAfter).toLocaleTimeString()})` : ''}
             </span>
@@ -325,9 +325,15 @@ function QueueItemCard({ item, onRemove, onCrop, onCancel }: { item: QueueItem, 
       </div>
       <div className="shrink-0 flex items-center gap-2">
         {item.status === 'needs-review' && item.receiptId && (
-          <Link to={`/receipts/${item.receiptId}/review`} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 text-sm font-medium">
+          <Link to={`/receipts/${item.receiptId}/review`} onClick={onReview} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 text-sm font-medium">
             Review <ChevronRight size={16} />
           </Link>
+        )}
+
+        {item.status === 'needs-review' && (
+          <button onClick={onRemove} aria-label={`Dismiss ${item.originalName} from the queue`} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium">
+            Dismiss
+          </button>
         )}
         
         {item.status === 'duplicate' && item.receiptId && (
@@ -339,15 +345,23 @@ function QueueItemCard({ item, onRemove, onCrop, onCancel }: { item: QueueItem, 
         {(item.status === 'preprocessing' || item.status === 'duplicate-check' || item.status === 'extracting') && (
           <button 
             onClick={onCancel}
+            aria-label={`Cancel processing ${item.originalName}`}
             className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors text-sm font-medium"
           >
             Cancel
           </button>
         )}
 
-        {(item.status === 'queued' || item.status === 'failed-permanent' || item.status === 'retry-wait' || item.status === 'cancelled') && (
+        {item.status === 'retry-wait' && (
+          <button onClick={onRetry} aria-label={`Retry ${item.originalName} now`} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium">
+            Retry now
+          </button>
+        )}
+
+        {(item.status === 'queued' || item.status === 'failed-permanent' || item.status === 'retry-wait' || item.status === 'cancelled' || item.status === 'duplicate') && (
           <button 
             onClick={onRemove}
+            aria-label={`Remove ${item.originalName} from the queue`}
             className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
           >
             <X size={20} />

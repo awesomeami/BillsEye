@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { useAiKeys } from '../../settings/ai/AiKeysContext';
-import { queueReducer, QueueItem, QueueAction, isTerminalQueueStatus } from './queueReducer';
+import { queueReducer, QueueItem, QueueAction } from './queueReducer';
 import { useQueueProcessor } from './useQueueProcessor';
 import { ImageSessionStore } from '../../../utils/imageSessionStore';
 
@@ -10,6 +10,9 @@ interface ReceiptQueueContextType {
   addFiles: (files: File[]) => Promise<void>;
   addPdfPages: (file: File, pages: number[]) => void;
   removeItem: (id: string) => void;
+  releaseForReview: (id: string) => void;
+  releaseReceiptForReview: (receiptId: string) => void;
+  finalizeReceipt: (receiptId: string) => void;
   cancelItem: (id: string) => void;
   retryItem: (id: string) => void;
   updateCroppedImage: (id: string, newBlob: Blob) => void;
@@ -17,10 +20,10 @@ interface ReceiptQueueContextType {
 
 const ReceiptQueueContext = createContext<ReceiptQueueContextType | null>(null);
 
-function disposeQueueItem(item: QueueItem, ownerUid: string | null) {
+function disposeQueueItem(item: QueueItem, ownerUid: string | null, clearReviewImage = true) {
   if (!item.abortController.signal.aborted) item.abortController.abort();
   if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
-  if (item.receiptId && ownerUid) ImageSessionStore.deleteForUser(ownerUid, item.receiptId);
+  if (clearReviewImage && item.receiptId && ownerUid) ImageSessionStore.deleteForUser(ownerUid, item.receiptId);
 }
 
 export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
@@ -71,8 +74,8 @@ export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
   }, [items]);
 
   const warnBeforeUnload = useCallback((e: BeforeUnloadEvent) => {
-    const hasActive = items.some(i => !isTerminalQueueStatus(i.status));
-    if (hasActive) {
+    const hasMemoryOnlyWork = items.some(item => item.status !== 'duplicate' && item.status !== 'cancelled');
+    if (hasMemoryOnlyWork) {
       e.preventDefault();
       e.returnValue = '';
     }
@@ -151,6 +154,27 @@ export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
     itemsRef.current = itemsRef.current.filter(candidate => candidate.id !== id);
     dispatch({ type: 'REMOVE_ITEM', id });
   };
+  const releaseForReview = useCallback((id: string) => {
+    const item = itemsRef.current.find(candidate => candidate.id === id);
+    if (!item || item.status !== 'needs-review') return;
+    // The review editor uses the separate, memory-only session image. Release
+    // queue state without deleting that hand-off image.
+    disposeQueueItem(item, userId, false);
+    itemsRef.current = itemsRef.current.filter(candidate => candidate.id !== id);
+    dispatch({ type: 'REMOVE_ITEM', id });
+  }, [userId]);
+  const releaseReceiptForReview = useCallback((receiptId: string) => {
+    itemsRef.current
+      .filter(item => item.receiptId === receiptId && item.status === 'needs-review')
+      .forEach(item => releaseForReview(item.id));
+  }, [releaseForReview]);
+  const finalizeReceipt = useCallback((receiptId: string) => {
+    const matching = itemsRef.current.filter(item => item.receiptId === receiptId);
+    matching.forEach(item => disposeQueueItem(item, userId));
+    itemsRef.current = itemsRef.current.filter(item => item.receiptId !== receiptId);
+    matching.forEach(item => dispatch({ type: 'REMOVE_ITEM', id: item.id }));
+    if (userId) ImageSessionStore.deleteForUser(userId, receiptId);
+  }, [userId]);
   const cancelItem = (id: string) => {
     const item = itemsRef.current.find(candidate => candidate.id === id);
     if (item && !item.abortController.signal.aborted) item.abortController.abort();
@@ -172,7 +196,7 @@ export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <ReceiptQueueContext.Provider value={{ items, addFiles, addPdfPages, removeItem, cancelItem, retryItem, updateCroppedImage }}>
+    <ReceiptQueueContext.Provider value={{ items, addFiles, addPdfPages, removeItem, releaseForReview, releaseReceiptForReview, finalizeReceipt, cancelItem, retryItem, updateCroppedImage }}>
       {children}
     </ReceiptQueueContext.Provider>
   );

@@ -59,10 +59,10 @@ describe('queueReducer', () => {
     assert.strictEqual(newState[0].status, 'cancelled');
   });
 
-  test('retries failed item and resets error and retry state', () => {
+  test('retries a delayed item and resets error and retry state', () => {
     const initialState: QueueItem[] = [
       {
-        ...createMockItem('1', 'failed-permanent'),
+        ...createMockItem('1', 'retry-wait'),
         error: 'Network error',
         retryAfter: 12345
       }
@@ -75,9 +75,22 @@ describe('queueReducer', () => {
     assert.ok(newState[0].abortController);
   });
 
-  test('identifies both retryable failure states for the queue controls', () => {
+  test('makes only expired scheduled retries eligible with a fresh controller', () => {
+    const expired = { ...createMockItem('expired', 'retry-wait'), retryAfter: 100 };
+    const delayed = { ...createMockItem('delayed', 'retry-wait'), retryAfter: 200 };
+    const previousController = expired.abortController;
+
+    const state = queueReducer([expired, delayed], { type: 'RETRY_DUE', now: 100 });
+
+    assert.strictEqual(state[0].status, 'queued');
+    assert.strictEqual(state[0].retryAfter, undefined);
+    assert.notStrictEqual(state[0].abortController, previousController);
+    assert.strictEqual(state[1].status, 'retry-wait');
+  });
+
+  test('identifies only a scheduled retry as retryable', () => {
     assert.strictEqual(isRetryableQueueStatus('retry-wait'), true);
-    assert.strictEqual(isRetryableQueueStatus('failed-permanent'), true);
+    assert.strictEqual(isRetryableQueueStatus('failed-permanent'), false);
     assert.strictEqual(isRetryableQueueStatus('duplicate'), false);
   });
 

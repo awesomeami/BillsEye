@@ -242,4 +242,40 @@ describe('receipt queue processor', () => {
     assert.deepStrictEqual(processed, ['first', 'second']);
     assert.ok(state.every(item => item.status === 'needs-review'));
   });
+
+  test('continues to a later queued item when an earlier item enters retry-wait', async () => {
+    let state = [createItem('delayed'), createItem('eligible')];
+    const claims: string[] = [];
+    const processed: string[] = [];
+    const runnerHolder: { current?: SequentialQueueRunner } = {};
+
+    const runner = new SequentialQueueRunner({
+      getNextItem: () => state.find(item => item.status === 'queued'),
+      claimItem: item => {
+        claims.push(item.id);
+        state = queueReducer(state, { type: 'START_ATTEMPT', id: item.id, timestamp: claims.length });
+      },
+      processItem: async item => {
+        processed.push(item.id);
+        if (item.id === 'delayed') {
+          state = queueReducer(state, { type: 'UPDATE_ITEM', id: item.id, updates: { status: 'retry-wait', retryAfter: 100 } });
+          return 'pause';
+        }
+        state = queueReducer(state, { type: 'UPDATE_ITEM', id: item.id, updates: { status: 'needs-review' } });
+        return 'continue';
+      },
+      canContinue: () => true,
+      requestNext: () => { runnerHolder.current?.wake(); },
+    });
+    runnerHolder.current = runner;
+
+    runner.wake();
+    await flush();
+    await flush();
+
+    assert.deepStrictEqual(claims, ['delayed', 'eligible']);
+    assert.deepStrictEqual(processed, ['delayed', 'eligible']);
+    assert.strictEqual(state[0].status, 'retry-wait');
+    assert.strictEqual(state[1].status, 'needs-review');
+  });
 });

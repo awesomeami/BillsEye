@@ -15,7 +15,7 @@ export const isTerminalQueueStatus = (status: QueueItemStatus) =>
   ['needs-review', 'failed-permanent', 'cancelled', 'duplicate'].includes(status);
 
 export const isRetryableQueueStatus = (status: QueueItemStatus) =>
-  status === 'retry-wait' || status === 'failed-permanent';
+  status === 'retry-wait';
 
 export interface QueueItem {
   id: string;
@@ -43,7 +43,18 @@ export type QueueAction =
   | { type: 'REMOVE_ITEM'; id: string }
   | { type: 'CANCEL_ITEM'; id: string }
   | { type: 'RETRY_ITEM'; id: string }
+  | { type: 'RETRY_DUE'; now: number }
   | { type: 'CLEAR_QUEUE' };
+
+function prepareForRetry(item: QueueItem): QueueItem {
+  return {
+    ...item,
+    status: 'queued',
+    error: undefined,
+    retryAfter: undefined,
+    abortController: new AbortController(),
+  };
+}
 
 export const queueReducer = (state: QueueItem[], action: QueueAction): QueueItem[] => {
   switch (action.type) {
@@ -81,13 +92,16 @@ export const queueReducer = (state: QueueItem[], action: QueueAction): QueueItem
     case 'RETRY_ITEM':
       return state.map(item =>
         item.id === action.id && isRetryableQueueStatus(item.status)
-          ? { 
-              ...item, 
-              status: 'queued', 
-              error: undefined, 
-              retryAfter: undefined,
-              abortController: new AbortController() // fresh controller for new attempt
-            }
+          ? prepareForRetry(item)
+          : item
+      );
+
+    case 'RETRY_DUE':
+      return state.map(item =>
+        item.status === 'retry-wait'
+          && item.retryAfter !== undefined
+          && item.retryAfter <= action.now
+          ? prepareForRetry(item)
           : item
       );
 
