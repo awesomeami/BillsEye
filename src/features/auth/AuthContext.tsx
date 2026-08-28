@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { 
+import {
   onAuthStateChanged, 
   signInWithPopup, 
   signOut as firebaseSignOut,
@@ -7,11 +7,19 @@ import {
   getRedirectResult,
   reauthenticateWithPopup,
 } from 'firebase/auth';
-import { auth, googleProvider } from '../../services/firebase/config';
+import { clearIndexedDbPersistence, terminate } from 'firebase/firestore';
+import { auth, db, googleProvider } from '../../services/firebase/config';
 import { userRepository } from '../../services/firebase/db';
 import { useToast } from '../../components/ui/Toast';
 import { ImageSessionStore } from '../../utils/imageSessionStore';
 import { isE2eMockMode } from '../../config/e2eMocks';
+import { AiVault } from '../../services/ai/vault';
+import {
+  clearLegacyVaultRemnants,
+  clearOfflineDeviceData,
+  getClearOfflineDataOnSignOutPreference,
+  shouldClearOfflineDataAfterSignOut,
+} from '../../services/firebase/offlineStorage';
 
 export interface AuthenticatedUser {
   uid: string;
@@ -49,6 +57,16 @@ function getErrorCode(error: unknown): string | null {
   if (typeof error !== 'object' || error === null || !('code' in error)) return null;
   const { code } = error as { code?: unknown };
   return typeof code === 'string' ? code : null;
+}
+
+async function clearOfflineDataAfterSignOut(uid: string): Promise<void> {
+  const vault = new AiVault(uid);
+  await clearOfflineDeviceData({
+    terminateFirestore: () => terminate(db),
+    clearFirestorePersistence: () => clearIndexedDbPersistence(db),
+    clearLocalVault: () => vault.clearAllForUser(),
+    clearLegacyVaultRemnants,
+  });
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -156,9 +174,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
+    const signedOutUserId = auth.currentUser?.uid ?? user?.uid ?? null;
+    const clearOfflineData = shouldClearOfflineDataAfterSignOut(
+      getClearOfflineDataOnSignOutPreference(),
+      signedOutUserId,
+    );
     beginAuthTransition(null);
     try {
       await firebaseSignOut(auth);
+      if (clearOfflineData && signedOutUserId) {
+        try {
+          await clearOfflineDataAfterSignOut(signedOutUserId);
+          window.location.reload();
+        } catch {
+          // Do not say the device was cleared unless every cleanup step succeeded.
+          console.error('Could not confirm local offline-data clearing after sign-out.');
+          showToast('You signed out, but local offline-data clearing could not be confirmed. Use Settings to clear this device before sharing it.', 'error');
+        }
+      }
     } catch (err: unknown) {
       const currentUser = auth.currentUser;
       beginAuthTransition(currentUser);

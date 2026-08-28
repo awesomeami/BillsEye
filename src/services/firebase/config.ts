@@ -3,6 +3,7 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache } from 'firebase/firestore';
 
 import { getValidatedClientFirebaseConfig } from './clientConfig';
+import { getTrustedDevicePreference } from './offlineStorage';
 
 const envOverrides = {
   FIREBASE_PROJECT_ID: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -26,7 +27,10 @@ googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
 
-export const isTrustedDevice = localStorage.getItem('kharchalens_trusted_device') === 'true';
+// This preference is read exactly once when Firestore is initialized. Switching
+// persistence mode therefore requires terminating the current client and a
+// reload; Settings makes that explicit before saving a new preference.
+export const isTrustedDevice = getTrustedDevicePreference();
 
 export const db = initializeFirestore(app, {
   localCache: isTrustedDevice 

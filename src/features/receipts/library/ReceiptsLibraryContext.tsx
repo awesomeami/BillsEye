@@ -4,6 +4,11 @@ import { receiptRepository, categoryRepository, settingsRepository } from '../..
 import { ReceiptDocument, CategoryDocument, AppSettingsDocument, AppSettingsSchema } from '../../../domain/schema';
 import { filterAndSortReceipts, FilterState, SortState } from './libraryUtils';
 import { ActiveSessionGuard } from '../../../services/firebase/subscriptionIsolation';
+import {
+  deriveReceiptSyncState,
+  FirestoreSnapshotSyncMetadata,
+  ReceiptSyncState,
+} from './syncState';
 
 const initialFilters: FilterState = {
   searchQuery: '',
@@ -26,7 +31,7 @@ interface ReceiptsLibraryContextType {
   settings: AppSettingsDocument;
   loading: boolean;
   error: Error | null;
-  syncState: 'syncing' | 'synced' | 'offline' | 'error';
+  syncState: ReceiptSyncState;
   lastSyncedAt: Date | null;
   filters: FilterState;
   sort: SortState;
@@ -38,6 +43,9 @@ interface ReceiptsLibraryContextType {
 
 const ReceiptsLibraryContext = createContext<ReceiptsLibraryContextType | undefined>(undefined);
 
+const getBrowserOnlineStatus = () => typeof navigator === 'undefined' || navigator.onLine;
+const initialSyncErrors = () => ({ confirmed: false, pending: false, categories: false, settings: false });
+
 export function ReceiptsLibraryProvider({ children }: { children: React.ReactNode }) {
   const { user, sessionEpoch } = useAuth();
   const userId = user?.uid ?? null;
@@ -48,7 +56,10 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
   const [settings, setSettings] = useState<AppSettingsDocument>(() => AppSettingsSchema.parse({}));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [syncState, setSyncState] = useState<'syncing' | 'synced' | 'offline' | 'error'>('syncing');
+  const [online, setOnline] = useState(getBrowserOnlineStatus);
+  const [confirmedSnapshotSync, setConfirmedSnapshotSync] = useState<FirestoreSnapshotSyncMetadata | null>(null);
+  const [pendingSnapshotSync, setPendingSnapshotSync] = useState<FirestoreSnapshotSyncMetadata | null>(null);
+  const [syncErrors, setSyncErrors] = useState(initialSyncErrors);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   const [filters, setFilters] = useState<FilterState>(initialFilters);
@@ -64,7 +75,10 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
       setSettings(AppSettingsSchema.parse({}));
       setLoading(isLoading);
       setError(null);
-      setSyncState(isLoading ? 'syncing' : 'synced');
+      setConfirmedSnapshotSync(null);
+      setPendingSnapshotSync(null);
+      setSyncErrors(initialSyncErrors());
+      setOnline(getBrowserOnlineStatus());
       setLastSyncedAt(null);
       setFilters(initialFilters);
       setSort({ field: 'date', order: 'desc' });
@@ -92,22 +106,21 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
     const unsubReceipts = receiptRepository.subscribeToReceipts(userId, (data) => {
       if (!isActive()) return;
       setReceipts(data);
-      setSyncState('synced');
-      setLastSyncedAt(new Date());
       if (isInitialReceiptLoad) {
         isInitialReceiptLoad = false;
         checkLoading();
       }
     }, (err) => {
       if (!isActive()) return;
-      if (err.message.includes('offline')) {
-        setSyncState('offline');
-      } else {
-        setSyncState('error');
-        setError(err);
-      }
+      setSyncErrors(current => ({ ...current, confirmed: true }));
+      setError(err);
       isInitialReceiptLoad = false;
       checkLoading();
+    }, (metadata) => {
+      if (!isActive()) return;
+      setConfirmedSnapshotSync(metadata);
+      setSyncErrors(current => ({ ...current, confirmed: false }));
+      if (!metadata.fromCache && !metadata.hasPendingWrites) setLastSyncedAt(new Date());
     });
 
     const unsubPending = receiptRepository.subscribeToPendingReceipts(userId, (data) => {
@@ -119,20 +132,37 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
       }
     }, () => {
       if (!isActive()) return;
+      setSyncErrors(current => ({ ...current, pending: true }));
       isInitialPendingLoad = false;
       checkLoading();
+    }, (metadata) => {
+      if (!isActive()) return;
+      setPendingSnapshotSync(metadata);
+      setSyncErrors(current => ({ ...current, pending: false }));
     });
 
     const unsubCategories = categoryRepository.subscribeToCategories(userId, (data) => {
-      if (isActive()) setCategories(data);
+      if (isActive()) {
+        setCategories(data);
+        setSyncErrors(current => ({ ...current, categories: false }));
+      }
     }, () => {
-      if (isActive()) setError(new Error('Could not load categories.'));
+      if (isActive()) {
+        setSyncErrors(current => ({ ...current, categories: true }));
+        setError(new Error('Could not load categories.'));
+      }
     });
 
     const unsubSettings = settingsRepository.subscribeToSettings(userId, data => {
-      if (isActive()) setSettings(data);
+      if (isActive()) {
+        setSettings(data);
+        setSyncErrors(current => ({ ...current, settings: false }));
+      }
     }, () => {
-      if (isActive()) setError(new Error('Could not load settings.'));
+      if (isActive()) {
+        setSyncErrors(current => ({ ...current, settings: true }));
+        setError(new Error('Could not load settings.'));
+      }
     });
 
     return () => {
@@ -145,8 +175,14 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
   }, [sessionEpoch, userId]);
 
   useEffect(() => {
-    const handleOnline = () => setSyncState('syncing');
-    const handleOffline = () => setSyncState('offline');
+    const handleOnline = () => {
+      // A browser online event is only a connectivity hint. Wait for fresh
+      // Firestore snapshots before claiming the session is synchronized.
+      setOnline(true);
+      setConfirmedSnapshotSync(null);
+      setPendingSnapshotSync(null);
+    };
+    const handleOffline = () => setOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     return () => {
@@ -154,6 +190,13 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
       window.removeEventListener('offline', handleOffline);
     }
   }, []);
+
+  const syncState = useMemo(() => deriveReceiptSyncState({
+    online,
+    loading,
+    hasError: Object.values(syncErrors).some(Boolean),
+    sources: [confirmedSnapshotSync, pendingSnapshotSync],
+  }), [confirmedSnapshotSync, loading, online, pendingSnapshotSync, syncErrors]);
 
   const filteredReceipts = useMemo(() => {
     return filterAndSortReceipts(receipts, filters, sort);

@@ -13,6 +13,7 @@ const SettingsScreen = React.lazy(() => import('../../features/settings/Settings
 import { AuthProvider, useAuth } from '../../features/auth/AuthContext';
 import { AiKeysProvider } from '../../features/settings/ai/AiKeysContext';
 import { ReceiptQueueProvider } from '../../features/receipts/queue/ReceiptQueueContext';
+import { PwaUpdateProvider } from '../../features/pwa/PwaUpdateProvider';
 
 const router = createBrowserRouter([
   {
@@ -51,7 +52,9 @@ function SessionProviders() {
     <React.Fragment key={sessionEpoch}>
       <AiKeysProvider>
         <ReceiptQueueProvider>
-          <RouterProvider router={router} />
+          <PwaUpdateProvider>
+            <RouterProvider router={router} />
+          </PwaUpdateProvider>
         </ReceiptQueueProvider>
       </AiKeysProvider>
     </React.Fragment>

@@ -99,10 +99,22 @@ export const userRepository = {
 };
 
 export const receiptRepository = {
-  subscribeToReceipts(uid: string, onUpdate: ReceiptListener, _onError: (error: Error) => void) {
+  subscribeToReceipts(
+    uid: string,
+    onUpdate: ReceiptListener,
+    _onError: (error: Error) => void,
+    onMetadata?: (metadata: { fromCache: boolean; hasPendingWrites: boolean }) => void,
+  ) {
+    onMetadata?.({ fromCache: false, hasPendingWrites: false });
     return subscribe(receiptListeners, uid, onUpdate, currentReceipts(uid, 'confirmed'));
   },
-  subscribeToPendingReceipts(uid: string, onUpdate: ReceiptListener, _onError: (error: Error) => void) {
+  subscribeToPendingReceipts(
+    uid: string,
+    onUpdate: ReceiptListener,
+    _onError: (error: Error) => void,
+    onMetadata?: (metadata: { fromCache: boolean; hasPendingWrites: boolean }) => void,
+  ) {
+    onMetadata?.({ fromCache: false, hasPendingWrites: false });
     return subscribe(pendingReceiptListeners, uid, onUpdate, currentReceipts(uid, 'pendingReview'));
   },
   async getReceipts(uid: string): Promise<ReceiptDocument[]> {

@@ -278,7 +278,12 @@ export const userRepository = {
 };
 
 export const receiptRepository = {
-  subscribeToReceipts(uid: string, onUpdate: (receipts: ReceiptDocument[]) => void, onError: (error: Error) => void) {
+  subscribeToReceipts(
+    uid: string,
+    onUpdate: (receipts: ReceiptDocument[]) => void,
+    onError: (error: Error) => void,
+    onMetadata?: (metadata: { fromCache: boolean; hasPendingWrites: boolean }) => void,
+  ) {
     const auth = getAuth();
     const receiptsRef = collection(db, `users/${uid}/receipts`);
     // Realtime sync all confirmed receipts for fast local search/filter
@@ -294,6 +299,10 @@ export const receiptRepository = {
       onError: error => onError(error instanceof Error ? error : new Error('Could not load receipts.')),
     });
     const unsubscribe = onSnapshot(q, snapshot => {
+      onMetadata?.({
+        fromCache: snapshot.metadata.fromCache,
+        hasPendingWrites: snapshot.metadata.hasPendingWrites,
+      });
       sequencer.next(snapshot);
     }, (error) => {
       try {
@@ -308,7 +317,12 @@ export const receiptRepository = {
     };
   },
 
-  subscribeToPendingReceipts(uid: string, onUpdate: (receipts: ReceiptDocument[]) => void, onError: (error: Error) => void) {
+  subscribeToPendingReceipts(
+    uid: string,
+    onUpdate: (receipts: ReceiptDocument[]) => void,
+    onError: (error: Error) => void,
+    onMetadata?: (metadata: { fromCache: boolean; hasPendingWrites: boolean }) => void,
+  ) {
     const auth = getAuth();
     const receiptsRef = collection(db, `users/${uid}/receipts`);
     const q = query(receiptsRef, where('status', '==', 'pendingReview'), orderBy('createdAt', 'desc'));
@@ -322,6 +336,10 @@ export const receiptRepository = {
       onError: error => onError(error instanceof Error ? error : new Error('Could not load pending receipts.')),
     });
     const unsubscribe = onSnapshot(q, snapshot => {
+      onMetadata?.({
+        fromCache: snapshot.metadata.fromCache,
+        hasPendingWrites: snapshot.metadata.hasPendingWrites,
+      });
       sequencer.next(snapshot);
     }, (error) => {
       try {

@@ -186,3 +186,61 @@ test('the in-memory queue continues across app navigation and releases an item o
   await expect(page.getByText('Privacy & Memory Notice')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Review' })).toHaveCount(0);
 });
+
+test('restricted localStorage does not prevent mock-mode startup', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get: () => { throw new DOMException('Blocked by browser policy', 'SecurityError'); },
+    });
+  });
+  await page.goto('/login');
+  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+});
+
+test('shared-device cache settings require confirmation and reflect real connectivity transitions', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await page.getByRole('link', { name: 'Settings' }).click();
+
+  const trustedDevice = page.getByLabel('This is a trusted device');
+  await trustedDevice.click();
+  const confirmation = page.getByRole('alertdialog', { name: 'Enable trusted-device cache?' });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Cancel' }).click();
+  await expect(trustedDevice).not.toBeChecked();
+
+  const clearOnSignOut = page.getByLabel(/Clear offline data when signing out/);
+  await clearOnSignOut.check();
+  await expect(clearOnSignOut).toBeChecked();
+
+  await page.context().setOffline(true);
+  await expect(page.getByRole('status')).toContainText('Offline');
+  await page.context().setOffline(false);
+  await expect(page.getByRole('status')).toContainText('Synchronizing with the cloud');
+});
+
+test('an available PWA update waits for memory-only queue work and dirty receipt edits', async ({ page }) => {
+  await mockExtraction(page);
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await page.getByRole('link', { name: 'Add Receipt' }).first().click();
+  await page.locator('input[type="file"][accept="image/jpeg,image/png,image/webp"]').first().setInputFiles(receiptImagePath);
+  await expect(page.getByRole('link', { name: 'Review' })).toBeVisible();
+
+  await page.evaluate(() => window.dispatchEvent(new Event('kharchalens:e2e-pwa-update-ready')));
+  const updatePrompt = page.getByRole('status', { name: 'Application update available' });
+  const updateButton = updatePrompt.getByRole('button', { name: 'Reload to update' });
+  await expect(updatePrompt).toContainText('queued receipt processing');
+  await expect(updateButton).toBeDisabled();
+
+  await page.getByRole('link', { name: 'Review' }).click();
+  await expect(page.getByRole('heading', { name: 'Review Receipt' })).toBeVisible();
+  await expect(updateButton).toBeEnabled();
+
+  await page.getByLabel('Merchant (Raw)').fill('Unsaved update guard');
+  await expect(updatePrompt).toContainText('receipt edits');
+  await expect(updateButton).toBeDisabled();
+});

@@ -14,6 +14,7 @@ import { applyMerchantCategoryAlias, canonicalizeReceiptItemCategories, resolveR
 import { useReceiptsLibrary } from './library/ReceiptsLibraryContext';
 import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
 import { useReceiptQueue } from './queue/ReceiptQueueContext';
+import { usePwaUpdateReadiness } from '../pwa/PwaUpdateProvider';
 import {
   applyAuthoritativeReceiptSave,
   isReceiptEditorDirty,
@@ -78,6 +79,7 @@ export function ReviewReceiptScreen() {
   const { showToast } = useToast();
   const { categories, settings } = useReceiptsLibrary();
   const { finalizeReceipt, releaseReceiptForReview } = useReceiptQueue();
+  const { setReceiptEditorDirty } = usePwaUpdateReadiness();
   const sessionActions = useClientSessionActionGuard();
   const navigate = useNavigate();
   const [receipt, setReceipt] = useState<ReceiptDocument | null>(null);
@@ -164,6 +166,11 @@ export function ReviewReceiptScreen() {
   }, [id, userId, clearImagePreview, setImagePreview]);
 
   const isDirty = !loading && isReceiptEditorDirty(baseline, formData, moneyText);
+  useEffect(() => {
+    if (!id) return;
+    setReceiptEditorDirty(id, isDirty);
+    return () => setReceiptEditorDirty(id, false);
+  }, [id, isDirty, setReceiptEditorDirty]);
   const blocker = useBlocker(({ currentLocation, nextLocation }) => shouldBlockReceiptNavigation(isDirty, isSaving, currentLocation.pathname, nextLocation.pathname));
   useEffect(() => {
     if (!isDirty) return;

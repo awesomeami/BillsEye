@@ -27,7 +27,10 @@ export default defineConfig(({ command, mode }) => {
       react(), 
       tailwindcss(),
       VitePWA({
-        registerType: 'autoUpdate',
+        // Updates are registered manually by PwaUpdateProvider. They never
+        // activate or reload while a receipt editor or memory-only queue has work.
+        registerType: 'prompt',
+        injectRegister: false,
         includeAssets: ['pwa-192x192.png', 'pwa-512x512.png'],
         manifest: {
           name: 'KharchaLens',

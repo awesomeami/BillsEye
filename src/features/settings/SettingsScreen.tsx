@@ -13,16 +13,83 @@ import { SyncDiagnostic } from './SyncDiagnostic';
 import { useAiKeys } from './ai/AiKeysContext';
 import { PreferencesScreen } from './PreferencesScreen';
 import { MerchantAliasesSettings } from './MerchantAliasesSettings';
+import { db } from '../../services/firebase/config';
+import {
+  clearLegacyVaultRemnants,
+  clearOfflineDeviceData,
+  getClearOfflineDataOnSignOutPreference,
+  getTrustedDevicePreference,
+  setClearOfflineDataOnSignOutPreference,
+  setTrustedDevicePreference,
+} from '../../services/firebase/offlineStorage';
+
+type ConfirmAction = {
+  title: string;
+  message: string;
+  confirmText: string;
+  isDestructive?: boolean;
+  action: () => Promise<void>;
+};
 
 export function SettingsScreen() {
   const { user, signOut } = useAuth();
   const { clearLocalVault } = useAiKeys();
   const { showToast } = useToast();
-  const [isTrustedDevice, setIsTrustedDevice] = useState<boolean>(() => {
-    return localStorage.getItem('kharchalens_trusted_device') === 'true';
-  });
-  const [confirmAction, setConfirmAction] = useState<{ message: string, action: () => void } | null>(null);
+  const [isTrustedDevice, setIsTrustedDevice] = useState<boolean>(() => getTrustedDevicePreference());
+  const [clearOfflineDataOnSignOut, setClearOfflineDataOnSignOut] = useState<boolean>(() => getClearOfflineDataOnSignOutPreference());
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [isCacheActionPending, setIsCacheActionPending] = useState(false);
   const [activeView, setActiveView] = useState<'main' | 'preferences' | 'ai-keys' | 'simulator' | 'extraction-test' | 'categories' | 'aliases' | 'export' | 'privacy'>('main');
+
+  const clearCurrentDeviceData = async (disableTrustedDevice: boolean) => {
+    if (isCacheActionPending) return;
+    setIsCacheActionPending(true);
+    try {
+      const { clearIndexedDbPersistence, terminate } = await import('firebase/firestore');
+      await clearOfflineDeviceData({
+        terminateFirestore: () => terminate(db),
+        clearFirestorePersistence: () => clearIndexedDbPersistence(db),
+        clearLocalVault,
+        clearLegacyVaultRemnants,
+      });
+      if (disableTrustedDevice && !setTrustedDevicePreference(false)) {
+        throw new Error('Could not save the updated device preference.');
+      }
+      if (disableTrustedDevice) setIsTrustedDevice(false);
+      showToast('Offline cache and local key-vault data were cleared. Reloading…', 'success');
+      window.location.reload();
+    } catch {
+      // A failed clear means we must not imply that a shared device is clean.
+      showToast('Could not confirm that local offline data was cleared. Reload and try again before sharing this device.', 'error');
+    } finally {
+      setIsCacheActionPending(false);
+    }
+  };
+
+  const enableTrustedDevice = async () => {
+    if (isCacheActionPending) return;
+    setIsCacheActionPending(true);
+    try {
+      if (!setTrustedDevicePreference(true)) {
+        throw new Error('Could not save the device preference.');
+      }
+      setIsTrustedDevice(true);
+      showToast('Trusted-device cache will be enabled after this reload.', 'success');
+      window.location.reload();
+    } catch {
+      showToast('Could not enable trusted-device mode in this browser.', 'error');
+    } finally {
+      setIsCacheActionPending(false);
+    }
+  };
+
+  const setClearOnSignOut = (enabled: boolean) => {
+    if (!setClearOfflineDataOnSignOutPreference(enabled)) {
+      showToast('Could not save this shared-device preference in this browser.', 'error');
+      return;
+    }
+    setClearOfflineDataOnSignOut(enabled);
+  };
 
   if (activeView === 'preferences') {
     return <div className="max-w-2xl mx-auto"><PreferencesScreen onBack={() => setActiveView('main')} /></div>;
@@ -192,26 +259,47 @@ export function SettingsScreen() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
           <h3 className="font-bold text-gray-900">Device Security & Cache</h3>
           <p className="text-sm text-gray-500">
-            By default, KharchaLens stores data only in temporary memory. If this is your personal, trusted device, you can enable persistent offline cache. This allows the app to load instantly and work offline.
+            By default, KharchaLens stores data only in temporary memory. If this is your personal, trusted device, you can enable persistent offline cache. Changing this setting requires the app to reinitialize Firestore, so it takes effect only after a reload.
           </p>
           <label className="flex items-center gap-3 cursor-pointer">
             <input 
               type="checkbox" 
               className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
               checked={isTrustedDevice}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                setIsTrustedDevice(checked);
-                if (checked) {
-                  localStorage.setItem('kharchalens_trusted_device', 'true');
-                  showToast("This device is now marked as trusted.", "success");
-                } else {
-                  localStorage.removeItem('kharchalens_trusted_device');
-                  showToast("Trusted device mode disabled.", "info");
+              disabled={isCacheActionPending}
+              onChange={(event) => {
+                if (event.target.checked) {
+                  setConfirmAction({
+                    title: 'Enable trusted-device cache?',
+                    message: 'Persistent Firestore cache can retain receipt text on this device. The app will reload to initialize Firestore with this setting.',
+                    confirmText: 'Enable and reload',
+                    action: enableTrustedDevice,
+                  });
+                  return;
                 }
+                setConfirmAction({
+                  title: 'Disable trusted-device cache?',
+                  message: 'This immediately terminates Firestore, clears its IndexedDB cache and local Gemini vault data, then reloads. Pending local writes may be lost.',
+                  confirmText: 'Clear cache and reload',
+                  isDestructive: true,
+                  action: () => clearCurrentDeviceData(true),
+                });
               }}
             />
             <span className="text-sm font-medium text-gray-900 select-none">This is a trusted device</span>
+          </label>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+              checked={clearOfflineDataOnSignOut}
+              disabled={isCacheActionPending}
+              onChange={(event) => setClearOnSignOut(event.target.checked)}
+            />
+            <span className="text-sm text-gray-700">
+              <span className="block font-medium text-gray-900">Clear offline data when signing out</span>
+              Recommended for shared devices. This is off by default and clears Firestore cache and the local key vault only after a successful sign-out.
+            </span>
           </label>
         </div>
       </div>
@@ -219,36 +307,16 @@ export function SettingsScreen() {
 
       <div className="pt-4 pb-8 space-y-4">
         
-        <button 
-          onClick={() => {
-    setConfirmAction({
-      message: "This clears locally cached receipt data and all Gemini-key vault records on this device. Pending writes may be lost. It will NOT delete cloud data. Proceed?",
-      action: async () => {
-        
-              try {
-                await clearLocalVault();
-                const { db } = await import('../../services/firebase/config');
-                const { clearIndexedDbPersistence, terminate } = await import('firebase/firestore');
-                
-                await terminate(db);
-                await clearIndexedDbPersistence(db);
-                
-                // Remove obsolete localStorage vault remnants from earlier builds too.
-                localStorage.removeItem('kharchalens_vault_salt');
-                localStorage.removeItem('kharchalens_vault_iv');
-                localStorage.removeItem('kharchalens_vault_data');
-                
-                
-                showToast("Offline data cleared. The app will now reload.", "success");
-                window.location.reload();
-              } catch {
-                showToast('Could not clear offline data. Please try again.', 'error');
-              }
-            
-      }
-    });
-  }}
-          className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-gray-300 text-gray-700 rounded-xl shadow-sm font-medium hover:bg-gray-50 transition-colors"
+        <button
+          onClick={() => setConfirmAction({
+            title: 'Clear this device’s offline data?',
+            message: 'This terminates Firestore, clears its IndexedDB cache and all local Gemini-key vault records. Pending local writes may be lost. Cloud data is not deleted.',
+            confirmText: 'Clear and reload',
+            isDestructive: true,
+            action: () => clearCurrentDeviceData(false),
+          })}
+          disabled={isCacheActionPending}
+          className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-gray-300 text-gray-700 rounded-xl shadow-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
         >
           <Cpu size={18} />
           Clear this device's offline data
@@ -256,7 +324,7 @@ export function SettingsScreen() {
 
 
         <button 
-          onClick={() => signOut()}
+          onClick={() => void signOut()}
           className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-red-200 text-red-600 rounded-xl shadow-sm font-medium hover:bg-red-50 transition-colors"
         >
           <LogOut size={18} />
@@ -266,17 +334,17 @@ export function SettingsScreen() {
 
       <ConfirmDialog
         isOpen={confirmAction !== null}
-        title="Confirmation"
+        title={confirmAction?.title || 'Confirmation'}
         message={confirmAction?.message || ''}
-        isDestructive={true}
-        confirmText="Proceed"
+        isDestructive={confirmAction?.isDestructive ?? false}
+        confirmText={isCacheActionPending ? 'Working…' : (confirmAction?.confirmText || 'Proceed')}
         onConfirm={() => {
-          if (confirmAction) {
-            confirmAction.action();
+          if (confirmAction && !isCacheActionPending) {
+            void confirmAction.action();
             setConfirmAction(null);
           }
         }}
-        onCancel={() => setConfirmAction(null)}
+        onCancel={() => !isCacheActionPending && setConfirmAction(null)}
       />
     </div>
   );

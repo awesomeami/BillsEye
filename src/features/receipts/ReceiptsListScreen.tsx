@@ -137,13 +137,19 @@ export function ReceiptsListScreen() {
             <span className={cn("text-xs flex items-center gap-1", 
               syncState === 'synced' ? 'text-green-600' :
               syncState === 'offline' ? 'text-yellow-600' :
+              syncState === 'pending-writes' ? 'text-amber-600' :
               syncState === 'error' ? 'text-red-600' : 'text-blue-600'
             )}>
               {syncState === 'synced' && <CheckCircle2 size={12} />}
               {syncState === 'offline' && <AlertTriangle size={12} />}
+              {syncState === 'pending-writes' && <Clock size={12} className="animate-spin" />}
               {syncState === 'error' && <AlertTriangle size={12} />}
               {syncState === 'syncing' && <Clock size={12} className="animate-spin" />}
-              {syncState === 'synced' && lastSyncedAt ? `Synced ${lastSyncedAt.toLocaleTimeString()}` : syncState}
+              {syncState === 'synced' && lastSyncedAt
+                ? `Synced ${lastSyncedAt.toLocaleTimeString()}`
+                : syncState === 'pending-writes'
+                  ? 'Changes pending sync'
+                  : syncState}
             </span>
           </div>
         </div>
