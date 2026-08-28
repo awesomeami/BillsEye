@@ -3,6 +3,11 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "packageManager": "npm@11.12.1",
+  "engines": {
+    "node": "24.15.0",
+    "npm": "11.12.1"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "dev:e2e": "vite --mode e2e --host 127.0.0.1",
@@ -14,10 +19,12 @@
     "typecheck": "tsc --noEmit",
     "test:unit": "tsx --test src/config/__tests__/*.test.ts src/domain/__tests__/*.test.ts src/features/**/__tests__/*.test.ts src/server/__tests__/*.test.ts src/services/export/__tests__/*.test.ts src/services/ai/__tests__/*.test.ts src/services/firebase/__tests__/errors.test.ts src/services/firebase/__tests__/receiptHydrationCache.test.ts",
     "test:firestore": "firebase emulators:exec --only firestore \"npx tsx --test src/services/firebase/__tests__/firestore.rules.test.ts src/services/firebase/__tests__/integration.test.ts\"",
-    "test:e2e": "playwright test",
+    "setup:e2e": "playwright install chromium",
+    "test:e2e": "node scripts/ensure-playwright-chromium.mjs && playwright test",
     "perf:bundle": "node scripts/check-performance-budgets.mjs",
     "test": "npm run test:unit && npm run test:firestore",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "verify": "node scripts/run-verification.mjs",
+    "update-report": "node scripts/run-verification.mjs --write-report"
   },
   "dependencies": {
     "@google/genai": "^2.19.0",
@@ -53,7 +60,6 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^22.14.0",
     "@types/papaparse": "^5.5.2",
-    "@types/pdfjs-dist": "^2.10.378",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@types/supertest": "^7.2.1",
@@ -63,6 +69,7 @@
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
+    "firebase-tools": "15.28.2",
     "supertest": "^7.2.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.23.12",

@@ -58,25 +58,25 @@ npm run lint
 npm run typecheck
 npm run test:unit
 npm run test:firestore
+npm run setup:e2e
+npm run test:e2e
 npm run build
 npm run verify
 ```
 
-`npm run test:firestore` starts and stops the local Firestore emulator through the project-pinned Firebase CLI. `npm run verify` writes a factual [verification report](TEST_REPORT.md) after it runs linting, type checking, unit tests, emulator tests, and the production build. Browser tests are intentionally skipped unless you install Chromium and set `RUN_E2E=1`:
+`npm run test:firestore` starts and stops the local Firestore emulator through the project-pinned Firebase CLI. `npm run setup:e2e` installs Playwright Chromium for local browser tests. `npm run test:e2e` and `npm run verify` check for it first and, if it is absent, give the concise command needed to install it.
 
 ```powershell
-npx playwright install chromium
-$env:RUN_E2E = '1'
-npm run verify
+npm run setup:e2e
 ```
 
-`npm run test:e2e` starts the dedicated `e2e` development mode. `VITE_E2E_MOCKS` is confined to that mode and causes every build to fail, preventing fake authentication or the in-memory repository from entering a deployment.
+`npm run verify` runs linting, type checking, unit tests, Firestore emulator tests, mocked browser journeys, and the production build without changing tracked files. Run `npm run update-report` only when you explicitly want to refresh the committed [verification report](TEST_REPORT.md). `npm run test:e2e` starts the dedicated `e2e` development mode. `VITE_E2E_MOCKS` is confined to that mode and causes every build to fail, preventing fake authentication or the in-memory repository from entering a deployment.
 
 `npm run clean` removes generated `dist` directories on Windows, macOS, and Linux.
 
 ## Pull-request checks
 
-GitHub Actions runs `npm ci`, linting, type checking, unit tests, Firestore emulator tests, the mocked browser journey, and the production build for every pull request. It uses no Firebase credentials, Gemini keys, or user data. If a check fails, open the pull request’s **Checks** tab, open the red **Verify** job, and start with the first failed command. The `verification-artifacts` download contains the generated report and Playwright diagnostics when a browser test fails.
+GitHub Actions runs `npm ci`, linting, type checking, unit tests, Firestore emulator tests, the mocked browser journey, and the production build for every pull request and update to `main`. It installs Playwright Chromium itself and caches the browser download by lockfile. It uses no Firebase credentials, Gemini keys, or user data. If a check fails, open the pull request’s **Checks** tab, open the red **Verify** job, and start with the first failed command. The `verification-artifacts` download contains the explicitly refreshed report and Playwright diagnostics when a browser test fails.
 
 ## Vercel deployment
 

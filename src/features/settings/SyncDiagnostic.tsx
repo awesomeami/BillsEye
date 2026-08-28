@@ -78,8 +78,8 @@ export function SyncDiagnostic() {
       await waitForPendingWrites(db);
       setStatusCleanup('OK');
       
-    } catch (err: any) {
-      setLastError(err.message || String(err));
+    } catch (error) {
+      setLastError(error instanceof Error ? error.message : String(error));
       if (currentStep === 'Write') setStatusWrite('Failed');
       if (currentStep === 'Ack') setStatusAck('Failed');
       if (currentStep === 'Read') setStatusRead('Failed');

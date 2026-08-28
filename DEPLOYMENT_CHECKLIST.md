@@ -6,7 +6,7 @@
 2. Copy `.firebaserc.example` to a local `.firebaserc`, set it to the Firebase project being deployed, and keep it uncommitted.
 3. Create complete production environment variables from `.env.example`. All `VITE_FIREBASE_*` values, the server project/database values, `FIREBASE_SERVICE_ACCOUNT`, and `GEMINI_EXTRACTION_MODEL` are required. `FIREBASE_SERVICE_ACCOUNT` and `GEMINI_EXTRACTION_MODEL` are private server configuration and must not use a `VITE_` prefix.
 4. Enable Firestore and Google Sign-In in Firebase Authentication. Do **not** enable Firebase Storage.
-5. Run `npm run verify`. The command's actual result and any lint warnings belong in `TEST_REPORT.md`; do not claim a passing result without a recorded run.
+5. Install Playwright Chromium with `npm run setup:e2e`, then run `npm run verify`. It includes linting, types, unit tests, Firestore emulator tests, browser journeys, and the production build without changing tracked files. Run `npm run update-report` only when a refreshed committed verification report is wanted.
 
 ## Firebase
 

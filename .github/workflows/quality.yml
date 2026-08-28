@@ -2,6 +2,8 @@ name: Quality checks
 
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -18,7 +20,17 @@ jobs:
     timeout-minutes: 25
     env:
       CI: true
-      RUN_E2E: '1'
+      VITE_FIREBASE_PROJECT_ID: kharchalens-ci
+      VITE_FIREBASE_APP_ID: 123456789:123456789:web:ci
+      VITE_FIREBASE_AUTH_DOMAIN: kharchalens-ci.firebaseapp.com
+      VITE_FIREBASE_DATABASE_ID: (default)
+      VITE_FIREBASE_API_KEY: ci-api-key
+      VITE_FIREBASE_STORAGE_BUCKET: kharchalens-ci.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID: '123456789'
+      FIREBASE_PROJECT_ID: kharchalens-ci
+      FIREBASE_DATABASE_ID: (default)
+      FIREBASE_ADMIN_USE_ADC: 'true'
+      GEMINI_EXTRACTION_MODEL: gemini-2.5-flash
     steps:
       - name: Check out the pull request
         uses: actions/checkout@v4
@@ -38,11 +50,17 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install the browser used by mocked end-to-end tests
         run: npx playwright install --with-deps chromium
 
       - name: Run lint, types, tests, emulator, browser journey, and build
-        run: npm run verify
+        run: npm run update-report
 
       - name: Upload generated verification report and failed browser artifacts
         if: always()

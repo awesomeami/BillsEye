@@ -1,11 +1,10 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useToast } from '../../components/ui/Toast';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { Receipt, ShieldCheck, Loader2 } from 'lucide-react';
 import { useAuth } from './AuthContext';
 
 export function LoginScreen() {
-  const navigate = useNavigate();
   const { signIn, user, loading, error } = useAuth();
   const { showToast } = useToast();
 

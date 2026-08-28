@@ -43,8 +43,8 @@ export function ExtractionTest() {
         getDecryptedKey
       );
       setResult(data);
-    } catch (err: any) {
-      setError(err.message || 'An error occurred during extraction.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'An error occurred during extraction.');
     } finally {
       setLoading(false);
     }

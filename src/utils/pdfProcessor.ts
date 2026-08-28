@@ -31,9 +31,10 @@ export const renderPdfPageToImage = async (file: File, pageNumber: number): Prom
   canvas.height = viewport.height;
   
   await page.render({
+    canvas,
     canvasContext: context,
     viewport: viewport,
-  } as any).promise;
+  }).promise;
   
   const blob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, 'image/jpeg', 0.95);

@@ -72,7 +72,7 @@ export function createAccountRouter(
   const router = Router();
   router.use(express.json({ limit: '100kb' }));
 
-  router.post('/delete', async (req: Request, res: Response): Promise<any> => {
+  router.post('/delete', async (req: Request, res: Response): Promise<Response> => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {

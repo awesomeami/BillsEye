@@ -6,7 +6,7 @@ import { AiRequestExecutor } from '../AiRequestExecutor';
 describe('KeyRotationManager Fake Clock Tests', () => {
   let krm: KeyRotationManager;
   let timeNow = 1000000;
-  let originalDateNow: any;
+  let originalDateNow: () => number;
 
   beforeEach(() => {
     krm = new KeyRotationManager();
@@ -48,9 +48,10 @@ describe('KeyRotationManager Fake Clock Tests', () => {
     
     // First failure
     krm.handleError(0, { code: 'rate_limit', message: 'Rate limit' });
-    let slot = (krm as any).slots[0];
+    let slot = krm.getSlotsForTesting()[0];
     assert.strictEqual(slot.status, 'cooldown');
     assert.ok(slot.failureCount === 1);
+    assert.ok(slot.cooldownUntil !== undefined);
     const firstCooldown = slot.cooldownUntil - timeNow;
     assert.ok(firstCooldown >= 30000 && firstCooldown < 35000); // 30s + jitter
 
@@ -59,8 +60,9 @@ describe('KeyRotationManager Fake Clock Tests', () => {
 
     // Second failure
     krm.handleError(0, { code: 'rate_limit', message: 'Rate limit' });
-    slot = (krm as any).slots[0];
+    slot = krm.getSlotsForTesting()[0];
     assert.ok(slot.failureCount === 2);
+    assert.ok(slot.cooldownUntil !== undefined);
     const secondCooldown = slot.cooldownUntil - timeNow;
     assert.ok(secondCooldown >= 60000 && secondCooldown < 65000); // 60s + jitter
   });
@@ -80,15 +82,14 @@ describe('KeyRotationManager Fake Clock Tests', () => {
           'extractReceipt',
           async () => {
             attemptsCount++;
-            const error: any = new Error('Unauthorized user token');
-            error.status = 401;
+            const error = Object.assign(new Error('Unauthorized user token'), { status: 401 });
             throw error;
           },
           async (index) => `decrypted-key-${index}`
         );
       },
-      (err: any) => {
-        assert.ok(err.message.includes('User authentication failed'));
+      (error: unknown) => {
+        assert.ok(error instanceof Error && error.message.includes('User authentication failed'));
         return true;
       }
     );
@@ -97,7 +98,7 @@ describe('KeyRotationManager Fake Clock Tests', () => {
     assert.strictEqual(attemptsCount, 1, 'Should abort immediately without retrying other keys');
 
     // Slot 0 and Slot 1 must remain untouched
-    const slots = (krm as any).slots;
+    const slots = krm.getSlotsForTesting();
     assert.strictEqual(slots[0].status, 'healthy');
     assert.strictEqual(slots[0].cooldownUntil, undefined);
     assert.strictEqual(slots[0].failureCount, undefined);
@@ -121,8 +122,7 @@ describe('KeyRotationManager Fake Clock Tests', () => {
       async (key) => {
         callIndex++;
         if (key === 'decrypted-key-0') {
-          const error: any = new Error('Rate limit exceeded');
-          error.status = 429;
+          const error = Object.assign(new Error('Rate limit exceeded'), { status: 429 });
           throw error;
         }
         return `success-with-${key}`;
@@ -133,13 +133,13 @@ describe('KeyRotationManager Fake Clock Tests', () => {
     assert.strictEqual(result, 'success-with-decrypted-key-1');
     assert.strictEqual(callIndex, 2);
 
-    const slots = (krm as any).slots;
-    assert.strictEqual(slots[0].status, 'cooldown');
-    assert.strictEqual(slots[0].failureCount, 1);
-    assert.ok(slots[0].cooldownUntil > timeNow);
+    const slots = krm.getSlotsForTesting();
+    assert.strictEqual(slots[0]!.status, 'cooldown');
+    assert.strictEqual(slots[0]!.failureCount, 1);
+    assert.ok(slots[0]!.cooldownUntil !== undefined && slots[0]!.cooldownUntil > timeNow);
 
-    assert.strictEqual(slots[1].status, 'healthy');
-    assert.strictEqual(slots[1].failureCount, 0);
+    assert.strictEqual(slots[1]!.status, 'healthy');
+    assert.strictEqual(slots[1]!.failureCount, 0);
   });
 
   test('AiRequestExecutor: rotates to next key on auth_failed and marks key invalid', async () => {
@@ -154,8 +154,7 @@ describe('KeyRotationManager Fake Clock Tests', () => {
       'extractReceipt',
       async (key) => {
         if (key === 'decrypted-key-0') {
-          const error: any = new Error('Invalid Gemini key');
-          error.status = 403;
+          const error = Object.assign(new Error('Invalid Gemini key'), { status: 403 });
           throw error;
         }
         return `success-with-${key}`;
@@ -165,7 +164,7 @@ describe('KeyRotationManager Fake Clock Tests', () => {
 
     assert.strictEqual(result, 'success-with-decrypted-key-1');
 
-    const slots = (krm as any).slots;
+    const slots = krm.getSlotsForTesting();
     assert.strictEqual(slots[0].status, 'invalid');
     assert.strictEqual(slots[1].status, 'healthy');
   });

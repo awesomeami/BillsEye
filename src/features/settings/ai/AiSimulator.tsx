@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Play, RotateCcw, Activity, StopCircle, Terminal } from 'lucide-react';
+import { Activity, StopCircle, Terminal } from 'lucide-react';
 import { useAiKeys } from './AiKeysContext';
 
 export function AiSimulator() {
@@ -70,8 +70,8 @@ export function AiSimulator() {
       );
       
       addLog(`Success! Result: ${JSON.stringify(result)}`);
-    } catch (err: any) {
-      addLog(`Failed: ${err.message}`);
+    } catch (error) {
+      addLog(`Failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsRunning(false);
       abortControllerRef.current = null;

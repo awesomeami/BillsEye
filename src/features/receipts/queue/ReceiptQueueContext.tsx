@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { useAiKeys } from '../../settings/ai/AiKeysContext';
-import { queueReducer, QueueItem, QueueAction } from './queueReducer';
+import { queueReducer, QueueItem } from './queueReducer';
 import { useQueueProcessor } from './useQueueProcessor';
 import { ImageSessionStore } from '../../../utils/imageSessionStore';
 

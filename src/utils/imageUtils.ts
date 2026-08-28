@@ -28,7 +28,7 @@ export const preprocessImage = async (file: Blob, signal?: AbortSignal, maxSizeB
   let bmp: ImageBitmap;
   try {
     bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch (err: any) {
+  } catch {
     throw new Error('Failed to decode image.');
   }
   

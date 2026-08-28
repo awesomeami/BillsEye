@@ -2,8 +2,8 @@ import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert';
 
 describe('Privacy & Persistence Spies (Mocked Browser Environment)', () => {
-  let localStorageSpy: any = {};
-  let indexedDBSpy: any = {};
+  let localStorageSpy: Record<string, string> = {};
+  let indexedDBSpy: Record<string, unknown> = {};
   
   afterEach(() => {
     localStorageSpy = {};
@@ -27,7 +27,7 @@ describe('Privacy & Persistence Spies (Mocked Browser Environment)', () => {
   });
 
   test('receipt images are never stored in IndexedDB (Firestore cache)', () => {
-    const mockIDBPut = (storeName: string, data: any) => {
+    const mockIDBPut = (storeName: string, data: unknown) => {
       const serialized = JSON.stringify(data);
       if (serialized.includes('data:image') || serialized.includes('blob:http')) {
          throw new Error('Privacy Violation: Image written to IndexedDB');
@@ -46,12 +46,12 @@ describe('Privacy & Persistence Spies (Mocked Browser Environment)', () => {
   test('Service Worker caches do not store OCR images', () => {
      // A well-behaved service worker intercepting POST /api/extract 
      // would explicitly bypass caching because we set Cache-Control: no-store
-     const mockCachePut = (req: string, res: any) => {
+     const mockCachePut = (req: string) => {
          if (req.includes('/api/extract')) {
              throw new Error('Privacy Violation: Caching API responses containing sensitive OCR/images');
          }
      };
      
-     assert.throws(() => mockCachePut('/api/extract', {}), /Privacy Violation/);
+     assert.throws(() => mockCachePut('/api/extract'), /Privacy Violation/);
   });
 });

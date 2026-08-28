@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Cropper from 'react-easy-crop';
+import Cropper, { type Area } from 'react-easy-crop';
 import { getCroppedImg } from '../../../../utils/imageUtils';
 import { useDialogA11y } from '../../../../components/ui/useDialogA11y';
 
@@ -13,7 +13,7 @@ export function ReceiptCropper({ imageSrc, onSave, onCancel }: Props) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [rotation, setRotation] = useState(0);
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [processing, setProcessing] = useState(false);
   const mountedRef = useRef(true);
   const activeImageSrcRef = useRef(imageSrc);
@@ -28,7 +28,7 @@ export function ReceiptCropper({ imageSrc, onSave, onCancel }: Props) {
     };
   }, []);
 
-  const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
+  const onCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 

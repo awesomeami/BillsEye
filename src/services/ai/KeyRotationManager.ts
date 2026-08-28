@@ -114,4 +114,8 @@ export class KeyRotationManager {
   getEligibleCount(): number {
     return this.slots.filter(s => s.isEnabled && s.status !== 'invalid').length;
   }
+
+  getSlotsForTesting(): readonly AiKeySlot[] {
+    return this.slots;
+  }
 }

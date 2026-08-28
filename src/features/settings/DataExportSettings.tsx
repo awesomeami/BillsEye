@@ -38,6 +38,8 @@ const toIsoTimestamp = (value: unknown): string => {
   throw new Error('Backup contains an invalid timestamp.');
 };
 
+const messageForError = (error: unknown): string => error instanceof Error ? error.message : 'An unexpected error occurred.';
+
 export function DataExportSettings({ onBack }: DataExportSettingsProps) {
   const { user, reauthenticateAndGetIdToken, signOut } = useAuth();
   const { clearLocalVault } = useAiKeys();
@@ -99,8 +101,8 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
       const csv = exportReceiptsCSV(receipts);
       downloadFile(new Blob([csv]), 'receipts.csv', 'text/csv;charset=utf-8;');
       setSuccess('CSV exported successfully.');
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error) {
+      setError(messageForError(error));
     } finally {
       setLoading(false);
     }
@@ -114,8 +116,8 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
       const csv = exportItemsCSV(receipts);
       downloadFile(new Blob([csv]), 'items.csv', 'text/csv;charset=utf-8;');
       setSuccess('Items CSV exported successfully.');
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error) {
+      setError(messageForError(error));
     } finally {
       setLoading(false);
     }
@@ -129,8 +131,8 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
       const buffer = await exportExcel(receipts, categories);
       downloadFile(buffer, 'kharchalens_export.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       setSuccess('Excel exported successfully.');
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error) {
+      setError(messageForError(error));
     } finally {
       setLoading(false);
     }
@@ -144,8 +146,8 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
       const buffer = exportPDF(receipts, 'All Time');
       downloadFile(buffer, 'report.pdf', 'application/pdf');
       setSuccess('PDF exported successfully.');
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error) {
+      setError(messageForError(error));
     } finally {
       setLoading(false);
     }
@@ -157,8 +159,8 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
       const json = await generateJSONBackup(await fetchAllData());
       downloadFile(new Blob([json]), 'kharchalens_backup.json', 'application/json');
       setSuccess('JSON Backup exported successfully.');
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error) {
+      setError(messageForError(error));
     } finally {
       setLoading(false);
     }
@@ -204,8 +206,8 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
                   : { new: 0, overwritten: 1, unchanged: 0 },
           },
         });
-      } catch (err: any) {
-        setError(err.message);
+      } catch (error) {
+        setError(messageForError(error));
       } finally {
         setLoading(false);
       }
@@ -277,8 +279,8 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
 
       setSuccess('Restore completed successfully. Existing receipt updates received a new revision.');
       setRestoreDryRun(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (error) {
+      setError(messageForError(error));
     } finally {
       setLoading(false);
     }

@@ -91,6 +91,13 @@ test('mocked sign-in, upload, review, confirmation, dashboard and reports journe
   await page.getByRole('link', { name: 'Inbox' }).click();
   await expect(page.getByRole('heading', { name: "You're all caught up!" })).toBeVisible();
 
+  await page.getByRole('link', { name: 'Receipts' }).click();
+  const receiptDetailsTrigger = page.getByRole('button', { name: 'View details for Example Market' });
+  await receiptDetailsTrigger.click();
+  await expect(page.getByRole('dialog', { name: 'Receipt Details' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(receiptDetailsTrigger).toBeFocused();
+
   await page.getByRole('link', { name: 'Home' }).click();
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   await expect(page.getByRole('link', { name: /Example Market 2026-08-28/ })).toBeVisible();

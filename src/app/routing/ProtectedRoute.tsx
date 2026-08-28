@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../features/auth/AuthContext';
 import { LoadingScreen } from '../../components/ui/LoadingState';
 import { AppLayout } from '../../components/layout/AppLayout';

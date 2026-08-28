@@ -5,7 +5,7 @@ import { generateItemReport } from '../../../domain/analytics';
 import { ReceiptDocument } from '../../../domain/schema';
 import { formatCurrency } from '../../../utilities/config';
 import { DateRange } from '../../../domain/analytics';
-import { ItemAnalytics, ItemObservation } from '../../../domain/items';
+import { ItemObservation } from '../../../domain/items';
 import { TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface Props {

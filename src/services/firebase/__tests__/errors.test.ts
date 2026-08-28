@@ -24,11 +24,12 @@ describe('Firestore Error Handling & Formatting', () => {
       () => {
         handleFirestoreError(rawError, OperationType.GET, 'users/user-secret-123/receipts', fakeAuth);
       },
-      (err: any) => {
-        assert.strictEqual(err.message, "You don't have permission to do that.");
-        assert.ok(!err.message.includes('user-secret-123'));
-        assert.ok(!err.message.includes('user-private@example.com'));
-        assert.ok(!err.message.startsWith('{'));
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.strictEqual(error.message, "You don't have permission to do that.");
+        assert.ok(!error.message.includes('user-secret-123'));
+        assert.ok(!error.message.includes('user-private@example.com'));
+        assert.ok(!error.message.startsWith('{'));
         return true;
       }
     );
@@ -44,9 +45,10 @@ describe('Firestore Error Handling & Formatting', () => {
       () => {
         handleFirestoreError(rawError, OperationType.WRITE, 'users/user-secret-123/categories/cat1', fakeAuth);
       },
-      (err: any) => {
-        assert.strictEqual(err.message, "You're offline — changes will sync later.");
-        assert.ok(!err.message.includes('user-secret-123'));
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.strictEqual(error.message, "You're offline — changes will sync later.");
+        assert.ok(!error.message.includes('user-secret-123'));
         return true;
       }
     );
@@ -62,8 +64,9 @@ describe('Firestore Error Handling & Formatting', () => {
       () => {
         handleFirestoreError(rawError, OperationType.GET, 'users/user-secret-123/receipts/rec1', fakeAuth);
       },
-      (err: any) => {
-        assert.strictEqual(err.message, 'The requested item was not found.');
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.strictEqual(error.message, 'The requested item was not found.');
         return true;
       }
     );
@@ -79,8 +82,9 @@ describe('Firestore Error Handling & Formatting', () => {
       () => {
         handleFirestoreError(rawError, OperationType.LIST, 'users/user-secret-123/receipts', fakeAuth);
       },
-      (err: any) => {
-        assert.strictEqual(err.message, 'Database quota exceeded. Please try again later.');
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.strictEqual(error.message, 'Database quota exceeded. Please try again later.');
         return true;
       }
     );
@@ -93,10 +97,11 @@ describe('Firestore Error Handling & Formatting', () => {
       () => {
         handleFirestoreError(rawError, OperationType.CREATE, 'users/user-secret-123', fakeAuth);
       },
-      (err: any) => {
-        assert.strictEqual(err.message, 'An unexpected database error occurred. Please try again.');
-        assert.ok(!err.message.includes('sensitive token xyz'));
-        assert.ok(!err.message.includes('user-secret-123'));
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.strictEqual(error.message, 'An unexpected database error occurred. Please try again.');
+        assert.ok(!error.message.includes('sensitive token xyz'));
+        assert.ok(!error.message.includes('user-secret-123'));
         return true;
       }
     );

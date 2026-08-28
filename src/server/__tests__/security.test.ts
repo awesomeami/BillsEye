@@ -24,7 +24,7 @@ test('Security Audit - API Tests', async (t) => {
   });
 
   await t.test('extractionRoute - rejects non-image mime types', async () => {
-    const res = await request(app)
+    await request(app)
       .post('/api/extract')
       .set('Authorization', 'Bearer fake_token')
       .attach('receiptImage', Buffer.from('fake'), { filename: 'test.txt', contentType: 'text/plain' });
