@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useReducer, useRef, useState } from 'react';
 import { ChevronRight, Download, Upload, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
 import { db } from '../../services/firebase/config';
 import { collection, getDoc, getDocs, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import {
@@ -13,6 +15,13 @@ import {
 } from '../../services/export/backup';
 import { useAiKeys } from './ai/AiKeysContext';
 import { receiptRepository, aliasRepository, settingsRepository } from '../../services/firebase/db';
+import {
+  accountDeletionUiReducer,
+  confirmationForAccountDeletion,
+  initialAccountDeletionUiState,
+  performAccountDeletion,
+  runSingleSubmission,
+} from './accountDeletionFlow';
 
 interface DataExportSettingsProps {
   onBack: () => void;
@@ -30,12 +39,17 @@ const toIsoTimestamp = (value: unknown): string => {
 };
 
 export function DataExportSettings({ onBack }: DataExportSettingsProps) {
-  const { user, signOut } = useAuth();
+  const { user, reauthenticateAndGetIdToken, signOut } = useAuth();
   const { clearLocalVault } = useAiKeys();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [confirmAction, setConfirmAction] = useState<{ message: string, action: () => void } | null>(null);
+  const [deletionUi, dispatchDeletionUi] = useReducer(
+    accountDeletionUiReducer,
+    initialAccountDeletionUiState,
+  );
+  const deletionSubmissionLock = useRef(false);
 
   const [restoreDryRun, setRestoreDryRun] = useState<{
     envelope: BackupEnvelope;
@@ -270,63 +284,56 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
     }
   };
 
-  const handleDeleteData = () => {
-    setConfirmAction({
-      message: "Are you sure you want to delete your receipts, categories, aliases, and settings? This action cannot be undone.",
-      action: async () => {
-        try {
-      setLoading(true);
-      const res = await fetch('/api/account/delete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(await user?.getIdToken())}`
-        },
-        body: JSON.stringify({ action: 'delete_data' })
+  const openDeletionConfirmation = (action: 'delete_data' | 'delete_account') => {
+    if (loading || deletionSubmissionLock.current) return;
+    setError('');
+    setSuccess('');
+    dispatchDeletionUi({
+      type: 'open-confirmation',
+      confirmation: confirmationForAccountDeletion(action),
+    });
+  };
+
+  const confirmDeletion = () => {
+    const action = deletionUi.confirmation?.action;
+    if (!action) return;
+
+    void runSingleSubmission(deletionSubmissionLock, async () => {
+      dispatchDeletionUi({ type: 'submission-started', action });
+      let outcome = await performAccountDeletion(action, {
+        reauthenticateAndGetIdToken,
+        fetch,
       });
-      const result = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(result?.error || 'Failed to delete cloud data.');
-      setSuccess('Receipt, category, alias, and settings data was deleted successfully.');
-        } catch (e: any) {
-          setError(e.message);
-        } finally {
-          setLoading(false);
+
+      if (action === 'delete_account' && outcome.status === 'success') {
+        try {
+          await clearLocalVault();
+          showToast('Your account and local Gemini vault were deleted.', 'success');
+        } catch {
+          // Signing out still clears in-memory key material through AiKeysProvider.
+          outcome = {
+            status: 'partial-failure',
+            action,
+            progress: null,
+            message: 'The account was deleted, but local Gemini vault cleanup could not finish. Clear this device\'s offline data before using it again.',
+          };
+          showToast(outcome.message, 'error');
         }
+
+        dispatchDeletionUi({ type: 'submission-finished', outcome });
+        await signOut();
+        return outcome;
       }
+
+      dispatchDeletionUi({ type: 'submission-finished', outcome });
+      return outcome;
     });
   };
-  const handleDeleteAccount = () => {
-    setConfirmAction({
-      message: "Are you sure you want to delete your account and all associated cloud data? This cannot be undone. Your local Gemini vault will also be cleared.",
-      action: async () => {
-        try {
-      setLoading(true);
-      const res = await fetch('/api/account/delete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(await user?.getIdToken())}`
-        },
-        body: JSON.stringify({ action: 'delete_account' })
-      });
-      const result = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(result?.error || 'Failed to delete account');
-      
-      try {
-        await clearLocalVault();
-      } catch {
-        // Sign-out still clears in-memory key material through AiKeysProvider.
-        setError('The account was deleted, but local vault cleanup could not finish. Clear this device\'s offline data before using it again.');
-      }
-      await signOut(); // This will redirect to login automatically
-    } catch (e: any) {
-      setError(e.message);
-      setLoading(false);
-    }
-  
-      }
-    });
-  };
+
+  const deletionPending = deletionUi.outcome.status === 'pending';
+  const pendingDeletionAction = deletionUi.outcome.status === 'pending'
+    ? deletionUi.outcome.action
+    : null;
 
   return (
     <div className="space-y-6">
@@ -346,6 +353,25 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
       {success && (
         <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm border border-green-100">
           {success}
+        </div>
+      )}
+
+      {deletionUi.outcome.status !== 'idle' && (
+        <div
+          role={deletionUi.outcome.status === 'pending' || deletionUi.outcome.status === 'success' ? 'status' : 'alert'}
+          aria-live={deletionUi.outcome.status === 'pending' ? 'polite' : 'assertive'}
+          className={`p-4 rounded-xl text-sm border flex items-start gap-2 ${
+            deletionUi.outcome.status === 'success'
+              ? 'bg-green-50 text-green-700 border-green-100'
+              : deletionUi.outcome.status === 'pending'
+                ? 'bg-blue-50 text-blue-700 border-blue-100'
+                : deletionUi.outcome.status === 'reauthentication-required'
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : 'bg-red-50 text-red-700 border-red-100'
+          }`}
+        >
+          {deletionPending && <Loader2 size={16} className="animate-spin shrink-0 mt-0.5" aria-hidden="true" />}
+          <span>{deletionUi.outcome.message}</span>
         </div>
       )}
 
@@ -438,22 +464,42 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
         
         <div className="space-y-3">
           <button 
-            onClick={handleDeleteData} 
-            disabled={loading} 
+            onClick={() => openDeletionConfirmation('delete_data')}
+            disabled={loading || deletionPending}
             className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-red-200 text-red-600 rounded-xl shadow-sm font-medium hover:bg-red-100 transition-colors"
           >
-            <Trash2 size={18} /> Delete My Cloud Data (except Profile)
+            {pendingDeletionAction === 'delete_data'
+              ? <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+              : <Trash2 size={18} />}
+            {pendingDeletionAction === 'delete_data'
+              ? 'Deleting cloud data…'
+              : 'Delete My Cloud Data (except Profile)'}
           </button>
           
           <button 
-            onClick={handleDeleteAccount} 
-            disabled={loading} 
+            onClick={() => openDeletionConfirmation('delete_account')}
+            disabled={loading || deletionPending}
             className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-red-600 text-white rounded-xl shadow-sm font-medium hover:bg-red-700 transition-colors"
           >
-            <Trash2 size={18} /> Delete My Account
+            {pendingDeletionAction === 'delete_account'
+              ? <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+              : <Trash2 size={18} />}
+            {pendingDeletionAction === 'delete_account'
+              ? 'Deleting account…'
+              : 'Delete My Account'}
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={deletionUi.confirmation !== null}
+        title={deletionUi.confirmation?.title ?? ''}
+        message={deletionUi.confirmation?.message ?? ''}
+        confirmText={deletionUi.confirmation?.confirmText ?? 'Delete'}
+        isDestructive={true}
+        onConfirm={confirmDeletion}
+        onCancel={() => dispatchDeletionUi({ type: 'cancel-confirmation' })}
+      />
     </div>
   );
 }

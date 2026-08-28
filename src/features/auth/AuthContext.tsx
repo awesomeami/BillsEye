@@ -4,7 +4,8 @@ import {
   signInWithPopup, 
   signOut as firebaseSignOut,
   signInWithRedirect,
-  getRedirectResult
+  getRedirectResult,
+  reauthenticateWithPopup,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../../services/firebase/config';
 import { userRepository } from '../../services/firebase/db';
@@ -16,13 +17,14 @@ export interface AuthenticatedUser {
   email: string | null;
   displayName: string | null;
   photoURL: string | null;
-  getIdToken: () => Promise<string>;
+  getIdToken: (forceRefresh?: boolean) => Promise<string>;
 }
 
 interface AuthContextType {
   user: AuthenticatedUser | null;
   loading: boolean;
   signIn: () => Promise<void>;
+  reauthenticateAndGetIdToken: () => Promise<string>;
   signOut: () => Promise<void>;
   error: string | null;
 }
@@ -70,14 +72,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               result.user.email || '',
               result.user.displayName
             );
-          } catch (err) {
-            console.error('Failed to initialize user profile on redirect', err);
+          } catch {
+            console.error('Failed to initialize user profile after redirect.');
             showToast("We couldn't set up your account profile. Please try refreshing.", 'error');
           }
         }
       })
       .catch((err: unknown) => {
-        console.error('Redirect auth error:', err);
+        console.error('Redirect authentication failed.');
         setError(getErrorMessage(err, 'Authentication failed.'));
         showToast('Authentication failed. Please try again.', 'error');
       });
@@ -94,8 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             currentUser.email || '',
             currentUser.displayName
           );
-        } catch (err) {
-          console.error("Failed to initialize user profile", err);
+        } catch {
+          console.error('Failed to initialize user profile.');
           showToast("We couldn't set up your account profile. Please try refreshing.", 'error');
         }
       }
@@ -127,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         );
       }
     } catch (err: unknown) {
-      console.warn('Popup sign in failed, falling back to redirect:', err);
+      console.warn('Popup sign in was unavailable; evaluating redirect fallback.');
       const errorCode = getErrorCode(err);
       if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/popup-closed-by-user') {
         try {
@@ -159,8 +161,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const reauthenticateAndGetIdToken = async (): Promise<string> => {
+    if (useE2eMocks) return e2eUser.getIdToken(true);
+
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('Sign in again before continuing.');
+    }
+
+    const credential = await reauthenticateWithPopup(currentUser, googleProvider);
+    if (credential.user.uid !== currentUser.uid || auth.currentUser?.uid !== currentUser.uid) {
+      throw new Error('The signed-in account changed. Please try again.');
+    }
+
+    // Firebase preserves auth_time across silent refreshes. This refresh is
+    // intentionally performed only after a real provider reauthentication.
+    return currentUser.getIdToken(true);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut, error }}>
+    <AuthContext.Provider value={{ user, loading, signIn, reauthenticateAndGetIdToken, signOut, error }}>
       {children}
     </AuthContext.Provider>
   );

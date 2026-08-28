@@ -179,7 +179,10 @@ describe('account deletion route', () => {
     app.use('/api/account', createAccountRouter(() => ({
       db,
       auth: {
-        verifyIdToken: async () => ({ uid: 'verified-user' }),
+        verifyIdToken: async () => ({
+          uid: 'verified-user',
+          auth_time: Math.floor(Date.now() / 1000),
+        }),
         deleteUser: async () => {},
       },
     })));

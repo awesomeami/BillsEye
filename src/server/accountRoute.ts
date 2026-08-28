@@ -11,7 +11,10 @@ import {
 
 interface FirebaseAdminForAccountRoute {
   auth: {
-    verifyIdToken(token: string): Promise<{ uid: string }>;
+    verifyIdToken(token: string, checkRevoked?: boolean): Promise<{
+      uid: string;
+      auth_time?: unknown;
+    }>;
     deleteUser(uid: string): Promise<void>;
   };
   db: DeletionDatabase;
@@ -19,7 +22,34 @@ interface FirebaseAdminForAccountRoute {
 
 const AccountActionSchema = z.object({
   action: z.enum(['delete_data', 'delete_account'])
-});
+}).strict();
+
+/**
+ * Destructive account actions require a Google/Firebase authentication event
+ * within the last five minutes. Refreshing an ID token does not change its
+ * signed auth_time, so this cannot be satisfied by a token refresh alone.
+ */
+export const RECENT_AUTH_MAX_AGE_SECONDS = 5 * 60;
+const AUTH_TIME_CLOCK_SKEW_SECONDS = 60;
+
+export function hasRecentAuthentication(
+  decodedToken: { auth_time?: unknown },
+  nowSeconds: number,
+): boolean {
+  const authTime = decodedToken.auth_time;
+  if (typeof authTime !== 'number' || !Number.isSafeInteger(authTime) || authTime <= 0) return false;
+
+  const ageSeconds = nowSeconds - authTime;
+  return ageSeconds >= -AUTH_TIME_CLOCK_SKEW_SECONDS
+    && ageSeconds <= RECENT_AUTH_MAX_AGE_SECONDS;
+}
+
+function reauthenticationRequiredResponse(res: Response): Response {
+  return res.status(401).json({
+    error: 'Recent authentication is required before deleting account data.',
+    code: 'REAUTHENTICATION_REQUIRED',
+  });
+}
 
 function deletionFailureResponse(
   res: Response,
@@ -37,6 +67,7 @@ function deletionFailureResponse(
 
 export function createAccountRouter(
   getAdmin: () => FirebaseAdminForAccountRoute = () => getFirebaseAdmin() as unknown as FirebaseAdminForAccountRoute,
+  nowSeconds: () => number = () => Math.floor(Date.now() / 1000),
 ) {
   const router = Router();
   router.use(express.json({ limit: '100kb' }));
@@ -48,15 +79,21 @@ export function createAccountRouter(
       return res.status(401).json({ error: 'Missing or invalid Authorization header' });
     }
 
-    const token = authHeader.split('Bearer ')[1];
-    let decodedToken: { uid: string };
-    try {
-      decodedToken = await getAdmin().auth.verifyIdToken(token);
-    } catch {
-      return res.status(401).json({ error: 'Invalid or expired Firebase ID token' });
+    const token = authHeader.slice('Bearer '.length).trim();
+    if (!token) {
+      return res.status(401).json({ error: 'Missing or invalid Authorization header' });
     }
 
-    const uid = decodedToken.uid;
+    const admin = getAdmin();
+    let decodedToken: { uid: string; auth_time?: unknown };
+    try {
+      decodedToken = await admin.auth.verifyIdToken(token, true);
+    } catch {
+      return res.status(401).json({
+        error: 'Authentication is required before deleting account data.',
+        code: 'AUTHENTICATION_REQUIRED',
+      });
+    }
     
     // Zod validation
     const parsedBody = AccountActionSchema.safeParse(req.body);
@@ -66,7 +103,13 @@ export function createAccountRouter(
     
     const { action } = parsedBody.data;
 
-    const admin = getAdmin();
+    if (!hasRecentAuthentication(decodedToken, nowSeconds())) {
+      return reauthenticationRequiredResponse(res);
+    }
+
+    // The target identity is derived only from the revocation-checked token.
+    const uid = decodedToken.uid;
+
     let progress: UserDeletionProgress;
     try {
       progress = await deleteUserOwnedData(admin.db, uid);
