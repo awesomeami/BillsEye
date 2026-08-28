@@ -1,4 +1,5 @@
 import { ReceiptDocument } from './schema';
+import { getReceiptTotal } from './reconciliation';
 
 export type UnitCategory = 'mass' | 'volume' | 'count' | 'unknown';
 
@@ -84,7 +85,7 @@ export function extractObservations(receipts: ReceiptDocument[]): ItemObservatio
     
     // Skip refunds entirely for price analytics? Or mark them?
     // "Handle refunds/negative receipts explicitly."
-    const isReceiptRefund = (r.printedGrandTotal ?? 0) < 0;
+    const isReceiptRefund = (getReceiptTotal(r) ?? 0) < 0;
 
     for (const item of r.items) {
       const lineTotal = item.lineTotal;

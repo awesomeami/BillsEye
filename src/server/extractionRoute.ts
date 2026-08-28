@@ -12,7 +12,7 @@ import { GoogleGenAI } from '@google/genai';
 import { getReceiptExtractionModel, EXTRACTION_SCHEMA_VERSION } from './geminiConfig';
 import { RawGeminiReceiptV2 } from '../domain/schema';
 import { parseMajorToMinor } from '../domain/money';
-import { reconcileReceipt } from '../domain/reconciliation';
+import { calculateReceiptTotals } from '../domain/reconciliation';
 
 // Store only in memory, limit to ~4MB to be safe for Vercel
 const upload = multer({
@@ -446,7 +446,7 @@ Return only the requested structured JSON result.`.trim();
       printedGrandTotal: safeParseTotalAmount(rawGeminiResult.printedGrandTotal)
     };
     
-    const reconciliation = reconcileReceipt(parsedItems, parsedTotals);
+    const reconciliation = calculateReceiptTotals(parsedItems, parsedTotals);
     const extractionDurationMs = Date.now() - startTime;
     
     const finalDto = {

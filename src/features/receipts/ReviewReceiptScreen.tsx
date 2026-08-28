@@ -9,7 +9,7 @@ import { createSha256Hash, preprocessImage } from '../../utils/imageUtils';
 import { aliasRepository, receiptRepository } from '../../services/firebase/db';
 import { Upload, AlertTriangle, Check, ArrowLeft, Trash2, Plus } from 'lucide-react';
 import { parseMajorToMinor } from '../../domain/money';
-import { reconcileReceipt } from '../../domain/reconciliation';
+import { calculateReceiptTotals } from '../../domain/reconciliation';
 import {
   applyMerchantCategoryAlias,
   canonicalizeReceiptItemCategories,
@@ -27,6 +27,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
 function minorToStr(value: number | null | undefined): string {
   if (value === null || value === undefined) return '';
   return (value / 100).toFixed(2);
+}
+
+function minorToDisplay(value: number | null | undefined): string {
+  return value == null ? 'Unavailable' : minorToStr(value);
 }
 
 function strToMinor(value: string): number | null {
@@ -209,7 +213,7 @@ export function ReviewReceiptScreen() {
   const currentItems = formData.items || [];
   
   // Recalculate reconciliation continuously
-  const reconciliation = reconcileReceipt(
+  const reconciliation = calculateReceiptTotals(
     currentItems,
     {
       printedSubtotal: formData.printedSubtotal,
@@ -464,9 +468,9 @@ export function ReviewReceiptScreen() {
                    <ul className="list-disc pl-4 mt-1 opacity-90">
                      {reconciliation.warnings.map((w, i) => <li key={i}>{w}</li>)}
                    </ul>
-                   <p className="mt-2">Computed item total: {minorToStr(reconciliation.computedLineTotal)}<br/>
-                   Expected grand total: {minorToStr(reconciliation.computedExpectedTotal)}<br/>
-                   Discrepancy: {minorToStr(reconciliation.discrepancy)}</p>
+                   <p className="mt-2">Calculated line subtotal: {minorToDisplay(reconciliation.computedLineTotal)}<br/>
+                   Calculated grand total: {minorToDisplay(reconciliation.computedExpectedTotal)}<br/>
+                   Printed total − calculated total: {minorToDisplay(reconciliation.discrepancy)}</p>
                  </div>
                </div>
              )}

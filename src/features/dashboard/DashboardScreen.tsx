@@ -4,6 +4,7 @@ import { ArrowUpRight, ArrowDownRight, Wallet, ReceiptText, Inbox, ChevronRight,
 import { APP_CONFIG, formatCurrency } from '../../utilities/config';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
 import { calculateDashboardSummary, generateSummaryInsights } from '../../domain/analytics';
+import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
@@ -22,10 +23,11 @@ export function DashboardScreen() {
 
   const {
     currentTotal,
+    currentTotalAvailable,
     prevTotal,
+    previousTotalAvailable,
     changeAbs,
     changePct,
-    mtdPriorTotal,
     pendingCount,
     categoryComposition,
     dailyTrend,
@@ -74,7 +76,7 @@ export function DashboardScreen() {
             <span className="font-medium">Total Spent (This Month)</span>
           </div>
           <div className="text-4xl font-bold text-gray-900 mb-4">
-            {formatCurrency(currentTotal / 100)}
+            {currentTotalAvailable ? formatCurrency(currentTotal / 100) : 'Unavailable'}
           </div>
           <div className="flex items-center gap-2 text-sm">
             {changePct !== null ? (
@@ -84,12 +86,13 @@ export function DashboardScreen() {
                   <span>{Math.abs(changePct).toFixed(1)}%</span>
                 </div>
                 <span className="text-gray-500">
-                  vs {formatCurrency(prevTotal / 100)} last month 
-                  {mtdPriorTotal !== null && prevTotal > 0 && ` (MTD: ${formatCurrency(mtdPriorTotal / 100)})`}
+                  vs {formatCurrency(prevTotal / 100)} through the same day last month
                 </span>
               </>
+            ) : currentTotalAvailable && previousTotalAvailable ? (
+              <span className="text-gray-500">No percentage comparison when the previous period is zero</span>
             ) : (
-              <span className="text-gray-500">No spending last month</span>
+              <span className="text-gray-500">Comparable totals are unavailable</span>
             )}
           </div>
         </div>
@@ -285,7 +288,7 @@ export function DashboardScreen() {
                   <span className="text-gray-900 font-medium truncate">{r.merchantNormalized || r.merchantRaw || 'Unknown'}</span>
                   <span className="text-gray-500 text-xs truncate">{r.transactionDate}</span>
                 </div>
-                <span className="font-medium text-gray-900 shrink-0 ml-4">{formatCurrency((r.printedGrandTotal || 0) / 100)}</span>
+                <ReceiptTotalValue receipt={r} className="font-medium text-gray-900 shrink-0 ml-4" />
               </Link>
             )) : (
               <span className="text-gray-500 text-sm">No recent receipts</span>

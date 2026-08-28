@@ -1,4 +1,5 @@
 import { ReceiptDocument } from '../../../domain/schema';
+import { getReceiptTotal } from '../../../domain/reconciliation';
 
 export interface FilterState {
   searchQuery: string;
@@ -57,10 +58,16 @@ export function filterAndSortReceipts(receipts: ReceiptDocument[], filters: Filt
     result = result.filter(r => r.paymentMethod === filters.paymentMethod);
   }
   if (filters.amountMin !== null) {
-    result = result.filter(r => (r.printedGrandTotal ?? 0) >= filters.amountMin!);
+    result = result.filter(r => {
+      const total = getReceiptTotal(r);
+      return total != null && total >= filters.amountMin!;
+    });
   }
   if (filters.amountMax !== null) {
-    result = result.filter(r => (r.printedGrandTotal ?? 0) <= filters.amountMax!);
+    result = result.filter(r => {
+      const total = getReceiptTotal(r);
+      return total != null && total <= filters.amountMax!;
+    });
   }
   if (filters.hasWarning !== null) {
     result = result.filter(r => {
@@ -77,7 +84,14 @@ export function filterAndSortReceipts(receipts: ReceiptDocument[], filters: Filt
         comparison = (a.transactionDate || '').localeCompare(b.transactionDate || '');
         break;
       case 'total':
-        comparison = (a.printedGrandTotal || 0) - (b.printedGrandTotal || 0);
+        {
+          const aTotal = getReceiptTotal(a);
+          const bTotal = getReceiptTotal(b);
+          if (aTotal == null && bTotal == null) comparison = 0;
+          else if (aTotal == null) return 1;
+          else if (bTotal == null) return -1;
+          else comparison = aTotal - bTotal;
+        }
         break;
       case 'merchant':
         comparison = (a.merchantNormalized || '').localeCompare(b.merchantNormalized || '');

@@ -1,7 +1,8 @@
 
 import { CategoryDocument, ReceiptDocument } from './schema';
 import { groupAndAnalyzeItems, ItemAnalytics } from './items';
-import { reconcileReceipt } from './reconciliation';
+import { getReceiptTotal } from './reconciliation';
+export { getReceiptTotal } from './reconciliation';
 import { getReceiptItemCategoryLabel, resolveReceiptItemCategoryId } from './categories';
 import { APP_CONFIG } from '../utilities/config';
 
@@ -77,27 +78,17 @@ export function isDateInRange(dateStr: string | null, range: DateRange): boolean
   return dateStr >= range.start && dateStr <= range.end;
 }
 
-export function getReceiptTotal(r: ReceiptDocument): number | null {
-  if (r.printedGrandTotal !== null && r.printedGrandTotal !== undefined) {
-    return r.printedGrandTotal;
-  }
-  const rec = reconcileReceipt(r.items || [], r);
-  if (rec.computedLineTotal !== null) {
-    return rec.computedLineTotal + (r.printedTax ?? 0) - (r.printedDiscount ?? 0);
-  }
-  return null;
-}
-
 export function getConfirmedReceipts(receipts: ReceiptDocument[]): ReceiptDocument[] {
   return receipts.filter(r => r.status === 'confirmed');
 }
 
 export interface DashboardSummary {
   currentTotal: number;
+  currentTotalAvailable: boolean;
   prevTotal: number;
+  previousTotalAvailable: boolean;
   changeAbs: number;
   changePct: number | null;
-  mtdPriorTotal: number | null;
   needsDateCount: number;
   excludedNullCount: number;
   receiptCount: number;
@@ -108,6 +99,27 @@ export interface DashboardSummary {
   categoryComposition: { name: string; total: number }[];
   dailyTrend: { date: string; total: number }[];
   recentReceipts: ReceiptDocument[];
+}
+
+/**
+ * Compares this month through the reference date with the same elapsed days of
+ * the previous calendar month. The previous end is clamped for short months.
+ */
+export function getElapsedMonthComparisonRanges(referenceDate: Date = new Date()): {
+  current: DateRange;
+  previous: DateRange;
+} {
+  const today = getKarachiYYYYMMDD(referenceDate);
+  const currentMonth = today.substring(0, 7);
+  const previousMonth = offsetMonth(currentMonth, -1);
+  const elapsedDay = Number.parseInt(today.substring(8, 10), 10);
+  const previousLastDay = Number.parseInt(getEndOfMonth(previousMonth).substring(8, 10), 10);
+  const previousEndDay = Math.min(elapsedDay, previousLastDay).toString().padStart(2, '0');
+
+  return {
+    current: { start: `${currentMonth}-01`, end: today },
+    previous: { start: `${previousMonth}-01`, end: `${previousMonth}-${previousEndDay}` },
+  };
 }
 
 // Aliases
@@ -123,18 +135,18 @@ export function calculateDashboardSummary(
   const pendingCount = allReceipts.filter(r => r.status === 'pendingReview').length;
   const confirmed = getConfirmedReceipts(allReceipts);
   
-  const thisMonthRange = getDateRange('this_month', referenceDate);
-  const lastMonthRange = getDateRange('last_month', referenceDate);
+  const comparisonRanges = getElapsedMonthComparisonRanges(referenceDate);
+  const thisMonthRange = comparisonRanges.current;
+  const lastMonthRange = comparisonRanges.previous;
   
   let currentTotal = 0;
   let prevTotal = 0;
-  let mtdPriorTotal = 0;
+  let currentKnownCount = 0;
+  let previousKnownCount = 0;
   let needsDateCount = 0;
   let excludedNullCount = 0;
   
   const thisMonthReceipts: ReceiptDocument[] = [];
-  const todayStr = getKarachiYYYYMMDD(referenceDate);
-  const dayOfMonthStr = todayStr.substring(8, 10);
   
   for (const r of confirmed) {
     if (!r.transactionDate) {
@@ -148,23 +160,25 @@ export function calculateDashboardSummary(
         excludedNullCount++;
       } else {
         currentTotal += val;
+        currentKnownCount++;
       }
       thisMonthReceipts.push(r);
     } else if (isDateInRange(r.transactionDate, lastMonthRange)) {
       if (val !== null) {
         prevTotal += val;
-        const rDay = r.transactionDate.substring(8, 10);
-        if (rDay <= dayOfMonthStr) {
-          mtdPriorTotal += val;
-        }
+        previousKnownCount++;
       }
     }
   }
 
   const validReceiptsThisMonth = thisMonthReceipts.filter(r => getReceiptTotal(r) !== null);
   const averageReceiptValue = validReceiptsThisMonth.length > 0 ? Math.round(currentTotal / validReceiptsThisMonth.length) : 0;
-  const changeAbs = currentTotal - prevTotal;
-  const changePct = prevTotal === 0 ? null : (changeAbs / prevTotal) * 100;
+  const currentTotalAvailable = currentKnownCount > 0;
+  const previousTotalAvailable = previousKnownCount > 0;
+  const changeAbs = currentTotalAvailable && previousTotalAvailable ? currentTotal - prevTotal : 0;
+  const changePct = currentTotalAvailable && previousTotalAvailable && prevTotal !== 0
+    ? (changeAbs / prevTotal) * 100
+    : null;
   
   const merchantMap = new Map<string, number>();
   const itemMap = new Map<string, number>();
@@ -188,10 +202,11 @@ export function calculateDashboardSummary(
 
   return {
     currentTotal,
+    currentTotalAvailable,
     prevTotal,
+    previousTotalAvailable,
     changeAbs,
     changePct,
-    mtdPriorTotal: dayOfMonthStr < "28" ? mtdPriorTotal : null,
     needsDateCount,
     excludedNullCount,
     receiptCount: thisMonthReceipts.length,
@@ -348,7 +363,7 @@ export function generateCategoryReport(
       categoryId: data.categoryId,
       filterValue: data.filterValue,
       total: data.total,
-      proportion: grandTotal > 0 ? (Math.abs(data.total) / Math.abs(grandTotal)) * 100 : 0,
+      proportion: Math.abs(grandTotal) > 0 ? (Math.abs(data.total) / Math.abs(grandTotal)) * 100 : 0,
       receiptCount: data.receiptIds.size
     }))
     .sort((a, b) => b.total - a.total);

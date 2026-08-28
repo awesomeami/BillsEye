@@ -6,18 +6,22 @@ function sanitizeCell(value: string): string {
 }
 import Papa from 'papaparse';
 import { ReceiptDocument } from '../../domain/schema';
+import { getReceiptTotal } from '../../domain/reconciliation';
 
 export function exportReceiptsCSV(receipts: ReceiptDocument[], addBom = true) {
-  const data = receipts.map(r => ({
-    id: r.id,
-    date: r.transactionDate || r.createdAt,
-    merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
-    total: r.printedGrandTotal != null ? r.printedGrandTotal / 100 : '',
-    tax: r.printedTax != null ? r.printedTax / 100 : '',
-    currency: r.currency,
-    status: r.status,
-    notes: sanitizeCell(r.userNote || '')
-  }));
+  const data = receipts.map(r => {
+    const total = getReceiptTotal(r);
+    return {
+      id: r.id,
+      date: r.transactionDate || r.createdAt,
+      merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
+      total: total != null ? total / 100 : '',
+      tax: r.printedTax != null ? r.printedTax / 100 : '',
+      currency: r.currency,
+      status: r.status,
+      notes: sanitizeCell(r.userNote || '')
+    };
+  });
 
   const csv = Papa.unparse(data);
   return addBom ? '\uFEFF' + csv : csv;

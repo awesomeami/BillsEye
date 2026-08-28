@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { formatCurrency, formatDate } from '../../utilities/config';
+import { formatDate } from '../../utilities/config';
 const safeParseMajorToMinor = (val: string) => {
     try {
       return val ? parseMajorToMinor(val) : null;
@@ -21,6 +21,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { getReceiptItemCategoryLabel } from '../../domain/categories';
 import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
+import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 
 export function ReceiptsListScreen() {
   const sessionActions = useClientSessionActionGuard();
@@ -256,7 +257,7 @@ export function ReceiptsListScreen() {
                         <p className="text-xs text-gray-500">{formatDate(receipt.transactionDate || '')}</p>
                       </div>
                       <div className="text-right flex flex-col items-end gap-1">
-                        <p className="text-sm font-bold text-gray-900">{formatCurrency((receipt.printedGrandTotal ?? 0) / 100)}</p>
+                        <ReceiptTotalValue receipt={receipt} className="text-sm font-bold text-gray-900" />
                         {hasWarning && <AlertTriangle size={14} className="text-amber-500" />}
                       </div>
                     </div>
@@ -293,7 +294,7 @@ export function ReceiptsListScreen() {
                     </div>
                     <div className="col-span-3 text-right flex items-center justify-end gap-3">
                       <div className="flex flex-col items-end">
-                        <p className="text-sm font-bold text-gray-900">{formatCurrency((receipt.printedGrandTotal ?? 0) / 100)}</p>
+                        <ReceiptTotalValue receipt={receipt} className="text-sm font-bold text-gray-900" />
                         <span className="text-xs text-gray-500">{receipt.items.length} items</span>
                       </div>
                       {hasWarning && (

@@ -33,6 +33,9 @@ service cloud.firestore {
     function checkNumberOrNullNoMax(val, minVal) {
       return val == null || (val is number && val >= minVal);
     }
+    function checkNumberOrNullAny(val) {
+      return val == null || val is number;
+    }
     function checkBoolOrNull(val) {
       return val == null || val is bool;
     }
@@ -84,9 +87,9 @@ service cloud.firestore {
         && checkStringOrNull(item.get('brand', null), 100)
         && checkNumberOrNullNoMax(item.get('quantity', null), 0)
         && checkStringOrNull(item.get('unit', null), 50)
-        && checkNumberOrNullNoMax(item.get('unitPrice', null), 0)
-        && checkNumberOrNullNoMax(item.get('discount', null), 0)
-        && checkNumberOrNullNoMax(item.get('lineTotal', null), 0)
+        && checkNumberOrNullAny(item.get('unitPrice', null))
+        && checkNumberOrNullAny(item.get('discount', null))
+        && checkNumberOrNullAny(item.get('lineTotal', null))
         && (item.get('categoryId', null) == null || isValidId(item.get('categoryId', null)))
         && checkStringOrNull(item.get('category', null), 100)
         && checkNumberOrNull(item.get('confidence', null), 0, 1)
@@ -129,14 +132,14 @@ service cloud.firestore {
         && checkBoolOrNull(data.get('dateAmbiguous', null))
         && checkStringOrNull(data.get('currency', null), 10)
         && checkStringOrNull(data.get('paymentMethod', null), 50)
-        && checkNumberOrNullNoMax(data.get('printedSubtotal', null), 0)
-        && checkNumberOrNullNoMax(data.get('printedDiscount', null), 0)
-        && checkNumberOrNullNoMax(data.get('printedTax', null), 0)
-        && checkNumberOrNullNoMax(data.get('printedFees', null), 0)
+        && checkNumberOrNullAny(data.get('printedSubtotal', null))
+        && checkNumberOrNullAny(data.get('printedDiscount', null))
+        && checkNumberOrNullAny(data.get('printedTax', null))
+        && checkNumberOrNullAny(data.get('printedFees', null))
         && (data.get('printedRounding', null) == null || data.get('printedRounding', null) is number)
-        && checkNumberOrNullNoMax(data.get('printedGrandTotal', null), 0)
-        && checkNumberOrNullNoMax(data.get('computedLineTotal', null), 0)
-        && checkNumberOrNullNoMax(data.get('computedExpectedTotal', null), 0)
+        && checkNumberOrNullAny(data.get('printedGrandTotal', null))
+        && checkNumberOrNullAny(data.get('computedLineTotal', null))
+        && checkNumberOrNullAny(data.get('computedExpectedTotal', null))
         && (data.get('discrepancy', null) == null || data.get('discrepancy', null) is number)
         && (data.get('reconciliationStatus', null) == null || data.get('reconciliationStatus', null) in ['matched', 'mismatched', 'unknown'])
         && checkStringOrNull(data.get('rawOcrText', null), 100000)

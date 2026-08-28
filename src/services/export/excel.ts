@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { ReceiptDocument, CategoryDocument } from '../../domain/schema';
+import { calculateReceiptTotals, getReceiptTotal } from '../../domain/reconciliation';
 
 function sanitizeCell(value: string): string {
   if (/^[=+\-@\t\r]/.test(value)) {
@@ -22,8 +23,13 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
     { header: 'Value', key: 'value', width: 20 }
   ];
   summarySheet.addRow({ metric: 'Total Receipts', value: receipts.length });
-  const totalAmount = receipts.reduce((sum, r) => sum + (r.printedGrandTotal || 0), 0) / 100;
-  summarySheet.addRow({ metric: 'Total Amount Spent', value: totalAmount });
+  const knownReceiptTotals = receipts
+    .map((receipt) => getReceiptTotal(receipt))
+    .filter((total): total is number => total != null);
+  const totalAmount = knownReceiptTotals.length > 0
+    ? knownReceiptTotals.reduce((sum, total) => sum + total, 0) / 100
+    : null;
+  summarySheet.addRow({ metric: 'Total Amount Spent', value: totalAmount ?? 'Unavailable' });
   summarySheet.getRow(1).font = { bold: true };
   summarySheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
 
@@ -39,10 +45,11 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
     { header: 'Notes', key: 'notes', width: 30 },
   ];
   receipts.forEach(r => {
+    const total = getReceiptTotal(r);
     receiptsSheet.addRow({
       date: r.transactionDate || r.createdAt,
       merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
-      total: r.printedGrandTotal != null ? r.printedGrandTotal / 100 : null,
+      total: total != null ? total / 100 : null,
       tax: r.printedTax != null ? r.printedTax / 100 : null,
       currency: r.currency,
       status: r.status,
@@ -103,14 +110,18 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
   ];
   const merchantStats = receipts.reduce((acc, r) => {
     const name = r.merchantNormalized || r.merchantRaw || 'Unknown';
-    if (!acc[name]) acc[name] = { visits: 0, total: 0 };
+    if (!acc[name]) acc[name] = { visits: 0, total: 0, knownTotalCount: 0 };
     acc[name].visits += 1;
-    acc[name].total += (r.printedGrandTotal || 0) / 100;
+    const total = getReceiptTotal(r);
+    if (total != null) {
+      acc[name].total += total / 100;
+      acc[name].knownTotalCount += 1;
+    }
     return acc;
-  }, {} as Record<string, { visits: number, total: number }>);
+  }, {} as Record<string, { visits: number, total: number, knownTotalCount: number }>);
   
   Object.entries(merchantStats).forEach(([name, stats]) => {
-    merchantsSheet.addRow({ merchant: sanitizeCell(name), visits: stats.visits, total: stats.total });
+    merchantsSheet.addRow({ merchant: sanitizeCell(name), visits: stats.visits, total: stats.knownTotalCount > 0 ? stats.total : null });
   });
   merchantsSheet.getRow(1).font = { bold: true };
   merchantsSheet.autoFilter = 'A1:C1';
@@ -143,20 +154,21 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
   dqSheet.columns = [
     { header: 'Receipt ID', key: 'id', width: 20 },
     { header: 'Merchant', key: 'merchant', width: 25 },
-    { header: 'Discrepancy', key: 'disc', width: 15 },
+    { header: 'Printed − Calculated', key: 'disc', width: 22 },
     { header: 'Missing Fields', key: 'missing', width: 30 },
   ];
   receipts.forEach(r => {
+    const reconciliation = calculateReceiptTotals(r.items, r);
     const missing: string[] = [];
     if (!r.merchantNormalized) missing.push('Merchant');
     if (!r.transactionDate) missing.push('Date');
-    if (r.printedGrandTotal == null) missing.push('Total');
+    if (getReceiptTotal(r) == null) missing.push('Total');
     
-    if (missing.length > 0 || r.discrepancy !== 0) {
+    if (missing.length > 0 || reconciliation.discrepancy !== 0) {
       dqSheet.addRow({
         id: r.id,
         merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
-        disc: r.discrepancy != null ? r.discrepancy / 100 : null,
+        disc: reconciliation.discrepancy != null ? reconciliation.discrepancy / 100 : null,
         missing: missing.join(', ')
       });
     }

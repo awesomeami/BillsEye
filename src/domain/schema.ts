@@ -11,9 +11,9 @@ export const ReceiptItemSchema = z.object({
   brand: z.string().max(100).nullable().optional(),
   quantity: z.number().min(0).nullable().optional(),
   unit: z.string().max(50).nullable().optional(),
-  unitPrice: z.number().min(0).nullable().optional(), // In minor units (e.g. cents, paisa)
-  discount: z.number().min(0).nullable().optional(), // In minor units
-  lineTotal: z.number().min(0).nullable().optional(), // In minor units
+  unitPrice: z.number().nullable().optional(), // In minor units (e.g. cents, paisa); refunds may be negative
+  discount: z.number().nullable().optional(), // In minor units; normalized only by the totals domain helper
+  lineTotal: z.number().nullable().optional(), // In minor units; refunds may be negative
   // Stable category identity for all new writes. `category` is retained only
   // as a readable compatibility field for historical receipts.
   categoryId: z.string().min(1).max(128).nullable().optional(),
@@ -206,12 +206,12 @@ export const ExtractionResultSchema = z.object({
   currency: z.string().max(10).optional().default('PKR'),
   paymentMethod: z.string().max(50).optional().nullable(),
   items: z.array(ExtractionResultItemSchema).max(MAX_RECEIPT_ITEMS).optional().default([]),
-  printedSubtotal: z.number().min(0).optional().nullable(),
-  printedDiscount: z.number().min(0).optional().nullable(),
-  printedTax: z.number().min(0).optional().nullable(),
-  printedFees: z.number().min(0).optional().nullable(),
+  printedSubtotal: z.number().optional().nullable(),
+  printedDiscount: z.number().optional().nullable(),
+  printedTax: z.number().optional().nullable(),
+  printedFees: z.number().optional().nullable(),
   printedRounding: z.number().optional().nullable(),
-  printedGrandTotal: z.number().min(0).optional().nullable(),
+  printedGrandTotal: z.number().optional().nullable(),
   rawOcrText: z.string().optional().default(''),
   overallConfidence: z.number().optional().default(1),
   ambiguousFields: z.array(z.string()).optional().default([]),
@@ -219,8 +219,8 @@ export const ExtractionResultSchema = z.object({
   extractionModel: z.string().max(100).optional().nullable(),
   extractionModelActual: z.string().max(100).optional().nullable(),
   extractionDurationMs: z.number().min(0).optional().nullable(),
-  computedLineTotal: z.number().min(0).optional().nullable(),
-  computedExpectedTotal: z.number().min(0).optional().nullable(),
+  computedLineTotal: z.number().optional().nullable(),
+  computedExpectedTotal: z.number().optional().nullable(),
   discrepancy: z.number().optional().nullable(),
   reconciliationStatus: z.enum(['matched', 'mismatched', 'unknown']).optional(),
   warnings: z.array(z.string().max(255)).max(20).optional().default([])

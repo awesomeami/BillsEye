@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ReceiptDocument } from '../../domain/schema';
+import { getReceiptTotal } from '../../domain/reconciliation';
 
 type PdfWithAutoTable = jsPDF & { lastAutoTable?: { finalY?: number } };
 
@@ -14,17 +15,25 @@ export function exportPDF(receipts: ReceiptDocument[], dateRangeStr: string) {
   doc.text(`Date Range: ${dateRangeStr}`, 14, 30);
   doc.text(`Generated On: ${new Date().toLocaleString()}`, 14, 36);
   
-  const totalAmount = receipts.reduce((sum, r) => sum + (r.printedGrandTotal || 0), 0) / 100;
+  const knownTotals = receipts
+    .map((receipt) => getReceiptTotal(receipt))
+    .filter((total): total is number => total != null);
+  const totalAmount = knownTotals.length > 0
+    ? knownTotals.reduce((sum, total) => sum + total, 0) / 100
+    : null;
   doc.text(`Total Receipts: ${receipts.length}`, 14, 42);
-  doc.text(`Total Spent: ${totalAmount.toFixed(2)}`, 14, 48);
+  doc.text(`Total Spent: ${totalAmount == null ? 'Unavailable' : totalAmount.toFixed(2)}`, 14, 48);
 
-  const tableData = receipts.map(r => [
-    r.transactionDate || 'Unknown',
-    r.merchantNormalized || r.merchantRaw || 'Unknown',
-    r.printedGrandTotal != null ? (r.printedGrandTotal / 100).toFixed(2) : 'Unknown',
-    r.currency || 'PKR',
-    r.status
-  ]);
+  const tableData = receipts.map(r => {
+    const total = getReceiptTotal(r);
+    return [
+      r.transactionDate || 'Unknown',
+      r.merchantNormalized || r.merchantRaw || 'Unknown',
+      total != null ? (total / 100).toFixed(2) : 'Unavailable',
+      r.currency || 'PKR',
+      r.status
+    ];
+  });
 
   autoTable(doc, {
     startY: 55,

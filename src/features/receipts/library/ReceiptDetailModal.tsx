@@ -4,11 +4,17 @@ import { AlertTriangle, Trash2, Edit2, X, Save } from 'lucide-react';
 import { ReceiptDocument } from '../../../domain/schema';
 import { useReceiptsLibrary } from './ReceiptsLibraryContext';
 import { getReceiptItemCategoryLabel } from '../../../domain/categories';
+import { calculateReceiptTotals, getDiscrepancyLabel } from '../../../domain/reconciliation';
+import { ReceiptTotalValue } from '../../../components/receipts/ReceiptTotalValue';
 
 interface Props {
   receipt: ReceiptDocument;
   onClose: () => void;
   onDelete: () => void;
+}
+
+function formatOptionalMinor(value: number | null | undefined): string {
+  return value == null ? 'Unavailable' : formatCurrency(value / 100);
 }
 
 export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
@@ -17,31 +23,28 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const { updateReceipt, categories, settings } = useReceiptsLibrary();
+  const displayedReconciliation = calculateReceiptTotals(receipt.items, receipt, settings.discrepancyTolerance);
 
   const handleSave = async () => {
     setSaving(true);
     setError('');
     try {
-      // Deterministic Reconciliation
-      const computedLineTotal = editData.items.reduce((sum, item) => sum + (item.lineTotal || 0), 0);
-      const computedExpectedTotal = computedLineTotal + (editData.printedTax || 0) + (editData.printedFees || 0) + (editData.printedRounding || 0) - (editData.printedDiscount || 0);
-      const discrepancy = (editData.printedGrandTotal || 0) - computedExpectedTotal;
-      const reconciliationStatus = Math.abs(discrepancy) <= settings.discrepancyTolerance ? 'matched' : 'mismatched';
-      
-      const newWarnings = [...editData.warnings];
-      if (reconciliationStatus === 'mismatched' && !newWarnings.includes('Totals mismatch')) {
-        newWarnings.push('Totals mismatch');
-      } else if (reconciliationStatus === 'matched') {
-        const idx = newWarnings.indexOf('Totals mismatch');
-        if (idx !== -1) newWarnings.splice(idx, 1);
+      const reconciliation = calculateReceiptTotals(editData.items, editData, settings.discrepancyTolerance);
+      const newWarnings = editData.warnings.filter((warning) => ![
+        'Totals mismatch',
+        'Printed total is higher than calculated total',
+        'Calculated total is higher than printed total',
+      ].includes(warning));
+      if (reconciliation.reconciliationStatus === 'mismatched') {
+        newWarnings.push(getDiscrepancyLabel(reconciliation.discrepancyDirection));
       }
 
       const updated: Partial<ReceiptDocument> = {
         ...editData,
-        computedLineTotal,
-        computedExpectedTotal,
-        discrepancy,
-        reconciliationStatus,
+        computedLineTotal: reconciliation.computedLineTotal,
+        computedExpectedTotal: reconciliation.computedExpectedTotal,
+        discrepancy: reconciliation.discrepancy,
+        reconciliationStatus: reconciliation.reconciliationStatus,
         warnings: newWarnings,
         wasEditedByUser: true,
       };
@@ -50,8 +53,8 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
 
       setIsEditing(false);
       onClose(); // Close modal on save
-    } catch (e: any) {
-      setError(e.message || 'Failed to save');
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to save');
     } finally {
       setSaving(false);
     }
@@ -117,17 +120,17 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
                   step="0.01"
                   className="w-full mt-1 border border-gray-300 rounded p-1.5 text-sm"
                   value={editData.printedGrandTotal !== null && editData.printedGrandTotal !== undefined ? (editData.printedGrandTotal / 100).toFixed(2) : ''}
-                  onChange={e => setEditData({...editData, printedGrandTotal: Math.round(Number(e.target.value) * 100)})}
+                  onChange={e => setEditData({...editData, printedGrandTotal: e.target.value === '' ? null : Math.round(Number(e.target.value) * 100)})}
                 />
               ) : (
-                <p className="font-medium text-gray-900">{formatCurrency((receipt.printedGrandTotal ?? 0) / 100)}</p>
+                <ReceiptTotalValue receipt={receipt} className="font-medium text-gray-900" />
               )}
             </div>
             <div>
               <label className="text-xs text-gray-500 uppercase font-medium">Status</label>
               <div className="flex items-center gap-1 mt-1">
-                <p className="font-medium capitalize text-gray-900">{receipt.reconciliationStatus}</p>
-                {receipt.reconciliationStatus === 'mismatched' && <AlertTriangle size={14} className="text-amber-500" />}
+                <p className="font-medium capitalize text-gray-900">{displayedReconciliation.reconciliationStatus}</p>
+                {displayedReconciliation.reconciliationStatus === 'mismatched' && <AlertTriangle size={14} className="text-amber-500" />}
               </div>
             </div>
           </div>
@@ -158,7 +161,7 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
                         value={item.lineTotal !== null && item.lineTotal !== undefined ? (item.lineTotal / 100).toFixed(2) : ''}
                         onChange={e => {
                           const newItems = [...editData.items];
-                          newItems[idx].lineTotal = Math.round(Number(e.target.value) * 100);
+                          newItems[idx].lineTotal = e.target.value === '' ? null : Math.round(Number(e.target.value) * 100);
                           setEditData({...editData, items: newItems});
                         }}
                       />
@@ -169,12 +172,18 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
                         <span>{item.quantity ? `${item.quantity}x ` : ''}{item.name || item.rawLineText}</span>
                         {(item.categoryId || item.category) && <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{getReceiptItemCategoryLabel(item, categories)}</span>}
                       </div>
-                      <span className="font-medium whitespace-nowrap">{formatCurrency((item.lineTotal ?? 0) / 100)}</span>
+                      <span className="font-medium whitespace-nowrap">{formatOptionalMinor(item.lineTotal)}</span>
                     </>
                   )}
                 </li>
               ))}
             </ul>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm bg-gray-50 rounded-lg p-3">
+            <div><span className="text-gray-500">Calculated total</span><p className="font-medium">{formatOptionalMinor(displayedReconciliation.computedExpectedTotal)}</p></div>
+            <div><span className="text-gray-500">Printed − calculated</span><p className="font-medium">{formatOptionalMinor(displayedReconciliation.discrepancy)}</p></div>
+            <div><span className="text-gray-500">Comparison</span><p className="font-medium">{getDiscrepancyLabel(displayedReconciliation.discrepancyDirection)}</p></div>
           </div>
 
           {(receipt.warnings.length > 0 || receipt.ambiguousFields.length > 0) && (

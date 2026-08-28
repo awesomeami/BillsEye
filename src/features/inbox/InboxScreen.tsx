@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useToast } from '../../components/ui/Toast';
-import { formatCurrency, formatDate } from '../../utilities/config';
+import { formatDate } from '../../utilities/config';
 import { CheckCircle, Search, Trash2 } from 'lucide-react';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
 import { Link } from 'react-router-dom';
@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ReceiptDocument } from '../../domain/schema';
 import { ImageSessionStore } from '../../utils/imageSessionStore';
 import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
+import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 
 export function InboxScreen() {
   const sessionActions = useClientSessionActionGuard();
@@ -72,7 +73,6 @@ export function InboxScreen() {
         <div className="space-y-4">
           {pendingReceipts.map((receipt) => {
             const categories = Array.from(new Set(receipt.items.map(i => i.category).filter(Boolean)));
-            const displayTotal = receipt.printedGrandTotal ?? receipt.computedLineTotal ?? 0;
             return (
             <div key={receipt.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -91,7 +91,7 @@ export function InboxScreen() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xl font-bold text-gray-900">{formatCurrency(displayTotal / 100)}</div>
+                  <ReceiptTotalValue receipt={receipt} className="text-xl font-bold text-gray-900" />
                   <div className="text-sm text-gray-500 mt-1">{receipt.items.length} items found</div>
                 </div>
               </div>

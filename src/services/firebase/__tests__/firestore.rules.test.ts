@@ -242,6 +242,27 @@ describe('Firestore Security Rules', () => {
     await assertSucceeds(receiptRef.set(makeCompleteReceiptHeader('complete-header')));
   });
 
+  test('allows negative refund and adjustment amounts without weakening ownership checks', async () => {
+    const aliceDb = testEnv.authenticatedContext('alice').firestore();
+    const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('refund-header');
+    await assertSucceeds(receiptRef.set({
+      ...makeCompleteReceiptHeader('refund-header'),
+      printedSubtotal: -1000,
+      printedDiscount: -100,
+      printedTax: -50,
+      printedFees: -20,
+      printedGrandTotal: -1170,
+      computedLineTotal: -1000,
+      computedExpectedTotal: -1170,
+    }));
+    await assertSucceeds(receiptRef.collection('items').doc('0').set({
+      ...makeReceiptItem('refund-item', 0),
+      unitPrice: -1000,
+      discount: -100,
+      lineTotal: -900,
+    }));
+  });
+
   test('categories and settings enforce authorization and validation', async () => {
     const aliceDb = testEnv.authenticatedContext('alice').firestore();
     const bobDb = testEnv.authenticatedContext('bob').firestore();

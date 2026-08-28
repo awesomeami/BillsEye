@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { 
   calculateDashboardSummary, 
   getDateRange,
+  getElapsedMonthComparisonRanges,
   generateMonthlyReport,
   generateItemReport,
   generateMerchantReport
@@ -68,7 +69,7 @@ for (const tz of testTimezones) {
       assert.strictEqual(last3IncludingCurrent.end, '2024-02-29');
     });
 
-    test('calculates dashboard summary properly (current, previous, MTD, null exclusion)', () => {
+    test('compares the elapsed current month with the same elapsed prior-month period', () => {
       const refDate = new Date('2026-08-10T12:00:00Z');
       const receipts: ReceiptDocument[] = [
         { ...baseReceipt, id: '1', transactionDate: '2026-08-05', printedGrandTotal: 5000 },
@@ -84,18 +85,51 @@ for (const tz of testTimezones) {
 
       const summary = calculateDashboardSummary(receipts, refDate);
       
-      // Current total = 5000 + 2000 - 500 = 6500 (id 9 is excluded from sums)
-      assert.strictEqual(summary.currentTotal, 6500);
-      assert.strictEqual(summary.prevTotal, 4000);
-      assert.strictEqual(summary.mtdPriorTotal, 3000);
-      assert.strictEqual(summary.changeAbs, 2500);
-      assert.strictEqual(summary.changePct, 62.5);
+      // Current total = 5000 - 500; Aug 15 and Jul 25 are after the comparison period.
+      assert.strictEqual(summary.currentTotal, 4500);
+      assert.strictEqual(summary.currentTotalAvailable, true);
+      assert.strictEqual(summary.prevTotal, 3000);
+      assert.strictEqual(summary.previousTotalAvailable, true);
+      assert.strictEqual(summary.changeAbs, 1500);
+      assert.strictEqual(summary.changePct, 50);
       assert.strictEqual(summary.pendingCount, 1);
       assert.strictEqual(summary.needsDateCount, 1);
       assert.strictEqual(summary.excludedNullCount, 1);
-      assert.strictEqual(summary.receiptCount, 4); // id 1, 2, 8, 9 are this month
-      assert.strictEqual(summary.averageReceiptValue, 2167); // 6500 / 3 valid receipts
-      assert.deepStrictEqual(summary.dailyTrend.map(day => day.date), ['2026-08-01', '2026-08-05', '2026-08-15']);
+      assert.strictEqual(summary.receiptCount, 3); // id 1, 8, 9 are in the elapsed current period
+      assert.strictEqual(summary.averageReceiptValue, 2250); // 4500 / 2 valid receipts
+      assert.deepStrictEqual(summary.dailyTrend.map(day => day.date), ['2026-08-01', '2026-08-05']);
+    });
+
+    test('clamps equivalent elapsed ranges at month boundaries, including leap years', () => {
+      const cases = [
+        ['2026-08-10T12:00:00Z', '2026-08-01', '2026-08-10', '2026-07-01', '2026-07-10'],
+        ['2024-03-31T12:00:00Z', '2024-03-01', '2024-03-31', '2024-02-01', '2024-02-29'],
+        ['2023-03-31T12:00:00Z', '2023-03-01', '2023-03-31', '2023-02-01', '2023-02-28'],
+        ['2026-01-05T12:00:00Z', '2026-01-01', '2026-01-05', '2025-12-01', '2025-12-05'],
+      ] as const;
+
+      for (const [input, currentStart, currentEnd, previousStart, previousEnd] of cases) {
+        const ranges = getElapsedMonthComparisonRanges(new Date(input));
+        assert.deepStrictEqual(ranges.current, { start: currentStart, end: currentEnd });
+        assert.deepStrictEqual(ranges.previous, { start: previousStart, end: previousEnd });
+      }
+    });
+
+    test('does not calculate a percentage for a zero prior total or an unavailable current total', () => {
+      const refDate = new Date('2026-08-10T12:00:00Z');
+      const zeroPrior = calculateDashboardSummary([
+        { ...baseReceipt, id: 'current', transactionDate: '2026-08-05', printedGrandTotal: 1000 },
+        { ...baseReceipt, id: 'previous', transactionDate: '2026-07-05', printedGrandTotal: 0 },
+      ], refDate);
+      assert.strictEqual(zeroPrior.previousTotalAvailable, true);
+      assert.strictEqual(zeroPrior.changePct, null);
+
+      const unknownCurrent = calculateDashboardSummary([
+        { ...baseReceipt, id: 'current', transactionDate: '2026-08-05', printedGrandTotal: null },
+        { ...baseReceipt, id: 'previous', transactionDate: '2026-07-05', printedGrandTotal: 1000 },
+      ], refDate);
+      assert.strictEqual(unknownCurrent.currentTotalAvailable, false);
+      assert.strictEqual(unknownCurrent.changePct, null);
     });
 
     test('aggregates category composition strictly based on items', () => {
