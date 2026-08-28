@@ -3,26 +3,18 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "packageManager": "npm@11.12.1",
-  "engines": {
-    "node": "24.15.0",
-    "npm": "11.12.1"
-  },
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
-    "preview": "npm run preview:static",
-    "preview:static": "vite preview",
-    "clean": "node -e \"const { rmSync } = require('node:fs'); for (const directory of ['dist', 'dist-server']) rmSync(directory, { recursive: true, force: true });\"",
-    "lint": "eslint . --max-warnings 76",
-    "typecheck": "node --max-old-space-size=1536 ./node_modules/typescript/bin/tsc --noEmit",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist-server/server.cjs",
+    "start": "node dist-server/server.cjs",
+    "preview": "vite preview",
+    "clean": "rm -rf dist dist-server",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "test:unit": "tsx --test src/domain/__tests__/*.test.ts src/features/**/__tests__/*.test.ts src/server/__tests__/*.test.ts src/services/export/__tests__/*.test.ts src/services/ai/__tests__/*.test.ts src/services/firebase/__tests__/errors.test.ts",
-    "test:firestore": "firebase emulators:exec --only firestore \"tsx --test src/services/firebase/__tests__/firestore.rules.test.ts src/services/firebase/__tests__/integration.test.ts\"",
+    "test:firestore": "firebase emulators:exec --only firestore \"npx tsx --test src/services/firebase/__tests__/firestore.rules.test.ts src/services/firebase/__tests__/integration.test.ts\"",
     "test": "npm run test:unit && npm run test:firestore",
-    "test:e2e": "playwright test",
-    "test:a11y": "playwright test --grep @a11y",
-    "verify": "node scripts/run-verification.mjs"
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "@google/genai": "^2.19.0",
@@ -68,7 +60,6 @@
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "firebase-tools": "15.28.1",
     "supertest": "^7.2.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.23.12",

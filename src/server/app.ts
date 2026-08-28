@@ -2,47 +2,43 @@ import express from 'express';
 import helmet from 'helmet';
 import extractionRoute from './extractionRoute';
 import accountRoute from './accountRoute';
+import { isForbiddenArtifactPath } from './clientAssets';
 
 const app = express();
 
-// Keep this policy aligned with vercel.json. Firebase authentication needs the
-// Firebase-hosted frame, but the application itself must never be framed.
+// Keep helmet CSP directives and headers synchronized; allow framing for preview environment
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "https://apis.google.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://apis.google.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "blob:", "https://lh3.googleusercontent.com", "https://*.googleusercontent.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https://lh3.googleusercontent.com", "https://firebasestorage.googleapis.com", "https://*.googleusercontent.com"],
       connectSrc: ["'self'", "https://*.googleapis.com", "https://*.firebaseio.com", "wss://*.firebaseio.com", "https://securetoken.googleapis.com", "https://identitytoolkit.googleapis.com"],
       fontSrc: ["'self'", "data:"],
       workerSrc: ["'self'", "blob:"],
       frameSrc: ["'self'", "https://*.firebaseapp.com"],
-      frameAncestors: ["'none'"],
-      baseUri: ["'self'"],
-      formAction: ["'self'"],
-      objectSrc: ["'none'"],
+      frameAncestors: ["*"],
+      objectSrc: ["'none'"]
     }
   },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
   crossOriginResourcePolicy: false,
-  xFrameOptions: { action: 'deny' }
+  xFrameOptions: false
 }));
 
 app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   if (req.path.startsWith('/api/')) {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
   }
   next();
 });
 
-// Protect server files and env
+// Keep build artifacts and environment files out of API and SPA fallbacks.
 app.use((req, res, next) => {
-  const protectedPaths = ['/.env', '/server.ts', '/server.cjs', '/dist/server.cjs'];
-  if (protectedPaths.includes(req.path) || req.path.startsWith('/.env')) {
+  if (isForbiddenArtifactPath(req.path)) {
     return res.status(404).json({ error: 'Not Found' });
   }
   next();
@@ -60,9 +56,12 @@ app.get('/api/health', (req, res) => {
 
 app.all('/api/*', (req, res) => res.status(404).json({ error: 'Not Found' }));
 
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled server error.');
-  if (err.type === 'entity.too.large') {
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error(JSON.stringify({ message: 'Server request failed' }));
+  const isTooLarge = typeof err === 'object' && err !== null
+    && 'type' in err
+    && (err as { type?: unknown }).type === 'entity.too.large';
+  if (isTooLarge) {
     return res.status(413).json({ error: 'Payload Too Large' });
   }
   res.status(500).json({ error: 'Internal Server Error' });

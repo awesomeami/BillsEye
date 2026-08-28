@@ -3,13 +3,14 @@ import { createServer } from 'node:http';
 import express from 'express';
 import { createServer as createViteServer, loadEnv } from 'vite';
 import apiApp from './src/server/app';
+import { mountProductionClient } from './src/server/clientAssets';
 
 function getPort(value: string | undefined): number {
   const port = Number(value);
   return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : 3000;
 }
 
-async function startServer() {
+export const createProductionServer = () => {
   const app = express();
   const httpServer = createServer(app);
   const isProduction = process.env.NODE_ENV === 'production';
@@ -24,6 +25,9 @@ async function startServer() {
   const PORT = getPort(process.env.PORT);
 
   // Vite middleware for development
+  if (process.env.NODE_ENV !== 'production') {
+    app = express();
+    app.use(apiApp);
   if (!isProduction) {
     const vite = await createViteServer({
       // Middleware mode does not attach its own HTTP upgrade listener. Give
@@ -53,6 +57,7 @@ async function startServer() {
       return vite.middlewares(req, res, next);
     });
   } else {
+    app = createProductionServer();
     app.use(apiApp);
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));

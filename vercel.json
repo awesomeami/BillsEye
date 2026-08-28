@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "outputDirectory": "dist",
   "functions": {
     "api/index.ts": {
       "maxDuration": 60
@@ -25,6 +26,14 @@
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.ts" },
+    { "source": "/.env(.*)", "destination": "/api/not-found.ts" },
+    { "source": "/dist/(.*)", "destination": "/api/not-found.ts" },
+    { "source": "/dist-server/(.*)", "destination": "/api/not-found.ts" },
+    { "source": "/server(.*)", "destination": "/api/not-found.ts" },
+    { "source": "/(.*)%(.*)", "destination": "/api/not-found.ts" },
+    { "source": "/(.*).map", "destination": "/api/not-found.ts" },
+    { "source": "/(.*).cjs", "destination": "/api/not-found.ts" },
+    { "source": "/(.*).ts", "destination": "/api/not-found.ts" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

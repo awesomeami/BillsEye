@@ -85,6 +85,10 @@ GitHub Actions runs `npm ci`, linting, type checking, unit tests, Firestore emul
 
 `vercel.json` configures `api/index.ts` with a 60-second maximum duration. The extraction route stops its Gemini request after 55 seconds so it can return a normal timeout response first. Vercel's request and response payload limit is 4.5 MB; the application accepts one receipt image up to 4 MiB and reserves multipart overhead below that platform limit. No setting in this repository raises Vercel's 4.5 MB platform limit.
 
+### Extraction admission controls
+
+Receipt extraction uses the existing Firebase Admin Firestore connection for a shared per-user admission record in the server-only `serverExtractionControls` collection. No new service, API key, index, or paid dependency is required. Browser Firestore rules deny this collection; only the Vercel server can read or write it. A record enforces a 10-request-per-minute fixed window and one active extraction lease, with a 65-second expiry so an interrupted function cannot lock a user out permanently.
+
 ## PWA behavior
 
 The service worker precaches only built application assets. It has no cache-first runtime route. `/api` traffic, Google API traffic, and `blob:` object URLs are explicitly network-only, so receipt images, Gemini request data, and API responses are not cached.
