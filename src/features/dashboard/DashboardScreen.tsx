@@ -1,18 +1,24 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, ArrowDownRight, Wallet, ReceiptText, Inbox, ChevronRight, AlertTriangle, TrendingUp, TrendingDown, Tag } from 'lucide-react';
-import { formatCurrency } from '../../utilities/config';
+import { ArrowUpRight, ArrowDownRight, Wallet, ReceiptText, Inbox, ChevronRight, AlertTriangle, TrendingUp, Tag } from 'lucide-react';
+import { APP_CONFIG, formatCurrency } from '../../utilities/config';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
 import { calculateDashboardSummary, generateSummaryInsights } from '../../domain/analytics';
 import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
 
+const formatTrendDate = (date: string) => new Intl.DateTimeFormat(APP_CONFIG.locale, {
+  timeZone: APP_CONFIG.timeZone,
+  month: 'short',
+  day: 'numeric',
+}).format(new Date(`${date}T00:00:00+05:00`));
+
 export function DashboardScreen() {
-  const { receipts } = useReceiptsLibrary();
+  const { receipts, pendingReceipts, categories } = useReceiptsLibrary();
   
-  const summary = useMemo(() => calculateDashboardSummary(receipts), [receipts]);
-  const insights = useMemo(() => generateSummaryInsights(receipts), [receipts]);
+  const summary = useMemo(() => calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories), [receipts, pendingReceipts, categories]);
+  const insights = useMemo(() => generateSummaryInsights(receipts, new Date(), categories), [receipts, categories]);
 
   const {
     currentTotal,
@@ -213,20 +219,20 @@ export function DashboardScreen() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                   <XAxis 
                     dataKey="date" 
-                    tickFormatter={(val) => val.split('-').slice(1).join('/')} 
+                    tickFormatter={formatTrendDate}
                     stroke="#9ca3af"
                     fontSize={12}
                     tickMargin={10}
                   />
                   <YAxis 
-                    tickFormatter={(val) => `$${val / 100}`}
+                    tickFormatter={(val: number) => formatCurrency(val / 100)}
                     stroke="#9ca3af"
                     fontSize={12}
                     width={50}
                   />
                   <Tooltip 
                     formatter={(value: number) => formatCurrency(value / 100)}
-                    labelFormatter={(label) => `Date: ${label}`}
+                    labelFormatter={(label) => `Date: ${formatTrendDate(String(label))}`}
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   />
                   <Line type="monotone" dataKey="total" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />

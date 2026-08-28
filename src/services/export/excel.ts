@@ -1,8 +1,8 @@
 import ExcelJS from 'exceljs';
 import { ReceiptDocument, CategoryDocument } from '../../domain/schema';
 
-function sanitizeCell(value: any): any {
-  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(value)) {
+function sanitizeCell(value: string): string {
+  if (/^[=+\-@\t\r]/.test(value)) {
     return "'" + value;
   }
   return value;
@@ -42,8 +42,8 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
     receiptsSheet.addRow({
       date: r.transactionDate || r.createdAt,
       merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
-      total: r.printedGrandTotal !== null ? r.printedGrandTotal / 100 : null,
-      tax: r.printedTax !== null ? r.printedTax / 100 : null,
+      total: r.printedGrandTotal != null ? r.printedGrandTotal / 100 : null,
+      tax: r.printedTax != null ? r.printedTax / 100 : null,
       currency: r.currency,
       status: r.status,
       notes: sanitizeCell(r.userNote || '')
@@ -72,8 +72,8 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
         itemName: sanitizeCell(item.name || item.rawLineText || 'Unknown'),
         category: sanitizeCell(item.category || 'Uncategorized'),
         qty: item.quantity || 1,
-        price: item.unitPrice !== null ? item.unitPrice / 100 : null,
-        total: item.lineTotal !== null ? item.lineTotal / 100 : null
+        price: item.unitPrice != null ? item.unitPrice / 100 : null,
+        total: item.lineTotal != null ? item.lineTotal / 100 : null
       });
     });
   });
@@ -130,7 +130,7 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
         itemName: sanitizeCell(item.name || item.rawLineText || 'Unknown'),
         merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
         date: r.transactionDate || r.createdAt,
-        price: item.unitPrice !== null ? item.unitPrice / 100 : null
+        price: item.unitPrice != null ? item.unitPrice / 100 : null
       });
     });
   });
@@ -147,16 +147,16 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
     { header: 'Missing Fields', key: 'missing', width: 30 },
   ];
   receipts.forEach(r => {
-    const missing = [];
+    const missing: string[] = [];
     if (!r.merchantNormalized) missing.push('Merchant');
     if (!r.transactionDate) missing.push('Date');
-    if (r.printedGrandTotal === null) missing.push('Total');
+    if (r.printedGrandTotal == null) missing.push('Total');
     
     if (missing.length > 0 || r.discrepancy !== 0) {
       dqSheet.addRow({
         id: r.id,
         merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
-        disc: r.discrepancy !== null ? r.discrepancy / 100 : null,
+        disc: r.discrepancy != null ? r.discrepancy / 100 : null,
         missing: missing.join(', ')
       });
     }

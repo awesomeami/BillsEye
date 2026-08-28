@@ -1,5 +1,5 @@
-function sanitizeCell(value: any): any {
-  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(value)) {
+function sanitizeCell(value: string): string {
+  if (/^[=+\-@\t\r]/.test(value)) {
     return "'" + value;
   }
   return value;
@@ -12,8 +12,8 @@ export function exportReceiptsCSV(receipts: ReceiptDocument[], addBom = true) {
     id: r.id,
     date: r.transactionDate || r.createdAt,
     merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
-    total: r.printedGrandTotal !== null ? r.printedGrandTotal / 100 : '',
-    tax: r.printedTax !== null ? r.printedTax / 100 : '',
+    total: r.printedGrandTotal != null ? r.printedGrandTotal / 100 : '',
+    tax: r.printedTax != null ? r.printedTax / 100 : '',
     currency: r.currency,
     status: r.status,
     notes: sanitizeCell(r.userNote || '')
@@ -32,8 +32,8 @@ export function exportItemsCSV(receipts: ReceiptDocument[], addBom = true) {
       itemId: item.id,
       itemName: sanitizeCell(item.name || item.rawLineText || 'Unknown'),
       quantity: item.quantity || 1,
-      price: item.unitPrice !== null ? item.unitPrice / 100 : '',
-      total: item.lineTotal !== null ? item.lineTotal / 100 : '',
+      price: item.unitPrice != null ? item.unitPrice / 100 : '',
+      total: item.lineTotal != null ? item.lineTotal / 100 : '',
       category: sanitizeCell(item.category || 'Uncategorized')
     }))
   );

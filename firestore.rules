@@ -6,7 +6,7 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-    
+
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
@@ -17,9 +17,11 @@ service cloud.firestore {
     function isValidId(id) { 
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
     }
-    
-    function hasNoImageData(data) {
-      return !('image' in data) && !('imageBase64' in data) && !('blob' in data) && !('file' in data) && !('thumbnail' in data) && !('storagePath' in data);
+
+    function isValidReceiptItemSlot(slot) {
+      // One document per slot bounds a receipt to forty items without trying
+      // to iterate a list in Rules.
+      return slot is string && slot.matches('^([0-9]|[1-2][0-9]|3[0-9])$');
     }
 
     function checkStringOrNull(val, maxLen) {
@@ -34,11 +36,48 @@ service cloud.firestore {
     function checkBoolOrNull(val) {
       return val == null || val is bool;
     }
+
+    function isBoundedString(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    // Rules cannot iterate a list, so validate every supported warning slot.
+    // Nesting makes the usual short list case short-circuit, keeping valid
+    // receipt-header writes below the platform expression limit while still
+    // rejecting maps, blobs, and image-like values in every supported slot.
+    function checkStringList(val, maxItems, maxLen) {
+      return val is list && val.size() <= maxItems
+        && (val.size() == 0 || (isBoundedString(val[0], maxLen)
+          && (val.size() == 1 || (isBoundedString(val[1], maxLen)
+          && (val.size() == 2 || (isBoundedString(val[2], maxLen)
+          && (val.size() == 3 || (isBoundedString(val[3], maxLen)
+          && (val.size() == 4 || (isBoundedString(val[4], maxLen)
+          && (val.size() == 5 || (isBoundedString(val[5], maxLen)
+          && (val.size() == 6 || (isBoundedString(val[6], maxLen)
+          && (val.size() == 7 || (isBoundedString(val[7], maxLen)
+          && (val.size() == 8 || (isBoundedString(val[8], maxLen)
+          && (val.size() == 9 || (isBoundedString(val[9], maxLen)
+          && (val.size() == 10 || (isBoundedString(val[10], maxLen)
+          && (val.size() == 11 || (isBoundedString(val[11], maxLen)
+          && (val.size() == 12 || (isBoundedString(val[12], maxLen)
+          && (val.size() == 13 || (isBoundedString(val[13], maxLen)
+          && (val.size() == 14 || (isBoundedString(val[14], maxLen)
+          && (val.size() == 15 || (isBoundedString(val[15], maxLen)
+          && (val.size() == 16 || (isBoundedString(val[16], maxLen)
+          && (val.size() == 17 || (isBoundedString(val[17], maxLen)
+          && (val.size() == 18 || (isBoundedString(val[18], maxLen)
+          && (val.size() == 19 || (isBoundedString(val[19], maxLen)
+          && val.size() == 20
+          ) ) ) ) ) ) ) ) ) )
+          ) ) ) ) ) ) ) ) ) )
+          ) ) ) ) ) ) ) ) ) )
+          ) ) ) ) ) ) ) ) ) );
+    }
     
     function isValidReceiptItem(item) {
       return item is map 
         && item.keys().hasAll(['id'])
-        && item.keys().hasOnly(['id', 'rawLineText', 'name', 'brand', 'quantity', 'unit', 'unitPrice', 'discount', 'lineTotal', 'category', 'confidence', 'userEdited', 'warnings'])
+        && item.keys().hasOnly(['id', 'rawLineText', 'name', 'brand', 'quantity', 'unit', 'unitPrice', 'discount', 'lineTotal', 'categoryId', 'category', 'confidence', 'userEdited', 'warnings'])
         && item.id is string && item.id.size() <= 128
         && checkStringOrNull(item.get('rawLineText', null), 500)
         && checkStringOrNull(item.get('name', null), 200)
@@ -48,65 +87,34 @@ service cloud.firestore {
         && checkNumberOrNullNoMax(item.get('unitPrice', null), 0)
         && checkNumberOrNullNoMax(item.get('discount', null), 0)
         && checkNumberOrNullNoMax(item.get('lineTotal', null), 0)
+        && (item.get('categoryId', null) == null || isValidId(item.get('categoryId', null)))
         && checkStringOrNull(item.get('category', null), 100)
         && checkNumberOrNull(item.get('confidence', null), 0, 1)
         && checkBoolOrNull(item.get('userEdited', null))
-        && (item.get('warnings', []) is list && item.get('warnings', []).size() <= 10);
-    }
-    
-    function areValidReceiptItems(items) {
-      return (items.size() <= 0 || isValidReceiptItem(items[0]))
-        && (items.size() <= 1 || isValidReceiptItem(items[1]))
-        && (items.size() <= 2 || isValidReceiptItem(items[2]))
-        && (items.size() <= 3 || isValidReceiptItem(items[3]))
-        && (items.size() <= 4 || isValidReceiptItem(items[4]))
-        && (items.size() <= 5 || isValidReceiptItem(items[5]))
-        && (items.size() <= 6 || isValidReceiptItem(items[6]))
-        && (items.size() <= 7 || isValidReceiptItem(items[7]))
-        && (items.size() <= 8 || isValidReceiptItem(items[8]))
-        && (items.size() <= 9 || isValidReceiptItem(items[9]))
-        && (items.size() <= 10 || isValidReceiptItem(items[10]))
-        && (items.size() <= 11 || isValidReceiptItem(items[11]))
-        && (items.size() <= 12 || isValidReceiptItem(items[12]))
-        && (items.size() <= 13 || isValidReceiptItem(items[13]))
-        && (items.size() <= 14 || isValidReceiptItem(items[14]))
-        && (items.size() <= 15 || isValidReceiptItem(items[15]))
-        && (items.size() <= 16 || isValidReceiptItem(items[16]))
-        && (items.size() <= 17 || isValidReceiptItem(items[17]))
-        && (items.size() <= 18 || isValidReceiptItem(items[18]))
-        && (items.size() <= 19 || isValidReceiptItem(items[19]))
-        && (items.size() <= 20 || isValidReceiptItem(items[20]))
-        && (items.size() <= 21 || isValidReceiptItem(items[21]))
-        && (items.size() <= 22 || isValidReceiptItem(items[22]))
-        && (items.size() <= 23 || isValidReceiptItem(items[23]))
-        && (items.size() <= 24 || isValidReceiptItem(items[24]))
-        && (items.size() <= 25 || isValidReceiptItem(items[25]))
-        && (items.size() <= 26 || isValidReceiptItem(items[26]))
-        && (items.size() <= 27 || isValidReceiptItem(items[27]))
-        && (items.size() <= 28 || isValidReceiptItem(items[28]))
-        && (items.size() <= 29 || isValidReceiptItem(items[29]))
-        && (items.size() <= 30 || isValidReceiptItem(items[30]))
-        && (items.size() <= 31 || isValidReceiptItem(items[31]))
-        && (items.size() <= 32 || isValidReceiptItem(items[32]))
-        && (items.size() <= 33 || isValidReceiptItem(items[33]))
-        && (items.size() <= 34 || isValidReceiptItem(items[34]))
-        && (items.size() <= 35 || isValidReceiptItem(items[35]))
-        && (items.size() <= 36 || isValidReceiptItem(items[36]))
-        && (items.size() <= 37 || isValidReceiptItem(items[37]))
-        && (items.size() <= 38 || isValidReceiptItem(items[38]))
-        && (items.size() <= 39 || isValidReceiptItem(items[39]));
+        && checkStringList(item.get('warnings', []), 10, 200);
     }
     
     function isValidReceipt(data) {
       return data is map
-        && hasNoImageData(data)
-        && data.keys().hasAll(['id', 'schemaVersion', 'revision', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['id', 'schemaVersion', 'revision', 'status', 'createdAt', 'updatedAt', 'itemStorageVersion', 'items'])
+        && data.keys().hasOnly([
+          'id', 'schemaVersion', 'revision', 'status', 'createdAt', 'updatedAt', 'confirmedAt',
+          'sourceFileName', 'sourceMimeType', 'sourceSha256', 'sourcePageNumber',
+          'merchantRaw', 'merchantNormalized', 'branchAddress', 'receiptNumber',
+          'transactionDate', 'transactionTime', 'dateAmbiguous', 'currency', 'paymentMethod', 'items',
+          'printedSubtotal', 'printedDiscount', 'printedTax', 'printedFees', 'printedRounding', 'printedGrandTotal',
+          'computedLineTotal', 'computedExpectedTotal', 'discrepancy', 'reconciliationStatus',
+          'rawOcrText', 'overallConfidence', 'warnings', 'ambiguousFields',
+          'extractionModel', 'extractionModelActual', 'extractionSchemaVersion', 'extractionDurationMs',
+          'userNote', 'wasEditedByUser', 'itemStorageVersion'
+        ])
         && data.id is string && data.id.size() <= 128
         && data.schemaVersion is number && data.schemaVersion >= 1 && data.schemaVersion <= 2
         && data.revision is number && data.revision >= 1
         && data.status in ['pendingReview', 'confirmed']
         && data.createdAt is timestamp
         && data.updatedAt is timestamp
+        && data.itemStorageVersion is number && data.itemStorageVersion == 2
         && (data.get('confirmedAt', null) == null || data.get('confirmedAt', null) is timestamp)
         && checkStringOrNull(data.get('sourceFileName', null), 255)
         && checkStringOrNull(data.get('sourceMimeType', null), 100)
@@ -133,21 +141,26 @@ service cloud.firestore {
         && (data.get('reconciliationStatus', null) == null || data.get('reconciliationStatus', null) in ['matched', 'mismatched', 'unknown'])
         && checkStringOrNull(data.get('rawOcrText', null), 100000)
         && checkNumberOrNull(data.get('overallConfidence', null), 0, 1)
+        && checkStringList(data.get('warnings', []), 20, 255)
+        && checkStringList(data.get('ambiguousFields', []), 20, 100)
         && checkStringOrNull(data.get('extractionModel', null), 100)
+        && checkStringOrNull(data.get('extractionModelActual', null), 100)
         && checkStringOrNull(data.get('extractionSchemaVersion', null), 50)
         && checkNumberOrNullNoMax(data.get('extractionDurationMs', null), 0)
         && checkStringOrNull(data.get('userNote', null), 500)
         && checkBoolOrNull(data.get('wasEditedByUser', null))
-        && data.get('items', []) is list && data.get('items', []).size() <= 40
-        && areValidReceiptItems(data.get('items', []));
+        // The parent has no inline items. Each item is validated independently
+        // in the nested /items collection, avoiding Rules' list-expression cap.
+        && data.items is list && data.items.size() == 0;
     }
     
     function isValidCategory(data) {
       return data is map
-        && hasNoImageData(data)
         && data.keys().hasAll(['id', 'name', 'isCustom', 'createdAt', 'order', 'isActive'])
+        && data.keys().hasOnly(['id', 'name', 'legacyNames', 'isCustom', 'createdAt', 'color', 'icon', 'order', 'isActive'])
         && data.id is string && data.id.size() <= 128
         && data.name is string && data.name.size() <= 100
+        && checkStringList(data.get('legacyNames', []), 20, 100)
         && data.isCustom is bool
         && data.createdAt is string && data.createdAt.size() <= 50
         && checkStringOrNull(data.get('color', null), 50)
@@ -158,8 +171,8 @@ service cloud.firestore {
     
     function isValidAlias(data) {
       return data is map
-        && hasNoImageData(data)
         && data.keys().hasAll(['id', 'merchantNormalized', 'categoryId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'merchantNormalized', 'categoryId', 'createdAt', 'updatedAt'])
         && data.id is string && data.id.size() <= 128
         && data.merchantNormalized is string && data.merchantNormalized.size() <= 255
         && data.categoryId is string && data.categoryId.size() <= 128
@@ -169,7 +182,7 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return data is map
-        && hasNoImageData(data)
+        && data.keys().hasOnly(['currency', 'locale', 'timeZone', 'theme', 'lowConfidenceThreshold', 'discrepancyTolerance'])
         && checkStringOrNull(data.get('currency', null), 10)
         && checkStringOrNull(data.get('locale', null), 20)
         && checkStringOrNull(data.get('timeZone', null), 50)
@@ -177,11 +190,19 @@ service cloud.firestore {
         && checkNumberOrNull(data.get('lowConfidenceThreshold', null), 0, 1)
         && checkNumberOrNullNoMax(data.get('discrepancyTolerance', null), 0);
     }
+
+    function isValidSyncDiagnostic(data) {
+      return data is map
+        && data.keys().hasAll(['lastTest', 'device'])
+        && data.keys().hasOnly(['lastTest', 'device'])
+        && data.lastTest is timestamp
+        && data.device is string && data.device.size() <= 50;
+    }
     
     function isValidUserProfile(data) {
       return data is map
-        && hasNoImageData(data)
         && data.keys().hasAll(['email', 'createdAt', 'lastLoginAt', 'schemaVersion'])
+        && data.keys().hasOnly(['email', 'displayName', 'createdAt', 'lastLoginAt', 'schemaVersion'])
         && data.email is string && data.email.size() <= 255
         && data.createdAt is timestamp
         && data.lastLoginAt is timestamp
@@ -210,6 +231,23 @@ service cloud.firestore {
           && incoming().createdAt == existing().createdAt
           && incoming().revision > existing().revision;
         allow delete: if isOwner(uid) && isValidId(receiptId);
+
+        match /items/{itemSlot} {
+          allow read: if isOwner(uid);
+          allow create: if isOwner(uid)
+            && isValidId(receiptId)
+            && isValidReceiptItemSlot(itemSlot)
+            && existsAfter(/databases/$(database)/documents/users/$(uid)/receipts/$(receiptId))
+            && isValidReceiptItem(incoming())
+            && incoming().id is string;
+          allow update: if isOwner(uid)
+            && isValidId(receiptId)
+            && isValidReceiptItemSlot(itemSlot)
+            && existsAfter(/databases/$(database)/documents/users/$(uid)/receipts/$(receiptId))
+            && isValidReceiptItem(incoming())
+            && incoming().id is string;
+          allow delete: if isOwner(uid) && isValidId(receiptId) && isValidReceiptItemSlot(itemSlot);
+        }
       }
       
       match /categories/{categoryId} {
@@ -228,9 +266,10 @@ service cloud.firestore {
       
       match /settings/{settingId} {
         allow read: if isOwner(uid);
-        allow create: if isOwner(uid) && isValidSettings(incoming());
-        allow update: if isOwner(uid) && isValidSettings(incoming());
-        allow delete: if false;
+        allow create, update: if isOwner(uid)
+          && ((settingId == 'default' && isValidSettings(incoming()))
+            || (settingId == 'sync-test' && isValidSyncDiagnostic(incoming())));
+        allow delete: if isOwner(uid) && settingId == 'sync-test';
       }
     }
     

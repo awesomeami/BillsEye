@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import { useToast } from '../../components/ui/Toast';
 import { formatCurrency, formatDate } from '../../utilities/config';
 import { CheckCircle, Search, Trash2 } from 'lucide-react';
-import { serverTimestamp } from 'firebase/firestore';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ReceiptDocument } from '../../domain/schema';
 import { ImageSessionStore } from '../../utils/imageSessionStore';
@@ -13,8 +12,6 @@ export function InboxScreen() {
   const { showToast } = useToast();
   const { pendingReceipts, updateReceipt, deleteReceipt } = useReceiptsLibrary();
   
-  const [receiptToDelete, setReceiptToDelete] = useState<string | null>(null);
-  const navigate = useNavigate();
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const handleDelete = async () => {
@@ -34,8 +31,9 @@ export function InboxScreen() {
   const handleConfirm = async (receipt: ReceiptDocument) => {
     try {
       await updateReceipt(receipt.id, {
-        status: 'confirmed',
-        confirmedAt: new Date().toISOString()
+        // The repository supplies serverTimestamp() when confirmation changes,
+        // so Firestore receives a timestamp rather than a client-side value.
+        status: 'confirmed'
       }, receipt.revision);
       ImageSessionStore.delete(receipt.id);
     } catch (err) {

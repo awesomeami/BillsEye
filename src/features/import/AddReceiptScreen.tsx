@@ -3,7 +3,7 @@ import { useToast } from '../../components/ui/Toast';
 import { Camera, Image as ImageIcon, FileText, Upload, X, RotateCw, Crop, CheckCircle2, AlertCircle, Clock, Search, ChevronRight, Slash } from 'lucide-react';
 import { useBlocker, Link } from 'react-router-dom';
 import { useReceiptQueue } from '../receipts/queue/ReceiptQueueContext';
-import { QueueItem } from '../receipts/queue/queueReducer';
+import { QueueItem, isRetryableQueueStatus, isTerminalQueueStatus } from '../receipts/queue/queueReducer';
 import { ReceiptCropper } from '../receipts/queue/components/ReceiptCropper';
 import { PdfPageSelector } from './PdfPageSelector';
 
@@ -20,7 +20,7 @@ export function AddReceiptScreen() {
   const [cropItem, setCropItem] = useState<QueueItem | null>(null);
   const [pdfToProcess, setPdfToProcess] = useState<{ file: File, totalPages: number } | null>(null);
 
-  const hasActiveQueue = items.some(i => !['completed', 'failed-permanent', 'cancelled', 'needs-review', 'duplicate'].includes(i.status));
+  const hasActiveQueue = items.some(i => !isTerminalQueueStatus(i.status));
 
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
@@ -67,7 +67,7 @@ export function AddReceiptScreen() {
         const { getPdfPageCount } = await import('./../../utils/pdfProcessor');
         const totalPages = await getPdfPageCount(firstPdf);
         setPdfToProcess({ file: firstPdf, totalPages });
-      } catch (err) {
+      } catch {
         showToast("Could not read PDF file.", "error");
       }
     }
@@ -92,7 +92,7 @@ export function AddReceiptScreen() {
 
   const retryFailed = () => {
     items.forEach(i => {
-      if (i.status === 'retry-wait') {
+      if (isRetryableQueueStatus(i.status)) {
         retryItem(i.id);
       }
     });
@@ -240,7 +240,7 @@ export function AddReceiptScreen() {
                 >
                   Add More
                 </button>
-                {items.some(i => i.status === 'retry-wait' || i.status === 'failed-permanent') && (
+                {items.some(i => isRetryableQueueStatus(i.status)) && (
                   <button 
                     onClick={retryFailed}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 cursor-pointer"
@@ -280,7 +280,6 @@ function QueueItemCard({ item, onRemove, onCrop, onCancel }: { item: QueueItem, 
       case 'retry-wait': return { text: `Waiting to retry (Cooldown)`, icon: Clock, color: 'text-red-600', bg: 'bg-red-100' };
       case 'failed-permanent': return { text: 'Failed', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-100' };
       case 'cancelled': return { text: 'Cancelled', icon: Slash, color: 'text-gray-500', bg: 'bg-gray-200' };
-      case 'completed': return { text: 'Completed', icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-100' };
       default: return { text: item.status, icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100' };
     }
   };
@@ -332,7 +331,7 @@ function QueueItemCard({ item, onRemove, onCrop, onCancel }: { item: QueueItem, 
         )}
         
         {item.status === 'duplicate' && item.receiptId && (
-          <Link to={`/receipts/${item.receiptId}`} className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg flex items-center gap-1 text-sm font-medium">
+          <Link to={`/receipts?id=${item.receiptId}`} className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg flex items-center gap-1 text-sm font-medium">
             View Original <ChevronRight size={16} />
           </Link>
         )}

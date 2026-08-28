@@ -2,17 +2,36 @@ import React, { useState } from 'react';
 import { ChevronRight, Download, Upload, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { db } from '../../services/firebase/config';
-import { collection, getDocs, doc, writeBatch, Timestamp } from 'firebase/firestore';
-import { generateJSONBackup, validateBackup, BackupEnvelope } from '../../services/export/backup';
-import { AiVault } from '../../services/ai/vault';
-import { ReceiptDocument, CategoryDocument } from '../../domain/schema';
+import { collection, getDoc, getDocs, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  generateJSONBackup,
+  normalizeBackupContents,
+  receiptRestorePatch,
+  summarizeRestoreRecords,
+  validateBackup,
+  BackupEnvelope,
+} from '../../services/export/backup';
+import { useAiKeys } from './ai/AiKeysContext';
+import { receiptRepository, aliasRepository, settingsRepository } from '../../services/firebase/db';
 
 interface DataExportSettingsProps {
   onBack: () => void;
 }
 
+const toIsoTimestamp = (value: unknown): string => {
+  if (value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate().toISOString();
+  }
+  if (typeof value === 'string') {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date.toISOString();
+  }
+  throw new Error('Backup contains an invalid timestamp.');
+};
+
 export function DataExportSettings({ onBack }: DataExportSettingsProps) {
   const { user, signOut } = useAuth();
+  const { clearLocalVault } = useAiKeys();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -20,23 +39,30 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
 
   const [restoreDryRun, setRestoreDryRun] = useState<{
     envelope: BackupEnvelope;
-    newReceipts: number;
-    overwriteReceipts: number;
-    unchangedReceipts: number;
-    newCategories: number;
-    overwriteCategories: number;
-    unchangedCategories: number;
+    records: Record<'profile' | 'receipts' | 'categories' | 'aliases' | 'settings', {
+      new: number;
+      overwritten: number;
+      unchanged: number;
+    }>;
   } | null>(null);
 
   const fetchAllData = async () => {
     if (!user) throw new Error('Not authenticated');
-    const receiptsSnap = await getDocs(collection(db, `users/${user.uid}/receipts`));
-    const categoriesSnap = await getDocs(collection(db, `users/${user.uid}/categories`));
-    
-    return {
-      receipts: receiptsSnap.docs.map(d => d.data() as ReceiptDocument),
-      categories: categoriesSnap.docs.map(d => d.data() as CategoryDocument)
-    };
+    const [receipts, categoriesSnap, aliases, settings, profileSnap] = await Promise.all([
+      receiptRepository.getReceipts(user.uid),
+      getDocs(collection(db, `users/${user.uid}/categories`)),
+      aliasRepository.getAliases(user.uid),
+      settingsRepository.getSettings(user.uid),
+      getDoc(doc(db, 'users', user.uid)),
+    ]);
+
+    return normalizeBackupContents({
+      profile: profileSnap.exists() ? profileSnap.data() : null,
+      receipts,
+      categories: categoriesSnap.docs.map(category => category.data()),
+      aliases,
+      settings,
+    });
   };
 
   const downloadFile = (blob: Blob | ArrayBuffer, filename: string, type: string) => {
@@ -114,8 +140,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
   const handleExportJSON = async () => {
     try {
       setLoading(true);
-      const { receipts, categories } = await fetchAllData();
-      const json = generateJSONBackup(receipts, categories);
+      const json = await generateJSONBackup(await fetchAllData());
       downloadFile(new Blob([json]), 'kharchalens_backup.json', 'application/json');
       setSuccess('JSON Backup exported successfully.');
     } catch (e: any) {
@@ -135,7 +160,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
         setLoading(true);
         setError('');
         const text = event.target?.result as string;
-        const result = validateBackup(text);
+        const result = await validateBackup(text);
         if (!result.isValid || !result.envelope) {
           setError(result.error || 'Invalid backup file.');
           return;
@@ -143,48 +168,27 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
 
         // Fetch user's existing data to compute dry-run diff
         const existingData = await fetchAllData();
-        const existingReceiptMap = new Map(existingData.receipts.map(r => [r.id, r]));
-        const existingCategoryMap = new Map(existingData.categories.map(c => [c.id, c]));
-
-        let newReceipts = 0;
-        let overwriteReceipts = 0;
-        let unchangedReceipts = 0;
-        for (const r of result.envelope.receipts) {
-          const existing = existingReceiptMap.get(r.id);
-          if (!existing) {
-            newReceipts++;
-          } else {
-            overwriteReceipts++;
-            // Check if functionally identical
-            if (JSON.stringify(r) === JSON.stringify(existing)) {
-              unchangedReceipts++;
-            }
-          }
-        }
-
-        let newCategories = 0;
-        let overwriteCategories = 0;
-        let unchangedCategories = 0;
-        for (const c of result.envelope.categories) {
-          const existing = existingCategoryMap.get(c.id);
-          if (!existing) {
-            newCategories++;
-          } else {
-            overwriteCategories++;
-            if (JSON.stringify(c) === JSON.stringify(existing)) {
-              unchangedCategories++;
-            }
-          }
-        }
+        const profileUnchanged = JSON.stringify(result.envelope.profile) === JSON.stringify(existingData.profile);
 
         setRestoreDryRun({
           envelope: result.envelope,
-          newReceipts,
-          overwriteReceipts,
-          unchangedReceipts,
-          newCategories,
-          overwriteCategories,
-          unchangedCategories
+          records: {
+            profile: result.envelope.profile === null
+              ? { new: 0, overwritten: 0, unchanged: 0 }
+              : existingData.profile === null
+                ? { new: 1, overwritten: 0, unchanged: 0 }
+                : { new: 0, overwritten: profileUnchanged ? 0 : 1, unchanged: profileUnchanged ? 1 : 0 },
+            receipts: summarizeRestoreRecords(result.envelope.receipts, existingData.receipts),
+            categories: summarizeRestoreRecords(result.envelope.categories, existingData.categories),
+            aliases: summarizeRestoreRecords(result.envelope.aliases, existingData.aliases),
+            settings: result.envelope.settings === null
+              ? { new: 0, overwritten: 0, unchanged: 0 }
+              : existingData.settings === null
+                ? { new: 1, overwritten: 0, unchanged: 0 }
+                : JSON.stringify(result.envelope.settings) === JSON.stringify(existingData.settings)
+                  ? { new: 0, overwritten: 0, unchanged: 1 }
+                  : { new: 0, overwritten: 1, unchanged: 0 },
+          },
         });
       } catch (err: any) {
         setError(err.message);
@@ -200,43 +204,64 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
     if (!restoreDryRun || !user) return;
     try {
       setLoading(true);
-      const { receipts, categories } = restoreDryRun.envelope;
+      const { profile, receipts, categories, aliases, settings } = restoreDryRun.envelope;
       
-      let currentBatch = writeBatch(db);
-      let count = 0;
-      const MAX_BATCH = 500;
-
-      const commitBatch = async () => {
-        if (count > 0) {
-          await currentBatch.commit();
-          currentBatch = writeBatch(db);
-          count = 0;
-        }
-      };
-
       for (const r of receipts) {
-        const ref = doc(db, `users/${user.uid}/receipts`, r.id);
-        const restoredReceipt = {
-          ...r,
-          createdAt: r.createdAt ? Timestamp.fromDate(new Date(r.createdAt)) : Timestamp.now(),
-          updatedAt: r.updatedAt ? Timestamp.fromDate(new Date(r.updatedAt)) : Timestamp.now(),
-          confirmedAt: r.confirmedAt ? Timestamp.fromDate(new Date(r.confirmedAt)) : null,
-        };
-        currentBatch.set(ref, restoredReceipt);
-        count++;
-        if (count === MAX_BATCH) await commitBatch();
+        const existing = await receiptRepository.getReceipt(user.uid, r.id);
+        if (existing) {
+          if (JSON.stringify(r) !== JSON.stringify(existing)) {
+            await receiptRepository.updateReceipt(user.uid, r.id, receiptRestorePatch(r), existing.revision);
+          }
+        } else {
+          await receiptRepository.createReceipt(user.uid, r, { preserveTimestamps: true });
+        }
       }
 
       for (const c of categories) {
         const ref = doc(db, `users/${user.uid}/categories`, c.id);
-        currentBatch.set(ref, c);
-        count++;
-        if (count === MAX_BATCH) await commitBatch();
+        const existing = await getDoc(ref);
+        await setDoc(ref, {
+          ...c,
+          createdAt: existing.exists() ? toIsoTimestamp(existing.data().createdAt) : toIsoTimestamp(c.createdAt),
+        });
       }
-      
-      await commitBatch();
 
-      setSuccess('Restore completed successfully.');
+      for (const alias of aliases) {
+        const ref = doc(db, `users/${user.uid}/aliases`, alias.id);
+        const existing = await getDoc(ref);
+        await setDoc(ref, {
+          ...alias,
+          createdAt: existing.exists() ? toIsoTimestamp(existing.data().createdAt) : toIsoTimestamp(alias.createdAt),
+          updatedAt: existing.exists() ? new Date().toISOString() : toIsoTimestamp(alias.updatedAt),
+        });
+      }
+
+      if (settings) {
+        await setDoc(doc(db, `users/${user.uid}/settings/default`), settings);
+      }
+
+      if (profile) {
+        const profileRef = doc(db, 'users', user.uid);
+        const existingProfile = await getDoc(profileRef);
+        if (existingProfile.exists()) {
+          await setDoc(profileRef, {
+            displayName: profile.displayName ?? null,
+            schemaVersion: Math.max(Number(existingProfile.data().schemaVersion) || 1, profile.schemaVersion),
+            lastLoginAt: serverTimestamp(),
+          }, { merge: true });
+        } else if (user.email) {
+          const profileWrite: Record<string, unknown> = {
+            email: user.email,
+            createdAt: serverTimestamp(),
+            lastLoginAt: serverTimestamp(),
+            schemaVersion: profile.schemaVersion,
+          };
+          if (profile.displayName !== undefined) profileWrite.displayName = profile.displayName;
+          await setDoc(profileRef, profileWrite);
+        }
+      }
+
+      setSuccess('Restore completed successfully. Existing receipt updates received a new revision.');
       setRestoreDryRun(null);
     } catch (err: any) {
       setError(err.message);
@@ -247,7 +272,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
 
   const handleDeleteData = () => {
     setConfirmAction({
-      message: "Are you sure you want to delete ALL your receipt data? This action cannot be undone.",
+      message: "Are you sure you want to delete your receipts, categories, aliases, and settings? This action cannot be undone.",
       action: async () => {
         try {
       setLoading(true);
@@ -259,8 +284,9 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
         },
         body: JSON.stringify({ action: 'delete_data' })
       });
-      if (!res.ok) throw new Error('Failed to delete data');
-      setSuccess('All data deleted successfully.');
+      const result = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(result?.error || 'Failed to delete cloud data.');
+      setSuccess('Receipt, category, alias, and settings data was deleted successfully.');
         } catch (e: any) {
           setError(e.message);
         } finally {
@@ -271,7 +297,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
   };
   const handleDeleteAccount = () => {
     setConfirmAction({
-      message: "Are you sure you want to delete your ACCOUNT and ALL DATA? This cannot be undone.",
+      message: "Are you sure you want to delete your account and all associated cloud data? This cannot be undone. Your local Gemini vault will also be cleared.",
       action: async () => {
         try {
       setLoading(true);
@@ -283,13 +309,15 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
         },
         body: JSON.stringify({ action: 'delete_account' })
       });
-      if (!res.ok) throw new Error('Failed to delete account');
+      const result = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(result?.error || 'Failed to delete account');
       
-      if (user?.uid) {
-        const vault = new AiVault(user.uid);
-        await vault.clearAllForUser();
+      try {
+        await clearLocalVault();
+      } catch {
+        // Sign-out still clears in-memory key material through AiKeysProvider.
+        setError('The account was deleted, but local vault cleanup could not finish. Clear this device\'s offline data before using it again.');
       }
-
       await signOut(); // This will redirect to login automatically
     } catch (e: any) {
       setError(e.message);
@@ -345,7 +373,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
       {/* Backup Section */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
         <h3 className="font-bold text-gray-900">Backup & Restore</h3>
-        <p className="text-sm text-gray-500">Create a secure JSON backup of your entire account or restore from a previous backup. Note: We do not use managed Firestore backups; JSON export is your personal backup method.</p>
+        <p className="text-sm text-gray-500">JSON backups include your profile record, receipts, categories, aliases, and settings. They use a SHA-256 corruption check but are not encrypted or authenticated, so restore only a file you trust. Gemini keys and receipt images are never included.</p>
         
         <div className="flex flex-col sm:flex-row gap-3">
           <button onClick={handleExportJSON} disabled={loading} className="btn-primary flex-1 flex items-center justify-center gap-2">
@@ -363,18 +391,21 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
             <h4 className="font-bold text-blue-900 mb-2">Restore Preview</h4>
             <ul className="text-sm text-blue-800 space-y-1 list-disc pl-5">
               <li>
-                <strong>Receipts:</strong> {restoreDryRun.newReceipts} new, {restoreDryRun.overwriteReceipts} will overwrite existing data ({restoreDryRun.envelope.receipts.length} total in file)
+                <strong>Receipts:</strong> {restoreDryRun.records.receipts.new} new, {restoreDryRun.records.receipts.unchanged} unchanged, {restoreDryRun.records.receipts.overwritten} will overwrite
               </li>
               <li>
-                <strong>Categories:</strong> {restoreDryRun.newCategories} new, {restoreDryRun.overwriteCategories} will overwrite existing data ({restoreDryRun.envelope.categories.length} total in file)
+                <strong>Categories:</strong> {restoreDryRun.records.categories.new} new, {restoreDryRun.records.categories.unchanged} unchanged, {restoreDryRun.records.categories.overwritten} will overwrite
               </li>
+              <li><strong>Aliases:</strong> {restoreDryRun.records.aliases.new} new, {restoreDryRun.records.aliases.unchanged} unchanged, {restoreDryRun.records.aliases.overwritten} will overwrite</li>
+              <li><strong>Settings:</strong> {restoreDryRun.records.settings.new} new, {restoreDryRun.records.settings.unchanged} unchanged, {restoreDryRun.records.settings.overwritten} will overwrite</li>
+              <li><strong>Profile:</strong> {restoreDryRun.records.profile.new} new, {restoreDryRun.records.profile.unchanged} unchanged, {restoreDryRun.records.profile.overwritten} display name update</li>
               <li><strong>Schema Version:</strong> {restoreDryRun.envelope.version}</li>
             </ul>
-            {restoreDryRun.overwriteReceipts > 0 || restoreDryRun.overwriteCategories > 0 ? (
+            {(restoreDryRun.records.receipts.overwritten + restoreDryRun.records.categories.overwritten + restoreDryRun.records.aliases.overwritten + restoreDryRun.records.settings.overwritten + restoreDryRun.records.profile.overwritten) > 0 ? (
               <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 p-3 rounded-lg border border-amber-200 mt-3 mb-4">
                 <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Overwrite Warning:</strong> {restoreDryRun.overwriteReceipts} receipt(s) and {restoreDryRun.overwriteCategories} category(ies) in this backup match existing IDs and will overwrite your current data.
+                  <strong>Conflict policy:</strong> backup fields replace records with matching IDs. Existing receipts keep their creation time and receive a new revision and current update time, so Firestore revision protection remains in effect. The signed-in account’s email and profile creation time are never replaced.
                 </span>
               </div>
             ) : (
@@ -382,6 +413,8 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
                 All records in this backup are new. No existing data will be overwritten.
               </p>
             )}
+            <p className="text-xs text-blue-700 mt-2 mb-4">A profile restore preserves the signed-in account’s email and creation time; it can restore the display name and profile schema version only.</p>
+            <p className="text-xs text-blue-700 mt-2 mb-4">The backup is fully validated before restore starts. Firestore writes are applied record by record; if a network failure interrupts it, retry the same backup to complete the remaining records.</p>
             <div className="flex gap-2">
               <button onClick={confirmRestore} disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
                 {loading && <Loader2 size={16} className="animate-spin" />}
@@ -401,7 +434,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
           <AlertTriangle size={20} />
           <h3 className="font-bold">Danger Zone</h3>
         </div>
-        <p className="text-sm text-red-600/80">These actions are irreversible. Please proceed with caution.</p>
+        <p className="text-sm text-red-600/80">These actions are irreversible. Firestore cannot atomically delete multiple collections; if a deletion is interrupted, the app reports it so you can retry safely.</p>
         
         <div className="space-y-3">
           <button 
@@ -409,7 +442,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
             disabled={loading} 
             className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white border border-red-200 text-red-600 rounded-xl shadow-sm font-medium hover:bg-red-100 transition-colors"
           >
-            <Trash2 size={18} /> Delete All My Receipt Data
+            <Trash2 size={18} /> Delete My Cloud Data (except Profile)
           </button>
           
           <button 

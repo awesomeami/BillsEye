@@ -1,19 +1,47 @@
 import { Router, Request, Response } from 'express';
 import { getFirebaseAdmin } from './firebaseAdmin';
-
-
 import express from 'express';
 import { z } from 'zod';
+import {
+  DeletionDatabase,
+  deleteUserOwnedData,
+  UserDeletionError,
+  UserDeletionProgress,
+} from './accountDeletion';
 
-
-const router = Router();
-router.use(express.json({ limit: '100kb' })); // Limit body size
+interface FirebaseAdminForAccountRoute {
+  auth: {
+    verifyIdToken(token: string): Promise<{ uid: string }>;
+    deleteUser(uid: string): Promise<void>;
+  };
+  db: DeletionDatabase;
+}
 
 const AccountActionSchema = z.object({
   action: z.enum(['delete_data', 'delete_account'])
 });
 
-router.post('/delete', async (req: Request, res: Response): Promise<any> => {
+function deletionFailureResponse(
+  res: Response,
+  progress: UserDeletionProgress,
+  failedStep: string,
+): Response {
+  return res.status(409).json({
+    error: 'Deletion was only partially completed. Please retry to remove the remaining data.',
+    code: 'PARTIAL_DELETION',
+    deletedDocuments: progress.deletedDocuments,
+    completedCollections: progress.completedCollections,
+    failedStep,
+  });
+}
+
+export function createAccountRouter(
+  getAdmin: () => FirebaseAdminForAccountRoute = () => getFirebaseAdmin() as unknown as FirebaseAdminForAccountRoute,
+) {
+  const router = Router();
+  router.use(express.json({ limit: '100kb' }));
+
+  router.post('/delete', async (req: Request, res: Response): Promise<any> => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
@@ -21,10 +49,10 @@ router.post('/delete', async (req: Request, res: Response): Promise<any> => {
     }
 
     const token = authHeader.split('Bearer ')[1];
-    let decodedToken;
+    let decodedToken: { uid: string };
     try {
-      decodedToken = await getFirebaseAdmin().auth.verifyIdToken(token);
-    } catch (e) {
+      decodedToken = await getAdmin().auth.verifyIdToken(token);
+    } catch {
       return res.status(401).json({ error: 'Invalid or expired Firebase ID token' });
     }
 
@@ -38,44 +66,40 @@ router.post('/delete', async (req: Request, res: Response): Promise<any> => {
     
     const { action } = parsedBody.data;
 
-    const db = getFirebaseAdmin().db;
-
-    const deleteDocs = async (collectionPath: string) => {
-      const snapshot = await db.collection(collectionPath).get();
-      const MAX_BATCH_SIZE = 500;
-      let currentBatch = db.batch();
-      let count = 0;
-      
-      for (const doc of snapshot.docs) {
-        currentBatch.delete(doc.ref);
-        count++;
-        if (count === MAX_BATCH_SIZE) {
-          await currentBatch.commit();
-          currentBatch = db.batch();
-          count = 0;
-        }
+    const admin = getAdmin();
+    let progress: UserDeletionProgress;
+    try {
+      progress = await deleteUserOwnedData(admin.db, uid);
+    } catch (error) {
+      if (error instanceof UserDeletionError) {
+        return deletionFailureResponse(res, error.progress, error.failedCollection);
       }
-      if (count > 0) {
-        await currentBatch.commit();
-      }
-    };
-
-    // 1. Delete all Firestore data for user
-    await deleteDocs(`users/${uid}/receipts`);
-    await deleteDocs(`users/${uid}/categories`);
-    await deleteDocs(`users/${uid}/aliases`);
-    await deleteDocs(`users/${uid}/settings`);
-
-    if (action === 'delete_account') {
-      await db.collection('users').doc(uid).delete();
-      
-      await getFirebaseAdmin().auth.deleteUser(uid);
+      return res.status(500).json({ error: 'Unable to delete account data.' });
     }
 
-    return res.status(200).json({ success: true });
-  } catch (error: any) {
-    return res.status(500).json({ error: 'Internal Server Error' }); // Do not leak error
+    if (action === 'delete_account') {
+      try {
+        await admin.db.collection('users').doc(uid).delete();
+        progress.deletedDocuments += 1;
+      } catch {
+        return deletionFailureResponse(res, progress, 'profile');
+      }
+      try {
+        await admin.auth.deleteUser(uid);
+      } catch {
+        return deletionFailureResponse(res, progress, 'authentication');
+      }
+    }
+
+    return res.status(200).json({ success: true, deletedDocuments: progress.deletedDocuments });
+  } catch {
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
-});
+  });
+
+  return router;
+}
+
+const router = createAccountRouter();
 
 export default router;

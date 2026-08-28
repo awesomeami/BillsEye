@@ -1,13 +1,9 @@
-import React, { useState } from 'react';
-import { useToast } from '../../../components/ui/Toast';
-import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+import { useState } from 'react';
 import { formatCurrency, formatDate } from '../../../utilities/config';
-import { AlertTriangle, Trash2, Edit2, X, Check, Save } from 'lucide-react';
+import { AlertTriangle, Trash2, Edit2, X, Save } from 'lucide-react';
 import { ReceiptDocument } from '../../../domain/schema';
 import { useReceiptsLibrary } from './ReceiptsLibraryContext';
-import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../services/firebase/config';
-import { useAuth } from '../../auth/AuthContext';
+import { getReceiptItemCategoryLabel } from '../../../domain/categories';
 
 interface Props {
   receipt: ReceiptDocument;
@@ -20,21 +16,17 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
   const [editData, setEditData] = useState<ReceiptDocument>(receipt);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const { updateReceipt } = useReceiptsLibrary();
-  const { user } = useAuth();
+  const { updateReceipt, categories, settings } = useReceiptsLibrary();
 
   const handleSave = async () => {
-    if (!user) return;
     setSaving(true);
     setError('');
     try {
-      const newMerchant = editData.merchantNormalized !== receipt.merchantNormalized;
-      
       // Deterministic Reconciliation
       const computedLineTotal = editData.items.reduce((sum, item) => sum + (item.lineTotal || 0), 0);
       const computedExpectedTotal = computedLineTotal + (editData.printedTax || 0) + (editData.printedFees || 0) + (editData.printedRounding || 0) - (editData.printedDiscount || 0);
       const discrepancy = (editData.printedGrandTotal || 0) - computedExpectedTotal;
-      const reconciliationStatus = discrepancy === 0 ? 'matched' : 'mismatched';
+      const reconciliationStatus = Math.abs(discrepancy) <= settings.discrepancyTolerance ? 'matched' : 'mismatched';
       
       const newWarnings = [...editData.warnings];
       if (reconciliationStatus === 'mismatched' && !newWarnings.includes('Totals mismatch')) {
@@ -44,7 +36,7 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
         if (idx !== -1) newWarnings.splice(idx, 1);
       }
 
-      const updated = {
+      const updated: Partial<ReceiptDocument> = {
         ...editData,
         computedLineTotal,
         computedExpectedTotal,
@@ -52,32 +44,10 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
         reconciliationStatus,
         warnings: newWarnings,
         wasEditedByUser: true,
-        updatedAt: serverTimestamp() as any,
-      } as ReceiptDocument;
+      };
 
       await updateReceipt(receipt.id, updated, receipt.revision);
-      
-      // Invalidate derived reports (dummy implementation: delete cached report docs if they existed)
-      try {
-        const reportRef = doc(db, `users/${user.uid}/reports`, 'monthly_summary');
-        await deleteDoc(reportRef);
-      } catch (e) {
-        // ignore if not exists
-      }
-      
-      // Offer alias creation if merchant changed
-      if (newMerchant && editData.merchantNormalized && receipt.merchantRaw) {
-        if (confirm(`Would you like to always rename "${receipt.merchantRaw}" to "${editData.merchantNormalized}" in the future?`)) {
-          const aliasRef = doc(db, `users/${user.uid}/aliases`, `merch_${Date.now()}`);
-          await setDoc(aliasRef, {
-            type: 'merchant',
-            raw: receipt.merchantRaw,
-            canonical: editData.merchantNormalized,
-            createdAt: new Date().toISOString()
-          });
-        }
-      }
-      
+
       setIsEditing(false);
       onClose(); // Close modal on save
     } catch (e: any) {
@@ -197,7 +167,7 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
                     <>
                       <div className="flex-1">
                         <span>{item.quantity ? `${item.quantity}x ` : ''}{item.name || item.rawLineText}</span>
-                        {item.category && <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{item.category}</span>}
+                        {(item.categoryId || item.category) && <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{getReceiptItemCategoryLabel(item, categories)}</span>}
                       </div>
                       <span className="font-medium whitespace-nowrap">{formatCurrency((item.lineTotal ?? 0) / 100)}</span>
                     </>
@@ -241,8 +211,8 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
             <div className="flex gap-2">
               {isEditing ? (
                 <>
-                  <button 
-                    onClick={() => { setIsEditing(false); setEditData(null); }} 
+                  <button
+                    onClick={() => { setIsEditing(false); setEditData(JSON.parse(JSON.stringify(receipt))); }}
                     disabled={saving}
                     className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
                   >

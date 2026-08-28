@@ -3,16 +3,24 @@ import {
   onAuthStateChanged, 
   signInWithPopup, 
   signOut as firebaseSignOut,
-  User,
   signInWithRedirect,
   getRedirectResult
 } from 'firebase/auth';
 import { auth, googleProvider } from '../../services/firebase/config';
 import { userRepository } from '../../services/firebase/db';
 import { useToast } from '../../components/ui/Toast';
+import { ImageSessionStore } from '../../utils/imageSessionStore';
+
+export interface AuthenticatedUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  getIdToken: () => Promise<string>;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthenticatedUser | null;
   loading: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -20,14 +28,38 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const useE2eMocks = import.meta.env.VITE_E2E_MOCKS === 'true';
+const e2eUser: AuthenticatedUser = {
+  uid: 'e2e-user',
+  email: 'e2e@example.test',
+  displayName: 'E2E Test User',
+  photoURL: null,
+  getIdToken: async () => 'e2e-test-firebase-token',
+};
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function getErrorCode(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return null;
+  const { code } = error as { code?: unknown };
+  return typeof code === 'string' ? code : null;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthenticatedUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { showToast } = useToast();
 
   useEffect(() => {
+    if (useE2eMocks) {
+      ImageSessionStore.setActiveUser(null);
+      setLoading(false);
+      return () => ImageSessionStore.setActiveUser(null);
+    }
+
     // Handle redirect result for mobile browsers
     getRedirectResult(auth)
       .then(async (result) => {
@@ -44,13 +76,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('Redirect auth error:', err);
-        setError(err.message);
+        setError(getErrorMessage(err, 'Authentication failed.'));
         showToast('Authentication failed. Please try again.', 'error');
       });
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      // Session images are strictly in-memory and must never cross an auth boundary.
+      ImageSessionStore.setActiveUser(currentUser?.uid ?? null);
       setUser(currentUser);
       
       if (currentUser) {
@@ -66,17 +100,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
       
-      if (!currentUser) {
-        // Clear any in-memory sensitive state or object URLs here if they were hoisted to global state
-      }
-      
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      ImageSessionStore.setActiveUser(null);
+    };
   }, [showToast]);
 
   const signIn = async () => {
+    if (useE2eMocks) {
+      ImageSessionStore.setActiveUser(e2eUser.uid);
+      setUser(e2eUser);
+      return;
+    }
     try {
       setError(null);
       // Attempt popup first
@@ -88,28 +126,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           result.user.displayName
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('Popup sign in failed, falling back to redirect:', err);
-      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+      const errorCode = getErrorCode(err);
+      if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/popup-closed-by-user') {
         try {
           // Fallback to redirect for mobile or strict popup blockers
           await signInWithRedirect(auth, googleProvider);
-        } catch (redirectErr: any) {
-          setError(redirectErr.message);
+        } catch (redirectErr: unknown) {
+          setError(getErrorMessage(redirectErr, 'Failed to sign in.'));
           showToast('Failed to sign in', 'error');
         }
       } else {
-        setError(err.message);
-        showToast(err.message || 'Failed to sign in', 'error');
+        const message = getErrorMessage(err, 'Failed to sign in.');
+        setError(message);
+        showToast(message, 'error');
       }
     }
   };
 
   const signOut = async () => {
+    if (useE2eMocks) {
+      ImageSessionStore.setActiveUser(null);
+      setUser(null);
+      return;
+    }
     try {
       await firebaseSignOut(auth);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to sign out.'));
       showToast('Failed to sign out', 'error');
     }
   };

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { formatCurrency, formatDate } from '../../utilities/config';
 const safeParseMajorToMinor = (val: string) => {
     try {
@@ -10,13 +10,16 @@ const safeParseMajorToMinor = (val: string) => {
   };
 import { parseMajorToMinor } from '../../domain/money';
 import { 
-  Search, Filter, ArrowDownToLine, ReceiptText, AlertTriangle, 
-  ChevronDown, ChevronUp, Edit2, Trash2, CheckCircle2, Clock
+  Search, Filter, ReceiptText, AlertTriangle,
+  ChevronDown, ChevronUp, Edit2, CheckCircle2, Clock
 } from 'lucide-react';
 import { cn } from '../../utilities/cn';
 import { useReceiptsLibrary } from './library/ReceiptsLibraryContext';
 import { ReceiptDocument } from '../../domain/schema';
 import { ReceiptDetailModal } from './library/ReceiptDetailModal';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
+import { getReceiptItemCategoryLabel } from '../../domain/categories';
 
 export function ReceiptsListScreen() {
   const { 
@@ -30,11 +33,12 @@ export function ReceiptsListScreen() {
     setFilters, 
     sort, 
     setSort,
-    deleteReceipt
+    deleteReceipt,
+    categories: categoryDefinitions,
   } = useReceiptsLibrary();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
+  const { showToast } = useToast();
 
   const [showFilters, setShowFilters] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptDocument | null>(null);
@@ -43,23 +47,19 @@ export function ReceiptsListScreen() {
   useEffect(() => {
     if (loading) return;
     
-    let filtersUpdated = false;
-    const newFilters = { ...filters };
-    
     const category = searchParams.get('category');
-    if (category) {
-      newFilters.category = category;
-      filtersUpdated = true;
-    }
-    
     const search = searchParams.get('search');
-    if (search) {
-      newFilters.searchQuery = search;
-      filtersUpdated = true;
-    }
-    
-    if (filtersUpdated) {
-      setFilters(newFilters);
+    if (category || search) {
+      setFilters(current => {
+        const next = {
+          ...current,
+          ...(category ? { category } : {}),
+          ...(search ? { searchQuery: search } : {}),
+        };
+        return next.category === current.category && next.searchQuery === current.searchQuery
+          ? current
+          : next;
+      });
       setShowFilters(true);
     }
     
@@ -78,6 +78,22 @@ export function ReceiptsListScreen() {
       const newParams = new URLSearchParams(searchParams);
       newParams.delete('id');
       setSearchParams(newParams, { replace: true });
+    }
+  };
+
+  const handleDelete = async () => {
+    const id = receiptToDelete;
+    if (!id) return;
+
+    try {
+      await deleteReceipt(id);
+      if (selectedReceipt?.id === id) closeReceiptModal();
+      showToast('Receipt deleted.', 'success');
+    } catch (deleteError) {
+      console.error('Failed to delete receipt:', deleteError);
+      showToast('Could not delete this receipt. Please try again.', 'error');
+    } finally {
+      setReceiptToDelete(null);
     }
   };
 
@@ -213,7 +229,11 @@ export function ReceiptsListScreen() {
           <ul className="divide-y divide-gray-200">
             {filteredReceipts.map((receipt) => {
               const hasWarning = receipt.warnings.length > 0 || receipt.ambiguousFields.length > 0 || receipt.reconciliationStatus === 'mismatched';
-              const categories = Array.from(new Set(receipt.items.map(i => i.category).filter(Boolean)));
+              const categories = Array.from(new Set(
+                receipt.items
+                  .filter(item => item.categoryId || item.category)
+                  .map(item => getReceiptItemCategoryLabel(item, categoryDefinitions)),
+              ));
 
               return (
                 <li key={receipt.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors group">
@@ -291,6 +311,17 @@ export function ReceiptsListScreen() {
           receipt={selectedReceipt} 
           onClose={closeReceiptModal}
           onDelete={() => setReceiptToDelete(selectedReceipt.id)}
+        />
+      )}
+      {receiptToDelete && (
+        <ConfirmDialog
+          isOpen={true}
+          title="Delete Receipt"
+          message="Are you sure you want to delete this receipt? This cannot be undone."
+          confirmText="Delete"
+          isDestructive={true}
+          onConfirm={handleDelete}
+          onCancel={() => setReceiptToDelete(null)}
         />
       )}
     </div>

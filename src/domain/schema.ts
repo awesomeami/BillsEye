@@ -1,19 +1,26 @@
 import { z } from 'zod';
 
+// Receipt items are stored in a Firestore subcollection, so Rules validate one
+// item document per write instead of unrolling list validation in its parent.
+export const MAX_RECEIPT_ITEMS = 40;
+
 export const ReceiptItemSchema = z.object({
-  id: z.string(),
-  rawLineText: z.string().optional(),
-  name: z.string().optional(), // raw/normalized name
-  brand: z.string().optional(),
-  quantity: z.number().nullable().optional(),
-  unit: z.string().optional(),
-  unitPrice: z.number().nullable().optional(), // In minor units (e.g. cents, paisa)
-  discount: z.number().nullable().optional(), // In minor units
-  lineTotal: z.number().nullable().optional(), // In minor units
-  category: z.string().optional(),
+  id: z.string().min(1).max(128),
+  rawLineText: z.string().max(500).optional(),
+  name: z.string().max(200).nullable().optional(), // raw/normalized name
+  brand: z.string().max(100).nullable().optional(),
+  quantity: z.number().min(0).nullable().optional(),
+  unit: z.string().max(50).nullable().optional(),
+  unitPrice: z.number().min(0).nullable().optional(), // In minor units (e.g. cents, paisa)
+  discount: z.number().min(0).nullable().optional(), // In minor units
+  lineTotal: z.number().min(0).nullable().optional(), // In minor units
+  // Stable category identity for all new writes. `category` is retained only
+  // as a readable compatibility field for historical receipts.
+  categoryId: z.string().min(1).max(128).nullable().optional(),
+  category: z.string().max(100).nullable().optional(),
   confidence: z.number().min(0).max(1).optional(),
   userEdited: z.boolean().default(false),
-  warnings: z.array(z.string()).optional()
+  warnings: z.array(z.string().max(200)).max(10).optional()
 });
 
 export const ReceiptSchema = z.object({
@@ -28,28 +35,28 @@ export const ReceiptSchema = z.object({
   confirmedAt: z.string().nullable().optional(),
 
   // Source Metadata (strictly text, no binary/image data allowed)
-  sourceFileName: z.string().optional(),
-  sourceMimeType: z.string().optional(),
-  sourceSha256: z.string().optional(),
-  sourcePageNumber: z.number().optional(),
+  sourceFileName: z.string().max(255).nullable().optional(),
+  sourceMimeType: z.string().max(100).nullable().optional(),
+  sourceSha256: z.string().max(64).nullable().optional(),
+  sourcePageNumber: z.number().min(1).nullable().optional(),
 
   // Merchant Information
-  merchantRaw: z.string().optional(),
-  merchantNormalized: z.string().optional(),
-  branchAddress: z.string().optional(),
-  receiptNumber: z.string().optional(),
+  merchantRaw: z.string().max(255).nullable().optional(),
+  merchantNormalized: z.string().max(255).nullable().optional(),
+  branchAddress: z.string().max(500).nullable().optional(),
+  receiptNumber: z.string().max(100).nullable().optional(),
 
   // Date and Time (strictly YYYY-MM-DD for date)
   transactionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  transactionTime: z.string().nullable().optional(),
+  transactionTime: z.string().max(20).nullable().optional(),
   dateAmbiguous: z.boolean().default(false), // True if DD/MM vs MM/DD is unclear
 
   // Currency & Payment
-  currency: z.string().default('PKR'),
-  paymentMethod: z.string().optional(),
+  currency: z.string().max(10).default('PKR'),
+  paymentMethod: z.string().max(50).nullable().optional(),
 
   // Items
-  items: z.array(ReceiptItemSchema).default([]),
+  items: z.array(ReceiptItemSchema).max(MAX_RECEIPT_ITEMS).default([]),
 
   // Printed totals (from the receipt itself) - all in minor units
   printedSubtotal: z.number().nullable().optional(),
@@ -66,21 +73,36 @@ export const ReceiptSchema = z.object({
   reconciliationStatus: z.enum(['matched', 'mismatched', 'unknown']).default('unknown'),
 
   // AI Extraction Metadata
-  rawOcrText: z.string().optional(), // preserving meaningful line order
+  rawOcrText: z.string().max(100000).optional(), // preserving meaningful line order
   overallConfidence: z.number().min(0).max(1).optional(),
-  warnings: z.array(z.string()).default([]),
-  ambiguousFields: z.array(z.string()).default([]),
-  extractionModel: z.string().optional(),
-  extractionModelActual: z.string().optional(),
-  extractionSchemaVersion: z.string().optional(),
-  extractionDurationMs: z.number().optional(),
+  warnings: z.array(z.string().max(255)).max(20).default([]),
+  ambiguousFields: z.array(z.string().max(100)).max(20).default([]),
+  extractionModel: z.string().max(100).nullable().optional(),
+  extractionModelActual: z.string().max(100).nullable().optional(),
+  extractionSchemaVersion: z.string().max(50).nullable().optional(),
+  extractionDurationMs: z.number().min(0).nullable().optional(),
 
   // User input
-  userNote: z.string().max(500).optional(),
+  userNote: z.string().max(500).nullable().optional(),
   wasEditedByUser: z.boolean().default(false),
 });
 
 export type ReceiptDocument = z.infer<typeof ReceiptSchema>;
+
+// Reads remain permissive enough for historical documents that omitted
+// optional fields. Every new or updated Firestore document is validated with
+// this strict variant so unknown fields cannot be persisted by the app.
+export const ReceiptWriteSchema = ReceiptSchema.extend({
+  items: z.array(ReceiptItemSchema.strict()).max(MAX_RECEIPT_ITEMS).default([]),
+}).strict();
+
+// Firestore stores receipt items in users/{uid}/receipts/{receiptId}/items.
+// The parent keeps an empty compatibility list; this is validated separately
+// from the in-memory ReceiptDocument that the application displays and edits.
+export const StoredReceiptWriteSchema = ReceiptWriteSchema.extend({
+  itemStorageVersion: z.literal(2),
+  items: z.array(z.never()).length(0),
+}).strict();
 
 export const UserProfileSchema = z.object({
   email: z.string().email(),
@@ -106,6 +128,8 @@ export type AppSettingsDocument = z.infer<typeof AppSettingsSchema>;
 export const CategorySchema = z.object({
   id: z.string(),
   name: z.string(),
+  // Earlier names keep legacy receipt line items resolvable after a rename.
+  legacyNames: z.array(z.string().min(1).max(100)).max(20).optional(),
   isCustom: z.boolean().default(false),
   createdAt: z.string(),
   color: z.string().optional(),
@@ -115,6 +139,16 @@ export const CategorySchema = z.object({
 });
 
 export type CategoryDocument = z.infer<typeof CategorySchema>;
+
+export const AliasSchema = z.object({
+  id: z.string().min(1).max(128),
+  merchantNormalized: z.string().min(1).max(255),
+  categoryId: z.string().min(1).max(128),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type AliasDocument = z.infer<typeof AliasSchema>;
 
 export const RawGeminiItemV2 = z.object({
   rawLineText: z.string().default(''),
@@ -154,51 +188,42 @@ export const RawGeminiReceiptV2 = z.object({
   ambiguousFields: z.array(z.string()).default([])
 });
 
-export const ExtractionResultItemSchema = z.object({
-  rawLineText: z.string(),
-  name: z.string().optional().nullable(),
-  brand: z.string().optional().nullable(),
-  quantity: z.number().optional().nullable(),
-  unit: z.string().optional().nullable(),
-  unitPrice: z.number().optional().nullable(),
-  discount: z.number().optional().nullable(),
-  lineTotal: z.number().optional().nullable(),
-  categorySuggestion: z.string().optional().nullable(),
-  confidence: z.number(),
-  warnings: z.array(z.string()).default([])
-});
+// The extraction DTO uses the same item representation that is persisted.
+// The raw Gemini schema above remains separate because Gemini returns decimal
+// strings and suggestion field names that must be normalized first.
+export const ExtractionResultItemSchema = ReceiptItemSchema;
 
 export const ExtractionResultSchema = z.object({
   isReceipt: z.boolean(),
   documentWarnings: z.array(z.string()).optional().default([]),
-  merchantRaw: z.string().optional().nullable(),
-  merchantNormalizedSuggestion: z.string().optional().nullable(),
-  branchAddress: z.string().optional().nullable(),
-  receiptNumber: z.string().optional().nullable(),
-  transactionDateCandidate: z.string().optional().nullable(),
-  transactionTimeCandidate: z.string().optional().nullable(),
-  dateInterpretationNote: z.string().optional().nullable(),
-  currency: z.string().optional().nullable(),
-  paymentMethodCandidate: z.string().optional().nullable(),
-  items: z.array(ExtractionResultItemSchema).optional().default([]),
-  printedSubtotal: z.number().optional().nullable(),
-  printedDiscount: z.number().optional().nullable(),
-  printedTax: z.number().optional().nullable(),
-  printedFees: z.number().optional().nullable(),
+  merchantRaw: z.string().max(255).optional().nullable(),
+  merchantNormalized: z.string().max(255).optional().nullable(),
+  branchAddress: z.string().max(500).optional().nullable(),
+  receiptNumber: z.string().max(100).optional().nullable(),
+  transactionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  transactionTime: z.string().max(20).optional().nullable(),
+  dateAmbiguous: z.boolean().optional().default(false),
+  currency: z.string().max(10).optional().default('PKR'),
+  paymentMethod: z.string().max(50).optional().nullable(),
+  items: z.array(ExtractionResultItemSchema).max(MAX_RECEIPT_ITEMS).optional().default([]),
+  printedSubtotal: z.number().min(0).optional().nullable(),
+  printedDiscount: z.number().min(0).optional().nullable(),
+  printedTax: z.number().min(0).optional().nullable(),
+  printedFees: z.number().min(0).optional().nullable(),
   printedRounding: z.number().optional().nullable(),
-  printedGrandTotal: z.number().optional().nullable(),
+  printedGrandTotal: z.number().min(0).optional().nullable(),
   rawOcrText: z.string().optional().default(''),
   overallConfidence: z.number().optional().default(1),
   ambiguousFields: z.array(z.string()).optional().default([]),
-  extractionSchemaVersion: z.union([z.string(), z.number()]).optional(),
-  extractionModel: z.string().optional(),
-  extractionModelActual: z.string().optional(),
-  extractionDurationMs: z.number().optional(),
-  computedLineTotal: z.number().optional().nullable(),
-  computedExpectedTotal: z.number().optional().nullable(),
+  extractionSchemaVersion: z.string().max(50).optional().nullable(),
+  extractionModel: z.string().max(100).optional().nullable(),
+  extractionModelActual: z.string().max(100).optional().nullable(),
+  extractionDurationMs: z.number().min(0).optional().nullable(),
+  computedLineTotal: z.number().min(0).optional().nullable(),
+  computedExpectedTotal: z.number().min(0).optional().nullable(),
   discrepancy: z.number().optional().nullable(),
   reconciliationStatus: z.enum(['matched', 'mismatched', 'unknown']).optional(),
-  warnings: z.array(z.string()).optional().default([])
+  warnings: z.array(z.string().max(255)).max(20).optional().default([])
 });
 
 export type ExtractionResultDTO = z.infer<typeof ExtractionResultSchema>;

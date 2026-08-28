@@ -5,30 +5,34 @@ import accountRoute from './accountRoute';
 
 const app = express();
 
-// Keep helmet CSP directives and headers synchronized; allow framing for preview environment
+// Keep this policy aligned with vercel.json. Firebase authentication needs the
+// Firebase-hosted frame, but the application itself must never be framed.
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://apis.google.com"],
+      scriptSrc: ["'self'", "https://apis.google.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "blob:", "https://lh3.googleusercontent.com", "https://firebasestorage.googleapis.com", "https://*.googleusercontent.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https://lh3.googleusercontent.com", "https://*.googleusercontent.com"],
       connectSrc: ["'self'", "https://*.googleapis.com", "https://*.firebaseio.com", "wss://*.firebaseio.com", "https://securetoken.googleapis.com", "https://identitytoolkit.googleapis.com"],
       fontSrc: ["'self'", "data:"],
       workerSrc: ["'self'", "blob:"],
       frameSrc: ["'self'", "https://*.firebaseapp.com"],
-      frameAncestors: ["*"],
-      objectSrc: ["'none'"]
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      objectSrc: ["'none'"],
     }
   },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
   crossOriginResourcePolicy: false,
-  xFrameOptions: false
+  xFrameOptions: { action: 'deny' }
 }));
 
 app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   if (req.path.startsWith('/api/')) {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
   }

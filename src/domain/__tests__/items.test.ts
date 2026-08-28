@@ -60,13 +60,6 @@ describe('Item Analytics', () => {
   });
 
   it('handles zero denominator safely', () => {
-    const obs: ItemObservation[] = [
-      { receiptId: '1', transactionDate: '2026-08-01', merchant: 'A', rawName: 'Rice', canonicalName: 'rice', unit: parseUnit(0, 'kg'), lineTotal: 300, unitPrice: Infinity, isRefund: false },
-    ];
-    const result = analyzeItem(obs);
-    // Since unitValue is 0, extractObservations should have filtered it out, 
-    // but if it slips through, analyzeItem should handle it.
-    // Wait, let's test groupAndAnalyzeItems which uses extractObservations
     const receipts: ReceiptDocument[] = [{
       id: 'r1', schemaVersion: 1, revision: 1, status: 'confirmed', createdAt: '', updatedAt: '', 
       transactionDate: '2026-08-01', transactionTime: null, merchantRaw: 'A', items: [
@@ -80,15 +73,19 @@ describe('Item Analytics', () => {
   });
 
   it('excludes estimated quantities from strict analysis', () => {
-    const receipts: ReceiptDocument[] = [{
-      id: 'r1', schemaVersion: 1, revision: 1, status: 'confirmed', createdAt: '', updatedAt: '', 
-      transactionDate: '2026-08-01', transactionTime: null, merchantRaw: 'A', items: [
-        { id: 'i1', userEdited: false, name: 'Rice', quantity: 1, unit: 'kg', lineTotal: 300, estimatedQuantity: true } as any
-      ], currency: 'PKR', warnings: [], ambiguousFields: [], dateAmbiguous: false, wasEditedByUser: false, reconciliationStatus: 'unknown',
-      printedGrandTotal: 300, printedSubtotal: null, printedDiscount: null, printedTax: null, printedFees: null, printedRounding: null, computedLineTotal: 300, computedExpectedTotal: null, discrepancy: null
-    }];
-    const res = groupAndAnalyzeItems(receipts);
-    assert.strictEqual(res.length, 0); // estimated are excluded
+    const result = analyzeItem([{
+      receiptId: 'r1',
+      transactionDate: '2026-08-01',
+      merchant: 'A',
+      rawName: 'Rice',
+      canonicalName: 'rice',
+      unit: parseUnit(1, 'kg', true),
+      lineTotal: 300,
+      unitPrice: 300,
+      isRefund: false,
+    }]);
+
+    assert.strictEqual(result, null);
   });
 
   it('handles insufficient observations for percentage change safely', () => {

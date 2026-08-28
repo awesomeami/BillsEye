@@ -1,10 +1,75 @@
 import { describe, test, afterEach, before, after } from 'node:test';
 import assert from 'node:assert';
 import { initializeTestEnvironment, RulesTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { serverTimestamp } from 'firebase/firestore';
+import { serverTimestamp } from '@firebase/firestore';
 import * as fs from 'fs';
 
 let testEnv: RulesTestEnvironment;
+
+const makeReceiptHeader = (id: string) => ({
+  id,
+  schemaVersion: 2,
+  revision: 1,
+  status: 'pendingReview',
+  createdAt: serverTimestamp(),
+  updatedAt: serverTimestamp(),
+  itemStorageVersion: 2,
+  items: [],
+});
+
+const makeCompleteReceiptHeader = (id: string) => ({
+  ...makeReceiptHeader(id),
+  confirmedAt: null,
+  sourceFileName: 'receipt.png',
+  sourceMimeType: 'image/png',
+  sourceSha256: 'a'.repeat(64),
+  sourcePageNumber: 1,
+  merchantRaw: 'Example Market',
+  merchantNormalized: 'Example Market',
+  branchAddress: 'Example Street',
+  receiptNumber: 'R-123',
+  transactionDate: '2026-08-28',
+  transactionTime: '12:00',
+  dateAmbiguous: false,
+  currency: 'PKR',
+  paymentMethod: 'cash',
+  printedSubtotal: 1000,
+  printedDiscount: 0,
+  printedTax: 0,
+  printedFees: 0,
+  printedRounding: 0,
+  printedGrandTotal: 1000,
+  computedLineTotal: 1000,
+  computedExpectedTotal: 1000,
+  discrepancy: 0,
+  reconciliationStatus: 'matched',
+  rawOcrText: 'Example Market',
+  overallConfidence: 0.9,
+  warnings: ['One low-confidence field'],
+  ambiguousFields: ['transactionDate'],
+  extractionModel: 'gemini-3-flash-preview',
+  extractionModelActual: 'gemini-3-flash-preview',
+  extractionSchemaVersion: '2',
+  extractionDurationMs: 1250,
+  userNote: 'Reviewed',
+  wasEditedByUser: false,
+});
+
+const makeReceiptItem = (id: string, index: number) => ({
+  id,
+  rawLineText: `Item ${index}`,
+  name: null,
+  brand: null,
+  quantity: null,
+  unit: null,
+  unitPrice: null,
+  discount: null,
+  lineTotal: index * 100,
+  category: null,
+  confidence: 0.9,
+  userEdited: false,
+  warnings: [],
+});
 
 before(async () => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -54,6 +119,14 @@ describe('Firestore Security Rules', () => {
       lastLoginAt: serverTimestamp(),
       schemaVersion: 1
     }));
+
+    await assertFails(aliceProfile.set({
+      email: 'alice@example.com',
+      createdAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
+      schemaVersion: 1,
+      offlineCapture: { imagePayload: 'not allowed' },
+    }));
     
     const aliceProfileRead = await aliceProfile.get();
     assert.strictEqual(aliceProfileRead.exists, true);
@@ -78,50 +151,95 @@ describe('Firestore Security Rules', () => {
       imageBase64: 'data:image/jpeg;base64,12345'
     }));
 
-    // Attempt setting receipt with image field
+    // Attempt nesting arbitrary binary-like data in an otherwise valid receipt.
     const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('r1');
     await assertFails(receiptRef.set({
-      id: 'r1',
-      schemaVersion: 2,
-      revision: 1,
-      status: 'pendingReview',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      image: 'some-image-url'
+      ...makeReceiptHeader('r1'),
+      arbitraryAttachment: { imagePayload: 'some-image-url' },
     }));
   });
 
   test('rejects receipt with malformed or disallowed fields in items at index 1', async () => {
     const aliceDb = testEnv.authenticatedContext('alice').firestore();
     const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('r1');
+    await assertSucceeds(receiptRef.set(makeReceiptHeader('r1')));
     
-    // Attempt write with forbidden 'image' field on item at index 1
-    await assertFails(receiptRef.set({
-      id: 'r1',
-      schemaVersion: 2,
-      revision: 1,
-      status: 'pendingReview',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      items: [
-        { id: 'item-0', name: 'Valid Item 0', lineTotal: 100 },
-        { id: 'item-1', name: 'Invalid Item 1', lineTotal: 200, image: 'data:image/png;base64,hidden' }
-      ]
+    // Attempt write with forbidden 'image' field in item slot 1.
+    await assertFails(receiptRef.collection('items').doc('1').set({
+      ...makeReceiptItem('item-1', 1),
+      image: 'data:image/png;base64,hidden',
+    }));
+    await assertFails(receiptRef.collection('items').doc('2').set({
+      ...makeReceiptItem('item-2', 2),
+      lineTotal: '200',
+    }));
+    await assertFails(receiptRef.collection('items').doc('3').set({
+      ...makeReceiptItem('item-3', 3),
+      warnings: [{ unexpected: 'nested map' }],
     }));
 
-    // Valid items at index 0 and 1 succeed
-    await assertSucceeds(receiptRef.set({
-      id: 'r1',
-      schemaVersion: 2,
-      revision: 1,
-      status: 'pendingReview',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      items: [
-        { id: 'item-0', name: 'Valid Item 0', lineTotal: 100 },
-        { id: 'item-1', name: 'Valid Item 1', lineTotal: 200 }
-      ]
+    // Valid items in slots 0 and 1 succeed.
+    await assertSucceeds(receiptRef.collection('items').doc('0').set(makeReceiptItem('item-0', 0)));
+    await assertSucceeds(receiptRef.collection('items').doc('1').set(makeReceiptItem('item-1', 1)));
+    await assertSucceeds(receiptRef.collection('items').doc('4').set({
+      ...makeReceiptItem('item-4', 4),
+      categoryId: 'cat_groceries',
+      category: null,
     }));
+    await assertFails(receiptRef.collection('items').doc('5').set({
+      ...makeReceiptItem('item-5', 5),
+      categoryId: 'not/a-valid-id',
+    }));
+  });
+
+  test('accepts the 40-item boundary and rejects an item beyond slot 39', async () => {
+    const aliceDb = testEnv.authenticatedContext('alice').firestore();
+    const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('boundary-40');
+    await assertSucceeds(receiptRef.set(makeReceiptHeader('boundary-40')));
+
+    await assertSucceeds(Promise.all(
+      Array.from({ length: 40 }, (_, index) => receiptRef.collection('items').doc(String(index)).set(makeReceiptItem(`item-${index}`, index)))
+    ));
+    await assertFails(receiptRef.collection('items').doc('40').set(makeReceiptItem('item-40', 40)));
+  });
+
+  test('rejects orphan item documents while allowing an atomic receipt and item creation', async () => {
+    const aliceDb = testEnv.authenticatedContext('alice').firestore();
+    const orphan = aliceDb.collection('users').doc('alice').collection('receipts').doc('missing').collection('items').doc('0');
+    await assertFails(orphan.set(makeReceiptItem('orphan-item', 0)));
+
+    const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('atomic-receipt');
+    const batch = aliceDb.batch();
+    batch.set(receiptRef, makeReceiptHeader('atomic-receipt'));
+    batch.set(receiptRef.collection('items').doc('0'), makeReceiptItem('atomic-item', 0));
+    await assertSucceeds(batch.commit());
+  });
+
+  test('receipt header allows canonical extraction metadata but rejects unapproved fields', async () => {
+    const aliceDb = testEnv.authenticatedContext('alice').firestore();
+    const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('canonical-header');
+    await assertSucceeds(receiptRef.set({
+      ...makeReceiptHeader('canonical-header'),
+      merchantRaw: null,
+      merchantNormalized: null,
+      warnings: ['Merchant is unreadable'],
+      ambiguousFields: ['merchantRaw'],
+      extractionModel: 'gemini-3-flash-preview',
+      extractionModelActual: 'gemini-3-flash-preview',
+      extractionSchemaVersion: '2',
+      extractionDurationMs: 1250,
+    }));
+
+    await assertFails(receiptRef.set({
+      ...makeReceiptHeader('canonical-header'),
+      metadata: { arbitraryImageField: 'data:image/png;base64,not-allowed' },
+    }));
+  });
+
+  test('accepts a complete current receipt header within the Rules expression limit', async () => {
+    const aliceDb = testEnv.authenticatedContext('alice').firestore();
+    const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('complete-header');
+    await assertSucceeds(receiptRef.set(makeCompleteReceiptHeader('complete-header')));
   });
 
   test('categories and settings enforce authorization and validation', async () => {
@@ -132,6 +250,7 @@ describe('Firestore Security Rules', () => {
     await assertSucceeds(catRef.set({
       id: 'cat1',
       name: 'Groceries',
+      legacyNames: ['Food'],
       isCustom: false,
       createdAt: '2024-01-01T00:00:00.000Z',
       order: 1,
@@ -144,7 +263,7 @@ describe('Firestore Security Rules', () => {
     await assertFails(bobCatRef.set({ id: 'cat1', name: 'Hacked' }));
 
     // Settings
-    const settingsRef = aliceDb.collection('users').doc('alice').collection('settings').doc('preferences');
+    const settingsRef = aliceDb.collection('users').doc('alice').collection('settings').doc('default');
     await assertSucceeds(settingsRef.set({
       currency: 'PKR',
       locale: 'en-PK',
@@ -154,10 +273,54 @@ describe('Firestore Security Rules', () => {
       discrepancyTolerance: 100
     }));
 
+    // Settings use an exact document shape and a single canonical document ID.
+    await assertFails(settingsRef.set({
+      currency: 'PKR',
+      locale: 'en-PK',
+      timeZone: 'Asia/Karachi',
+      theme: 'light',
+      lowConfidenceThreshold: 0.7,
+      discrepancyTolerance: 100,
+      unexpectedPayload: { image: 'not allowed' },
+    }));
+
+    await assertFails(aliceDb.collection('users').doc('alice').collection('settings').doc('preferences').set({
+      currency: 'PKR',
+    }));
+
     // Invalid theme rejected
     await assertFails(settingsRef.set({
       currency: 'PKR',
       theme: 'neon-glow'
+    }));
+  });
+
+  test('aliases and the temporary sync diagnostic use strict approved shapes', async () => {
+    const aliceDb = testEnv.authenticatedContext('alice').firestore();
+    const aliasRef = aliceDb.collection('users').doc('alice').collection('aliases').doc('alias_merchant');
+    await assertSucceeds(aliasRef.set({
+      id: 'alias_merchant',
+      merchantNormalized: 'Example Market',
+      categoryId: 'groceries',
+      createdAt: '2026-08-28T00:00:00.000Z',
+      updatedAt: '2026-08-28T00:00:00.000Z',
+    }));
+    await assertFails(aliasRef.set({
+      id: 'alias_merchant',
+      merchantNormalized: 'Example Market',
+      categoryId: 'groceries',
+      createdAt: '2026-08-28T00:00:00.000Z',
+      updatedAt: '2026-08-28T00:00:00.000Z',
+      thumbnail: 'not allowed',
+    }));
+
+    const diagnosticRef = aliceDb.collection('users').doc('alice').collection('settings').doc('sync-test');
+    await assertSucceeds(diagnosticRef.set({ lastTest: serverTimestamp(), device: 'test-client' }));
+    await assertSucceeds(diagnosticRef.delete());
+    await assertFails(diagnosticRef.set({
+      lastTest: serverTimestamp(),
+      device: 'test-client',
+      nestedBlob: { value: 'not allowed' },
     }));
   });
 
@@ -166,14 +329,8 @@ describe('Firestore Security Rules', () => {
     const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('r1');
     
     await assertSucceeds(receiptRef.set({
-      id: 'r1',
-      schemaVersion: 2,
-      revision: 1,
-      status: 'pendingReview',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      ...makeReceiptHeader('r1'),
       merchantRaw: 'Al-Fatah',
-      items: []
     }));
 
     // Updating without revision increment should fail

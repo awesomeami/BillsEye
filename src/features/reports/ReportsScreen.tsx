@@ -13,7 +13,7 @@ type Tab = 'monthly' | 'categories' | 'merchants' | 'items';
 
 export function ReportsScreen() {
   const tabsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
-  const { receipts } = useReceiptsLibrary();
+  const { receipts, categories } = useReceiptsLibrary();
   const [activeTab, setActiveTab] = useState<Tab>('monthly');
   const [dateFilter, setDateFilter] = useState<DateRangeFilter>('this_year');
 
@@ -44,7 +44,7 @@ export function ReportsScreen() {
       case 'monthly':
         return <MonthlyReportView receipts={receipts} range={range} />;
       case 'categories':
-        return <CategoryReportView receipts={receipts} range={range} />;
+        return <CategoryReportView receipts={receipts} categories={categories} range={range} />;
       case 'merchants':
         return <MerchantReportView receipts={receipts} range={range} />;
       case 'items':
@@ -68,7 +68,7 @@ export function ReportsScreen() {
         >
           <option value="this_month">This Month</option>
           <option value="last_month">Last Month</option>
-          <option value="last_3_months">Last 3 Months</option>
+          <option value="current_and_previous_2_months">Last 3 Months</option>
           <option value="this_year">This Year</option>
           <option value="all_time">All Time</option>
         </select>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AlertCircle, X } from 'lucide-react';
 
 interface ConfirmDialogProps {
@@ -22,25 +22,38 @@ export function ConfirmDialog({
   onCancel,
   isDestructive = false,
 }: ConfirmDialogProps) {
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    cancelButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onCancel]);
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-in fade-in zoom-in-95 duration-200">
+      <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message" className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-in fade-in zoom-in-95 duration-200">
         <div className="flex justify-between items-start mb-4">
           <div className={`p-2 rounded-full ${isDestructive ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
             <AlertCircle size={24} />
           </div>
-          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <button onClick={onCancel} aria-label="Close confirmation" className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={20} />
           </button>
         </div>
         
-        <h3 className="text-lg font-bold text-gray-900 mb-2">{title}</h3>
-        <p className="text-sm text-gray-500 mb-6">{message}</p>
+        <h3 id="confirm-dialog-title" className="text-lg font-bold text-gray-900 mb-2">{title}</h3>
+        <p id="confirm-dialog-message" className="text-sm text-gray-500 mb-6">{message}</p>
         
         <div className="flex gap-3 w-full">
           <button
+            ref={cancelButtonRef}
             onClick={onCancel}
             className="flex-1 bg-white border border-gray-300 text-gray-700 font-medium py-2.5 px-4 rounded-xl hover:bg-gray-50 transition-colors"
           >

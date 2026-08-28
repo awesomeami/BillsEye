@@ -10,15 +10,23 @@ import { CategoriesSettings } from './CategoriesSettings';
 import { DataExportSettings } from './DataExportSettings';
 import { PrivacyScreen } from './PrivacyScreen';
 import { SyncDiagnostic } from './SyncDiagnostic';
+import { useAiKeys } from './ai/AiKeysContext';
+import { PreferencesScreen } from './PreferencesScreen';
+import { MerchantAliasesSettings } from './MerchantAliasesSettings';
 
 export function SettingsScreen() {
   const { user, signOut } = useAuth();
+  const { clearLocalVault } = useAiKeys();
   const { showToast } = useToast();
   const [isTrustedDevice, setIsTrustedDevice] = useState<boolean>(() => {
     return localStorage.getItem('kharchalens_trusted_device') === 'true';
   });
   const [confirmAction, setConfirmAction] = useState<{ message: string, action: () => void } | null>(null);
-  const [activeView, setActiveView] = useState<'main' | 'ai-keys' | 'simulator' | 'extraction-test' | 'categories' | 'export' | 'privacy'>('main');
+  const [activeView, setActiveView] = useState<'main' | 'preferences' | 'ai-keys' | 'simulator' | 'extraction-test' | 'categories' | 'aliases' | 'export' | 'privacy'>('main');
+
+  if (activeView === 'preferences') {
+    return <div className="max-w-2xl mx-auto"><PreferencesScreen onBack={() => setActiveView('main')} /></div>;
+  }
 
   if (activeView === 'ai-keys') {
     return (
@@ -34,6 +42,10 @@ export function SettingsScreen() {
         <CategoriesSettings onBack={() => setActiveView('main')} />
       </div>
     );
+  }
+
+  if (activeView === 'aliases') {
+    return <div className="max-w-2xl mx-auto"><MerchantAliasesSettings onBack={() => setActiveView('main')} /></div>;
   }
 
   if (activeView === 'privacy') {
@@ -94,9 +106,11 @@ export function SettingsScreen() {
           id: 'profile', 
           label: 'Profile & Preferences', 
           icon: User, 
-          value: user?.displayName || user?.email || 'Unknown User'
+          value: user?.displayName || user?.email || 'Unknown User',
+          onClick: () => setActiveView('preferences'),
         },
         { id: 'categories', label: 'Custom Categories', icon: Tags, onClick: () => setActiveView('categories') },
+        { id: 'aliases', label: 'Merchant Aliases', icon: Tags, onClick: () => setActiveView('aliases') },
       ]
     },
     {
@@ -208,27 +222,27 @@ export function SettingsScreen() {
         <button 
           onClick={() => {
     setConfirmAction({
-      message: "This will clear all synchronized receipt data stored locally on this device. Pending writes may be lost. It will NOT delete data from the cloud. Proceed?",
+      message: "This clears locally cached receipt data and all Gemini-key vault records on this device. Pending writes may be lost. It will NOT delete cloud data. Proceed?",
       action: async () => {
         
               try {
+                await clearLocalVault();
                 const { db } = await import('../../services/firebase/config');
                 const { clearIndexedDbPersistence, terminate } = await import('firebase/firestore');
                 
                 await terminate(db);
                 await clearIndexedDbPersistence(db);
                 
-                // In a real app this would be chained, but we'll clear it automatically since they agreed to clear device data
-  
-                  localStorage.removeItem('kharchalens_vault_salt');
-                  localStorage.removeItem('kharchalens_vault_iv');
-                  localStorage.removeItem('kharchalens_vault_data');
+                // Remove obsolete localStorage vault remnants from earlier builds too.
+                localStorage.removeItem('kharchalens_vault_salt');
+                localStorage.removeItem('kharchalens_vault_iv');
+                localStorage.removeItem('kharchalens_vault_data');
                 
                 
                 showToast("Offline data cleared. The app will now reload.", "success");
                 window.location.reload();
-              } catch (e: any) {
-                showToast("Could not clear offline data: " + e.message, "error");
+              } catch {
+                showToast('Could not clear offline data. Please try again.', 'error');
               }
             
       }

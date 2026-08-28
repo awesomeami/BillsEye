@@ -1,6 +1,12 @@
-import { useEffect, useRef } from 'react';
-import { serverTimestamp } from 'firebase/firestore';
+import { useEffect, useReducer, useRef } from 'react';
 import { QueueItem, QueueAction } from './queueReducer';
+import {
+  processQueueAttempt,
+  QueueAttemptServices,
+  QueueExecutor,
+  QueueRotationManager,
+  SequentialQueueRunner,
+} from './queueProcessor';
 import { preprocessImage, createSha256Hash } from '../../../utils/imageUtils';
 import { receiptRepository } from '../../../services/firebase/db';
 import { ExtractionClient } from '../../../services/ai/ExtractionClient';
@@ -9,11 +15,27 @@ import { ImageSessionStore } from '../../../utils/imageSessionStore';
 interface ProcessorDeps {
   state: QueueItem[];
   dispatch: React.Dispatch<QueueAction>;
-  user: any;
-  executor: any;
+  user: { uid: string } | null;
+  executor: QueueExecutor | null;
   getDecryptedKey: (index: number) => Promise<string | null>;
-  rotationManager: any;
+  rotationManager: QueueRotationManager | null;
 }
+
+const productionQueueAttemptServices: QueueAttemptServices = {
+  isOnline: () => navigator.onLine,
+  preprocessImage,
+  createSha256Hash,
+  findByHash: (userId, sha256) => receiptRepository.findByHash(userId, sha256),
+  extractReceipt: (key, file, signal) => ExtractionClient.extractReceipt(key, file, signal),
+  createReceipt: (userId, receipt) => receiptRepository.createReceipt(userId, receipt),
+  storeImage: (receiptId, image) => ImageSessionStore.set(receiptId, image),
+  renderPdfPage: async (file, pageNumber) => {
+    const { renderPdfPageToImage } = await import('../../../utils/pdfProcessor');
+    return renderPdfPageToImage(file, pageNumber);
+  },
+  createReceiptId: () => crypto.randomUUID(),
+  now: () => new Date().toISOString()
+};
 
 export const useQueueProcessor = ({
   state,
@@ -23,189 +45,48 @@ export const useQueueProcessor = ({
   getDecryptedKey,
   rotationManager
 }: ProcessorDeps) => {
-  const isProcessingRef = useRef(false);
+  const latestRef = useRef({ state, dispatch, user, executor, getDecryptedKey, rotationManager });
+  const activeUserIdRef = useRef<string | null>(user?.uid ?? null);
+  const sessionVersionRef = useRef(0);
+  const [, requestNext] = useReducer((value: number) => value + 1, 0);
+
+  const userId = user?.uid ?? null;
+  if (activeUserIdRef.current !== userId) {
+    activeUserIdRef.current = userId;
+    sessionVersionRef.current += 1;
+  }
+  latestRef.current = { state, dispatch, user, executor, getDecryptedKey, rotationManager };
+
+  const runnerRef = useRef<SequentialQueueRunner | null>(null);
+  if (!runnerRef.current) {
+    runnerRef.current = new SequentialQueueRunner({
+      getNextItem: () => latestRef.current.state.find(item => item.status === 'queued'),
+      claimItem: item => {
+        latestRef.current.dispatch({ type: 'START_ATTEMPT', id: item.id, timestamp: Date.now() });
+      },
+      processItem: async item => {
+        const current = latestRef.current;
+        if (!current.user || !current.executor) return 'stopped';
+        const attemptUserId = current.user.uid;
+        const attemptSessionVersion = sessionVersionRef.current;
+        return processQueueAttempt({
+          item,
+          userId: attemptUserId,
+          dispatch: current.dispatch,
+          executor: current.executor,
+          getDecryptedKey: current.getDecryptedKey,
+          rotationManager: current.rotationManager,
+          isSessionActive: () =>
+            activeUserIdRef.current === attemptUserId && sessionVersionRef.current === attemptSessionVersion,
+          services: productionQueueAttemptServices
+        });
+      },
+      canContinue: () => Boolean(latestRef.current.user && latestRef.current.executor),
+      requestNext
+    });
+  }
 
   useEffect(() => {
-    // Determine if we need to wake up the processor
-    const hasWork = state.some(item => item.status === 'queued');
-    if (!hasWork || isProcessingRef.current || !user || !executor) {
-      return;
-    }
-
-    const processNext = async () => {
-      isProcessingRef.current = true;
-      try {
-        while (true) {
-          const nextItem = state.find(i => i.status === 'queued');
-          if (!nextItem) break;
-          
-          if (!navigator.onLine) {
-            dispatch({ type: 'UPDATE_ITEM', id: nextItem.id, updates: { status: 'failed-permanent', error: 'Internet is required to process a receipt.' } });
-            break;
-          }
-
-          const { id, abortController } = nextItem;
-          
-          try {
-            // 1. Preprocessing
-            dispatch({ type: 'UPDATE_ITEM', id, updates: { status: 'preprocessing' } });
-            
-            let fileToProcess = nextItem.file;
-            let mimeType = nextItem.mimeType;
-            let objectUrl = nextItem.objectUrl;
-
-            if (nextItem.sourcePdf && nextItem.pageNumber) {
-              const { renderPdfPageToImage } = await import('../../../utils/pdfProcessor');
-              const renderedBlob = await renderPdfPageToImage(nextItem.sourcePdf, nextItem.pageNumber);
-              if (abortController.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-              fileToProcess = renderedBlob;
-              mimeType = 'image/jpeg';
-              objectUrl = URL.createObjectURL(renderedBlob);
-              dispatch({ type: 'UPDATE_ITEM', id, updates: { file: renderedBlob, mimeType, objectUrl } });
-            }
-
-            const { blob: processedBlob, mimeType: processedMime } = await preprocessImage(fileToProcess, abortController.signal);
-            
-            // 2. Hash & Duplicate Check
-            dispatch({ type: 'UPDATE_ITEM', id, updates: { status: 'duplicate-check', file: processedBlob, mimeType: processedMime } });
-            const sha256 = await createSha256Hash(processedBlob);
-            dispatch({ type: 'UPDATE_ITEM', id, updates: { sha256 } });
-
-            if (abortController.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-            
-            const existing = await receiptRepository.findByHash(user.uid, sha256);
-            if (existing.length > 0) {
-              dispatch({ type: 'UPDATE_ITEM', id, updates: { status: 'duplicate', receiptId: existing[0].id } });
-              continue;
-            }
-
-            // 3. Extraction
-            dispatch({ type: 'UPDATE_ITEM', id, updates: { status: 'extracting' } });
-            
-            const result = await executor.execute(
-              'ExtractReceipt',
-              async (key: string, signal: AbortSignal) => {
-                // Link executor's signal with our item's abort signal
-                const compositeSignal = anySignal([signal, abortController.signal]);
-                const fileToUpload = new File([processedBlob], nextItem.originalName, { type: processedMime });
-                return await ExtractionClient.extractReceipt(key, fileToUpload, compositeSignal);
-              },
-              getDecryptedKey
-            );
-
-            if (abortController.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-
-            if (!result.isReceipt) {
-              dispatch({ type: 'UPDATE_ITEM', id, updates: { status: 'failed-permanent', error: result.documentWarnings?.join(', ') || 'Image does not appear to be a receipt.' } });
-              continue;
-            }
-
-            const newReceiptId = crypto.randomUUID();
-            const receiptDoc = {
-              id: newReceiptId,
-              schemaVersion: 2, revision: 1,
-              status: 'pendingReview' as const,
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-              confirmedAt: null,
-              sourceFileName: nextItem.originalName,
-              sourceMimeType: processedMime,
-              sourceSha256: sha256,
-              merchantRaw: result.merchantRaw,
-              merchantNormalized: result.merchantNormalizedSuggestion,
-              branchAddress: result.branchAddress,
-              receiptNumber: result.receiptNumber,
-              transactionDate: result.transactionDateCandidate,
-              transactionTime: result.transactionTimeCandidate,
-              dateAmbiguous: Boolean(result.dateInterpretationNote),
-              currency: result.currency || 'PKR',
-              paymentMethod: result.paymentMethodCandidate,
-              items: (result.items || []).map((it: any) => ({
-                id: crypto.randomUUID(),
-                rawLineText: it.rawLineText,
-                name: it.name,
-                brand: it.brand,
-                quantity: it.quantity,
-                unit: it.unit,
-                unitPrice: it.unitPrice,
-                discount: it.discount,
-                lineTotal: it.lineTotal,
-                category: it.categorySuggestion,
-                confidence: it.confidence,
-                userEdited: false,
-                warnings: it.warnings || []
-              })),
-              printedSubtotal: result.printedSubtotal,
-              printedDiscount: result.printedDiscount,
-              printedTax: result.printedTax,
-              printedFees: result.printedFees,
-              printedRounding: result.printedRounding,
-              printedGrandTotal: result.printedGrandTotal,
-              computedLineTotal: result.computedLineTotal,
-              computedExpectedTotal: result.computedExpectedTotal,
-              discrepancy: result.discrepancy,
-              reconciliationStatus: result.reconciliationStatus || 'unknown',
-              rawOcrText: result.rawOcrText,
-              overallConfidence: result.overallConfidence,
-              warnings: result.warnings || [],
-              ambiguousFields: result.ambiguousFields || [],
-              extractionModel: result.extractionModel,
-              extractionModelActual: result.extractionModelActual,
-              extractionSchemaVersion: result.extractionSchemaVersion,
-              extractionDurationMs: result.extractionDurationMs,
-              wasEditedByUser: false
-            };
-
-            await receiptRepository.createReceipt(user.uid, receiptDoc);
-            
-            // Store transient blob for review
-            ImageSessionStore.set(newReceiptId, processedBlob);
-            
-            dispatch({ type: 'UPDATE_ITEM', id, updates: { status: 'needs-review', extractionResult: result, receiptId: newReceiptId } });
-            
-          } catch (err: any) {
-            if (err.name === 'AbortError') {
-               // Status is already handled by CANCEL action, or we can just ignore
-               continue;
-            }
-            
-            const isRateLimit = err.message?.includes('cooldown') || err.status === 429;
-            const is5xx = err.status >= 500 && err.status < 600;
-            const isNetwork = err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network');
-            
-            if (isRateLimit || is5xx || isNetwork) {
-               dispatch({ 
-                 type: 'UPDATE_ITEM', id, 
-                 updates: { 
-                   status: 'retry-wait', 
-                   error: err.message, 
-                   retryAfter: rotationManager?.getEarliestRetryTime() || Date.now() + 30000 
-                 }
-               });
-               break; // Stop processing further items until retry wait is over
-            } else {
-               dispatch({ type: 'UPDATE_ITEM', id, updates: { status: 'failed-permanent', error: err.message } });
-            }
-          }
-        }
-      } finally {
-        isProcessingRef.current = false;
-      }
-    };
-    
-    processNext();
-    
-  }, [state, dispatch, user, executor, getDecryptedKey, rotationManager]);
+    runnerRef.current?.wake();
+  }, [state, userId, executor, getDecryptedKey, rotationManager]);
 };
-
-function anySignal(signals: AbortSignal[]) {
-  const controller = new AbortController();
-  for (const signal of signals) {
-    if (signal.aborted) {
-      controller.abort(signal.reason);
-      return controller.signal;
-    }
-    signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
-  }
-  return controller.signal;
-}

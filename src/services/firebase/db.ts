@@ -16,7 +16,8 @@ import {
   FirestoreDataConverter,
   serverTimestamp,
   runTransaction,
-  writeBatch
+  writeBatch,
+  Timestamp
 } from 'firebase/firestore';
 import { db } from './config';
 import { getAuth } from 'firebase/auth';
@@ -25,12 +26,71 @@ import {
   UserProfileDocument, 
   UserProfileSchema,
   ReceiptDocument,
+  ReceiptItemSchema,
   ReceiptSchema,
+  ReceiptWriteSchema,
+  StoredReceiptWriteSchema,
   CategoryDocument,
   CategorySchema,
+  AliasDocument,
+  AliasSchema,
   AppSettingsDocument,
   AppSettingsSchema
 } from '../../domain/schema';
+import {
+  DEFAULT_CATEGORIES,
+  canonicalizeReceiptItemCategories,
+  categoryMatchesLegacyName,
+  normalizeCategoryName,
+  normalizeMerchantName,
+} from '../../domain/categories';
+import { replaceCategoryInReceiptWithRetry } from '../../domain/categoryReplacement';
+
+const processTimestamp = (value: unknown) => {
+  if (value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate().toISOString();
+  }
+  return value;
+};
+
+const normalizeReceiptTimestamps = (data: DocumentData): DocumentData => ({
+  ...data,
+  createdAt: processTimestamp(data.createdAt),
+  updatedAt: processTimestamp(data.updatedAt),
+  confirmedAt: processTimestamp(data.confirmedAt),
+});
+
+const validateReceiptForWrite = (receipt: unknown): ReceiptDocument => {
+  const parsed = ReceiptWriteSchema.safeParse(receipt);
+  if (!parsed.success) {
+    const details = parsed.error.issues
+      .slice(0, 3)
+      .map(issue => `${issue.path.join('.') || 'receipt'}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`Receipt validation failed before write: ${details}`);
+  }
+  return parsed.data;
+};
+
+const validateStoredReceiptForWrite = (receipt: unknown): DocumentData => {
+  const parsed = StoredReceiptWriteSchema.safeParse(receipt);
+  if (!parsed.success) {
+    const details = parsed.error.issues
+      .slice(0, 3)
+      .map(issue => `${issue.path.join('.') || 'receipt'}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`Stored receipt validation failed before write: ${details}`);
+  }
+  return parsed.data;
+};
+
+const parseStoredReceiptItem = (data: unknown) => {
+  const parsed = ReceiptItemSchema.strict().safeParse(data);
+  if (!parsed.success) {
+    throw new Error('Receipt contains a malformed item and cannot be updated safely.');
+  }
+  return parsed.data;
+};
 
 // Helper to create typed converters with Zod validation
 // Explicit converters with safeParse for reads
@@ -57,11 +117,7 @@ export const converters = {
       return data;
     },
     fromFirestore: (snapshot: QueryDocumentSnapshot, options: SnapshotOptions): any => {
-      const data = snapshot.data(options);
-      const processTimestamp = (val: any) => val && val.toDate ? val.toDate().toISOString() : val;
-      data.createdAt = processTimestamp(data.createdAt);
-      data.updatedAt = processTimestamp(data.updatedAt);
-      data.confirmedAt = processTimestamp(data.confirmedAt);
+      const data = normalizeReceiptTimestamps(snapshot.data(options));
       
       const parsed = ReceiptSchema.safeParse(data);
       if (!parsed.success) {
@@ -98,16 +154,39 @@ export const converters = {
   }
 };
 
+const hydrateReceiptItems = async (receiptRef: ReturnType<typeof doc>, data: DocumentData): Promise<any> => {
+  const normalized = normalizeReceiptTimestamps(data);
+  const parsed = ReceiptSchema.safeParse(normalized);
+  if (!parsed.success) {
+    console.error('Malformed Receipt:', receiptRef.id, parsed.error);
+    return { _malformed: true, id: receiptRef.id, error: parsed.error };
+  }
 
-const DEFAULT_CATEGORIES = [
-  'Groceries',
-  'Meat',
-  'Fruit & Vegetables',
-  'Household',
-  'Medicine',
-  'Eating Out',
-  'Miscellaneous'
-];
+  // Version 1 receipts retain their inline items and remain readable without
+  // migration. Version 2 receipts store each fully validated item separately.
+  if (data.itemStorageVersion !== 2) {
+    return parsed.data;
+  }
+
+  try {
+    const itemSnapshot = await getDocs(collection(receiptRef, 'items'));
+    const items = itemSnapshot.docs
+      .sort((left, right) => Number(left.id) - Number(right.id))
+      .map(item => parseStoredReceiptItem(item.data()));
+    return { ...parsed.data, items };
+  } catch (error) {
+    console.error('Malformed Receipt items:', receiptRef.id, error);
+    return { _malformed: true, id: receiptRef.id, error };
+  }
+};
+
+const loadUserCategories = async (uid: string): Promise<CategoryDocument[]> => {
+  const snapshot = await getDocs(collection(db, `users/${uid}/categories`));
+  return snapshot.docs.flatMap(categorySnapshot => {
+    const parsed = CategorySchema.safeParse(categorySnapshot.data());
+    return parsed.success ? [parsed.data] : [];
+  });
+};
 
 export const userRepository = {
   async getOrCreateProfile(uid: string, email: string, displayName?: string | null): Promise<UserProfileDocument> {
@@ -173,6 +252,7 @@ export const userRepository = {
         await setDoc(catRef, {
           id,
           name,
+          legacyNames: [],
           isCustom: false,
           createdAt: now,
           order: order++,
@@ -188,13 +268,14 @@ export const userRepository = {
 export const receiptRepository = {
   subscribeToReceipts(uid: string, onUpdate: (receipts: ReceiptDocument[]) => void, onError: (error: Error) => void) {
     const auth = getAuth();
-    const receiptsRef = collection(db, `users/${uid}/receipts`).withConverter(converters.receipt);
+    const receiptsRef = collection(db, `users/${uid}/receipts`);
     // Realtime sync all confirmed receipts for fast local search/filter
     // We order by transactionDate descending
     const q = query(receiptsRef, where('status', '==', 'confirmed'), orderBy('transactionDate', 'desc'));
     
-    return onSnapshot(q, (snapshot) => {
-      onUpdate(snapshot.docs.map(doc => doc.data()).filter(d => !d._malformed));
+    return onSnapshot(q, async (snapshot) => {
+      const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
+      onUpdate(receipts.filter(receipt => !receipt._malformed));
     }, (error) => {
       try {
         handleFirestoreError(error, OperationType.LIST, `users/${uid}/receipts`, auth);
@@ -206,11 +287,12 @@ export const receiptRepository = {
 
   subscribeToPendingReceipts(uid: string, onUpdate: (receipts: ReceiptDocument[]) => void, onError: (error: Error) => void) {
     const auth = getAuth();
-    const receiptsRef = collection(db, `users/${uid}/receipts`).withConverter(converters.receipt);
+    const receiptsRef = collection(db, `users/${uid}/receipts`);
     const q = query(receiptsRef, where('status', '==', 'pendingReview'), orderBy('createdAt', 'desc'));
     
-    return onSnapshot(q, (snapshot) => {
-      onUpdate(snapshot.docs.map(doc => doc.data()).filter(d => !d._malformed));
+    return onSnapshot(q, async (snapshot) => {
+      const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
+      onUpdate(receipts.filter(receipt => !receipt._malformed));
     }, (error) => {
       try {
         handleFirestoreError(error, OperationType.LIST, `users/${uid}/receipts`, auth);
@@ -222,38 +304,93 @@ export const receiptRepository = {
 
   async updateReceipt(uid: string, receiptId: string, data: Partial<ReceiptDocument>, currentVersion?: number): Promise<void> {
     const auth = getAuth();
-    const docRef = doc(db, `users/${uid}/receipts`, receiptId).withConverter(converters.receipt);
+    const docRef = doc(db, `users/${uid}/receipts`, receiptId);
     
-    const updatePayload: any = { ...data };
-    delete updatePayload.createdAt;
-    delete updatePayload.id;
-    if (typeof updatePayload.confirmedAt === 'string') {
-      delete updatePayload.confirmedAt;
-    }
-    updatePayload.updatedAt = serverTimestamp();
-
     try {
-      if (currentVersion !== undefined) {
-        // Enforce version conflict protection using a transaction
-        await runTransaction(db, async (transaction) => {
-          const docSnap = await transaction.get(docRef);
-          if (!docSnap.exists()) {
-            throw new Error('Receipt no longer exists.');
-          }
-          const currentData = docSnap.data();
-          if ((currentData.revision || 1) !== currentVersion) {
-            throw new Error('Conflict: Receipt was updated by another device. Please refresh and try again.');
-          }
-          transaction.update(docRef, { 
-            ...updatePayload, 
-            revision: currentVersion + 1,
-            updatedAt: serverTimestamp()
-          });
+      const [storedItems, categories] = await Promise.all([
+        getDocs(collection(docRef, 'items')),
+        loadUserCategories(uid),
+      ]);
+      await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(docRef);
+        if (!docSnap.exists()) {
+          throw new Error('Receipt no longer exists.');
+        }
+
+        const rawCurrent = docSnap.data();
+        const usesItemSubcollection = rawCurrent.itemStorageVersion === 2;
+        const itemSnapshot = usesItemSubcollection ? storedItems : null;
+        const existingItems = itemSnapshot
+          ? itemSnapshot.docs.map(item => parseStoredReceiptItem(item.data()))
+          : rawCurrent.items;
+        const current = ReceiptSchema.safeParse({
+          ...normalizeReceiptTimestamps(rawCurrent),
+          items: existingItems,
         });
-      } else {
-        await updateDoc(docRef, updatePayload);
-      }
+        if (!current.success) {
+          throw new Error('Receipt is malformed and cannot be updated safely.');
+        }
+        if (usesItemSubcollection) {
+          validateStoredReceiptForWrite({
+            ...normalizeReceiptTimestamps(rawCurrent),
+            itemStorageVersion: 2,
+            items: [],
+          });
+        }
+        if (currentVersion !== undefined && current.data.revision !== currentVersion) {
+          throw new Error('Conflict: Receipt was updated by another device. Please refresh and try again.');
+        }
+
+        const updatePayload: Record<string, unknown> = { ...data };
+        delete updatePayload.createdAt;
+        delete updatePayload.updatedAt;
+        delete updatePayload.id;
+
+        const candidate: Record<string, unknown> = {
+          ...current.data,
+          ...updatePayload,
+          id: receiptId,
+          createdAt: processTimestamp(rawCurrent.createdAt),
+          updatedAt: processTimestamp(rawCurrent.updatedAt),
+          revision: current.data.revision + 1,
+        };
+        candidate.items = canonicalizeReceiptItemCategories(
+          (candidate.items as ReceiptDocument['items']) ?? current.data.items,
+          categories,
+        );
+        if (candidate.status === 'confirmed' && candidate.confirmedAt == null) {
+          candidate.confirmedAt = new Date().toISOString();
+        }
+
+        const validated = validateReceiptForWrite(candidate);
+        const confirmationChanged = validated.confirmedAt !== processTimestamp(rawCurrent.confirmedAt);
+        const firestoreReceipt: DocumentData = {
+          ...validateStoredReceiptForWrite({
+            ...validated,
+            itemStorageVersion: 2,
+            items: [],
+          }),
+          createdAt: rawCurrent.createdAt,
+          updatedAt: serverTimestamp(),
+        };
+        if (validated.confirmedAt === null) {
+          firestoreReceipt.confirmedAt = null;
+        } else if (validated.confirmedAt !== undefined) {
+          firestoreReceipt.confirmedAt = confirmationChanged || !rawCurrent.confirmedAt
+            ? serverTimestamp()
+            : rawCurrent.confirmedAt;
+        }
+
+        transaction.set(docRef, firestoreReceipt);
+        itemSnapshot?.docs.forEach(item => transaction.delete(item.ref));
+        validated.items.forEach((item, index) => {
+          transaction.set(doc(docRef, 'items', String(index)), parseStoredReceiptItem(item));
+        });
+      });
     } catch (err) {
+      if (err instanceof Error && err.message.startsWith('Conflict:')) {
+        throw err;
+      }
       handleFirestoreError(err, OperationType.UPDATE, `users/${uid}/receipts/${receiptId}`, auth);
     }
   },
@@ -262,7 +399,11 @@ export const receiptRepository = {
     const auth = getAuth();
     const docRef = doc(db, `users/${uid}/receipts`, receiptId);
     try {
-      await deleteDoc(docRef);
+      const itemSnapshot = await getDocs(collection(docRef, 'items'));
+      const batch = writeBatch(db);
+      itemSnapshot.docs.forEach(item => batch.delete(item.ref));
+      batch.delete(docRef);
+      await batch.commit();
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `users/${uid}/receipts/${receiptId}`, auth);
     }
@@ -270,20 +411,56 @@ export const receiptRepository = {
 
   async getReceipts(uid: string): Promise<ReceiptDocument[]> {
     const auth = getAuth();
-    const receiptsRef = collection(db, `users/${uid}/receipts`).withConverter(converters.receipt);
+    const receiptsRef = collection(db, `users/${uid}/receipts`);
     try {
       const snapshot = await getDocs(receiptsRef);
-      return snapshot.docs.map(doc => doc.data()).filter(d => !d._malformed);
+      const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
+      return receipts.filter(receipt => !receipt._malformed);
     } catch (err) {
       handleFirestoreError(err, OperationType.LIST, `users/${uid}/receipts`, auth);
     }
   },
 
-  async createReceipt(uid: string, receipt: any): Promise<void> {
+  async getReceipt(uid: string, receiptId: string): Promise<ReceiptDocument | null> {
     const auth = getAuth();
-    const docRef = doc(db, `users/${uid}/receipts`, receipt.id).withConverter(converters.receipt);
+    const receiptRef = doc(db, `users/${uid}/receipts`, receiptId);
     try {
-      await setDoc(docRef, receipt);
+      const snapshot = await getDoc(receiptRef);
+      if (!snapshot.exists()) return null;
+      const receipt = await hydrateReceiptItems(receiptRef, snapshot.data());
+      return receipt._malformed ? null : receipt;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, `users/${uid}/receipts/${receiptId}`, auth);
+    }
+  },
+
+  async createReceipt(uid: string, receipt: ReceiptDocument, options: { preserveTimestamps?: boolean } = {}): Promise<void> {
+    const auth = getAuth();
+    try {
+      const categories = await loadUserCategories(uid);
+      const validated = validateReceiptForWrite({
+        ...receipt,
+        items: canonicalizeReceiptItemCategories(receipt.items, categories),
+      });
+      const docRef = doc(db, `users/${uid}/receipts`, validated.id);
+      const firestoreReceipt: DocumentData = {
+        ...validateStoredReceiptForWrite({
+          ...validated,
+          itemStorageVersion: 2,
+          items: [],
+        }),
+        createdAt: options.preserveTimestamps ? Timestamp.fromDate(new Date(validated.createdAt)) : serverTimestamp(),
+        updatedAt: options.preserveTimestamps ? Timestamp.fromDate(new Date(validated.updatedAt)) : serverTimestamp(),
+        confirmedAt: validated.confirmedAt
+          ? (options.preserveTimestamps ? Timestamp.fromDate(new Date(validated.confirmedAt)) : serverTimestamp())
+          : null,
+      };
+      const batch = writeBatch(db);
+      batch.set(docRef, firestoreReceipt);
+      validated.items.forEach((item, index) => {
+        batch.set(doc(docRef, 'items', String(index)), parseStoredReceiptItem(item));
+      });
+      await batch.commit();
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `users/${uid}/receipts/${receipt.id}`, auth);
     }
@@ -291,11 +468,12 @@ export const receiptRepository = {
 
   async findByHash(uid: string, sha256: string): Promise<ReceiptDocument[]> {
     const auth = getAuth();
-    const receiptsRef = collection(db, `users/${uid}/receipts`).withConverter(converters.receipt);
+    const receiptsRef = collection(db, `users/${uid}/receipts`);
     const q = query(receiptsRef, where('sourceSha256', '==', sha256));
     try {
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => doc.data());
+      const receipts = await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data())));
+      return receipts.filter(receipt => !receipt._malformed);
     } catch (err) {
       handleFirestoreError(err, OperationType.LIST, `users/${uid}/receipts`, auth);
     }
@@ -303,11 +481,12 @@ export const receiptRepository = {
 
   async findPossibleDuplicates(uid: string, merchant: string, date: string, total: number | null): Promise<ReceiptDocument[]> {
     const auth = getAuth();
-    const receiptsRef = collection(db, `users/${uid}/receipts`).withConverter(converters.receipt);
+    const receiptsRef = collection(db, `users/${uid}/receipts`);
     const q = query(receiptsRef, where('transactionDate', '==', date));
     try {
       const snapshot = await getDocs(q);
-      const docs = snapshot.docs.map(doc => doc.data());
+      const docs = (await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data()))))
+        .filter(doc => !doc._malformed);
       return docs.filter(doc => 
         doc.merchantNormalized === merchant && 
         doc.printedGrandTotal === total
@@ -322,12 +501,9 @@ export const categoryRepository = {
   async addCategory(uid: string, name: string, isCustom = true) {
     const auth = getAuth();
     const categoriesRef = collection(db, `users/${uid}/categories`).withConverter(converters.category);
-    // prevent duplicate normalized names
-    const q = query(categoriesRef, where('isActive', '==', true));
     try {
-      const snap = await getDocs(q);
-      const existing = snap.docs.map(d => d.data());
-      if (existing.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      const existing = await loadUserCategories(uid);
+      if (existing.some(category => normalizeCategoryName(category.name) === normalizeCategoryName(name))) {
         throw new Error('Category already exists');
       }
       
@@ -336,6 +512,7 @@ export const categoryRepository = {
       await setDoc(catRef, {
         id,
         name,
+        legacyNames: [],
         isCustom,
         createdAt: new Date().toISOString(),
         order: existing.length,
@@ -346,59 +523,77 @@ export const categoryRepository = {
       handleFirestoreError(err, OperationType.WRITE, `users/${uid}/categories`, auth);
     }
   },
-  
-  async replaceCategory(uid: string, oldCategoryId: string, newCategoryId: string) {
+
+  async renameCategory(uid: string, categoryId: string, name: string): Promise<void> {
     const auth = getAuth();
     try {
-      // Find all receipts with the old category
-      const receiptsRef = collection(db, `users/${uid}/receipts`).withConverter(converters.receipt);
-      const snap = await getDocs(receiptsRef);
-      const docs = snap.docs;
-      
-      let currentBatch = writeBatch(db);
-      const batches: Promise<void>[] = [];
-      let mutationCount = 0;
-      const MAX_BATCH_SIZE = 500;
-      
-      
-      docs.forEach(docSnap => {
-        const data = docSnap.data();
-        let changed = false;
-        const newItems = data.items.map((item: any) => {
-          if (item.category === oldCategoryId) {
-            changed = true;
-            return { ...item, category: newCategoryId, userEdited: true };
-          }
-          return item;
-        });
-        
-        if (changed) {
-          currentBatch.update(docSnap.ref, { 
-            items: newItems, 
-            updatedAt: serverTimestamp(),
-            revision: (data.revision || 1) + 1
-          });
-          
-          mutationCount++;
-          if (mutationCount >= MAX_BATCH_SIZE) {
-            batches.push(currentBatch.commit());
-            currentBatch = writeBatch(db);
-            mutationCount = 0;
-          }
-        }
-      });
-      
-      if (mutationCount > 0) {
-        batches.push(currentBatch.commit());
+      const categories = await loadUserCategories(uid);
+      const category = categories.find(candidate => candidate.id === categoryId);
+      if (!category) throw new Error('Category no longer exists.');
+      if (categories.some(candidate => candidate.id !== categoryId && normalizeCategoryName(candidate.name) === normalizeCategoryName(name))) {
+        throw new Error('Category already exists');
       }
-      
-      await Promise.all(batches);
-      
-      // Delete old category
+      if (normalizeCategoryName(category.name) === normalizeCategoryName(name)) return;
+
+      const legacyNames = Array.from(new Set([...(category.legacyNames ?? []), category.name])).slice(-20);
+      await updateDoc(doc(db, `users/${uid}/categories`, categoryId), { name, legacyNames });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${uid}/categories/${categoryId}`, auth);
+    }
+  },
+
+  async getReferenceCounts(uid: string, category: CategoryDocument): Promise<{ receiptItems: number; aliases: number }> {
+    const [receipts, aliases] = await Promise.all([
+      receiptRepository.getReceipts(uid),
+      aliasRepository.getAliases(uid),
+    ]);
+    const receiptItems = receipts.reduce(
+      (count, receipt) => count + receipt.items.filter(item =>
+        item.categoryId === category.id || (!item.categoryId && categoryMatchesLegacyName(category, item.category)),
+      ).length,
+      0,
+    );
+    return {
+      receiptItems,
+      aliases: aliases.filter(alias => alias.categoryId === category.id).length,
+    };
+  },
+
+  async replaceCategory(uid: string, oldCategoryId: string, newCategoryId: string): Promise<void> {
+    const auth = getAuth();
+    try {
+      if (oldCategoryId === newCategoryId) throw new Error('Choose a different replacement category.');
+      const categories = await loadUserCategories(uid);
+      const oldCategory = categories.find(category => category.id === oldCategoryId);
+      const replacement = categories.find(category => category.id === newCategoryId);
+      if (!oldCategory) throw new Error('Category no longer exists.');
+      if (!replacement || !replacement.isActive) throw new Error('Choose an active replacement category.');
+
+      const receipts = await receiptRepository.getReceipts(uid);
+      const failedReceiptIds: string[] = [];
+      for (const receipt of receipts) {
+        try {
+          await replaceCategoryInReceiptWithRetry(receipt, oldCategory, newCategoryId, {
+            loadLatest: receiptId => receiptRepository.getReceipt(uid, receiptId),
+            save: (receiptId, update, revision) => receiptRepository.updateReceipt(uid, receiptId, update, revision),
+          });
+        } catch {
+          failedReceiptIds.push(receipt.id);
+        }
+      }
+      if (failedReceiptIds.length > 0) {
+        throw new Error(`Could not safely update ${failedReceiptIds.length} receipt(s). The category was not deleted.`);
+      }
+
+      const aliases = await aliasRepository.getAliases(uid);
+      await Promise.all(aliases
+        .filter(alias => alias.categoryId === oldCategoryId)
+        .map(alias => aliasRepository.setAlias(uid, alias.merchantNormalized, newCategoryId)));
+
       const oldCatRef = doc(db, `users/${uid}/categories`, oldCategoryId);
       await deleteDoc(oldCatRef);
       
-    } catch(err) {
+    } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${uid}/categories`, auth);
     }
   },
@@ -421,9 +616,14 @@ export const categoryRepository = {
 
   async deleteCategory(uid: string, categoryId: string): Promise<void> {
     const auth = getAuth();
-    const docRef = doc(db, `users/${uid}/categories`, categoryId);
     try {
-      await deleteDoc(docRef);
+      const category = (await loadUserCategories(uid)).find(candidate => candidate.id === categoryId);
+      if (!category) return;
+      const references = await this.getReferenceCounts(uid, category);
+      if (references.receiptItems > 0 || references.aliases > 0) {
+        throw new Error('Choose a replacement category before deleting a category that is still in use.');
+      }
+      await deleteDoc(doc(db, `users/${uid}/categories`, categoryId));
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `users/${uid}/categories/${categoryId}`, auth);
     }
@@ -440,14 +640,18 @@ export const categoryRepository = {
   }
 };
 
-
-export interface AliasDocument {
-  id: string;
-  merchantNormalized: string;
-  categoryId: string;
-  createdAt: string;
-  updatedAt: string;
-}
+const createAliasId = (merchantNormalized: string): string => {
+  let hash = 2166136261;
+  for (let index = 0; index < merchantNormalized.length; index += 1) {
+    hash ^= merchantNormalized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  const safePrefix = merchantNormalized
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 96) || 'merchant';
+  return `alias_${safePrefix}_${(hash >>> 0).toString(36)}`;
+};
 
 export const aliasRepository = {
   async getAliases(uid: string): Promise<AliasDocument[]> {
@@ -455,28 +659,77 @@ export const aliasRepository = {
     const aliasesRef = collection(db, `users/${uid}/aliases`);
     try {
       const snap = await getDocs(aliasesRef);
-      return snap.docs.map(d => d.data() as AliasDocument);
+      return snap.docs.map(d => AliasSchema.parse({
+        ...d.data(),
+        createdAt: processTimestamp(d.data().createdAt),
+        updatedAt: processTimestamp(d.data().updatedAt),
+      }));
     } catch (err) {
       handleFirestoreError(err, OperationType.GET, `users/${uid}/aliases`, auth);
       return [];
     }
   },
-  async setAlias(uid: string, merchantNormalized: string, categoryId: string) {
+
+  subscribeToAliases(uid: string, onUpdate: (aliases: AliasDocument[]) => void, onError: (error: Error) => void) {
     const auth = getAuth();
-    const id = `alias_${merchantNormalized.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    const aliasesRef = collection(db, `users/${uid}/aliases`);
+    return onSnapshot(aliasesRef, snapshot => {
+      const aliases = snapshot.docs.flatMap(aliasSnapshot => {
+        const parsed = AliasSchema.safeParse({
+          ...aliasSnapshot.data(),
+          createdAt: processTimestamp(aliasSnapshot.data().createdAt),
+          updatedAt: processTimestamp(aliasSnapshot.data().updatedAt),
+        });
+        return parsed.success ? [parsed.data] : [];
+      });
+      onUpdate(aliases.sort((left, right) => left.merchantNormalized.localeCompare(right.merchantNormalized)));
+    }, error => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, `users/${uid}/aliases`, auth);
+      } catch (handled) {
+        onError(handled as Error);
+      }
+    });
+  },
+
+  async getAliasForMerchant(uid: string, merchantName: string): Promise<AliasDocument | null> {
+    const merchantNormalized = normalizeMerchantName(merchantName);
+    if (!merchantNormalized) return null;
+    const aliases = await this.getAliases(uid);
+    return aliases.find(alias => normalizeMerchantName(alias.merchantNormalized) === merchantNormalized) ?? null;
+  },
+
+  async setAlias(uid: string, merchantName: string, categoryId: string): Promise<void> {
+    const auth = getAuth();
+    const merchantNormalized = normalizeMerchantName(merchantName);
+    if (!merchantNormalized) throw new Error('Enter a merchant name.');
+    const category = (await loadUserCategories(uid)).find(candidate => candidate.id === categoryId);
+    if (!category || !category.isActive) throw new Error('Choose an active category.');
+    const id = createAliasId(merchantNormalized);
     const docRef = doc(db, `users/${uid}/aliases`, id);
     try {
+      const existing = await getDoc(docRef);
+      const now = new Date().toISOString();
       await setDoc(docRef, {
         id,
         merchantNormalized,
         categoryId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: existing.exists() ? processTimestamp(existing.data().createdAt) : now,
+        updatedAt: now,
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${uid}/aliases/${id}`, auth);
     }
-  }
+  },
+
+  async deleteAlias(uid: string, aliasId: string): Promise<void> {
+    const auth = getAuth();
+    try {
+      await deleteDoc(doc(db, `users/${uid}/aliases`, aliasId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${uid}/aliases/${aliasId}`, auth);
+    }
+  },
 };
 
 export const settingsRepository = {
@@ -500,5 +753,18 @@ export const settingsRepository = {
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${uid}/settings/default`, auth);
     }
+  },
+  subscribeToSettings(uid: string, onUpdate: (settings: AppSettingsDocument) => void, onError: (error: Error) => void) {
+    const auth = getAuth();
+    const docRef = doc(db, `users/${uid}/settings/default`).withConverter(converters.settings);
+    return onSnapshot(docRef, snapshot => {
+      onUpdate(snapshot.exists() ? snapshot.data() : AppSettingsSchema.parse({}));
+    }, error => {
+      try {
+        handleFirestoreError(error, OperationType.GET, `users/${uid}/settings/default`, auth);
+      } catch (handled) {
+        onError(handled as Error);
+      }
+    });
   }
 };

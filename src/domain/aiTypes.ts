@@ -8,9 +8,11 @@ export interface AiKeySlot {
   lastSuccessAt?: number;
   cooldownUntil?: number;
   failureCount?: number;
+  requiresMigration?: boolean;
 }
 
-export interface StoredKeyRecord {
+/** Historical IndexedDB shape. It is read only to offer removal/re-entry, never used as a key source. */
+export interface LegacyPlaintextKeyRecord {
   slotId: number;
   label?: string;
   maskedKey: string;
@@ -23,11 +25,22 @@ export interface EncryptedKeyRecord {
   label?: string;
   maskedKey: string;
   isEnabled: boolean;
-  key?: string;
-  // Crypto metadata (optional for backwards compatibility)
-  ciphertextBase64?: string;
-  ivBase64?: string;
-  saltBase64?: string;
+  recordVersion: 2;
+  ciphertextBase64: string;
+  ivBase64: string;
+}
+
+export interface VaultMetadata {
+  metadataVersion: 2;
+  saltBase64: string;
+}
+
+export type VaultState = 'unconfigured' | 'locked' | 'unlocked' | 'migration-required';
+
+export interface VaultInspection {
+  metadata: VaultMetadata | null;
+  encryptedKeys: EncryptedKeyRecord[];
+  legacyKeys: Array<Omit<LegacyPlaintextKeyRecord, 'key'>>;
 }
 
 export interface AiRequestError {

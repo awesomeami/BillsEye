@@ -2,7 +2,6 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert';
 import { 
   calculateDashboardSummary, 
-  DateRangeFilter, 
   getDateRange,
   generateMonthlyReport,
   generateItemReport,
@@ -63,6 +62,10 @@ for (const tz of testTimezones) {
       // refDate is Feb, so last month is Jan. previous 3 months should be Nov, Dec, Jan
       assert.strictEqual(prev3.start, '2023-11-01');
       assert.strictEqual(prev3.end, '2024-01-31');
+
+      const last3IncludingCurrent = getDateRange('current_and_previous_2_months', refDate);
+      assert.strictEqual(last3IncludingCurrent.start, '2023-12-01');
+      assert.strictEqual(last3IncludingCurrent.end, '2024-02-29');
     });
 
     test('calculates dashboard summary properly (current, previous, MTD, null exclusion)', () => {
@@ -92,6 +95,7 @@ for (const tz of testTimezones) {
       assert.strictEqual(summary.excludedNullCount, 1);
       assert.strictEqual(summary.receiptCount, 4); // id 1, 2, 8, 9 are this month
       assert.strictEqual(summary.averageReceiptValue, 2167); // 6500 / 3 valid receipts
+      assert.deepStrictEqual(summary.dailyTrend.map(day => day.date), ['2026-08-01', '2026-08-05', '2026-08-15']);
     });
 
     test('aggregates category composition strictly based on items', () => {

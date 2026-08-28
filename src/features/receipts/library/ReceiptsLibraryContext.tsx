@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../../auth/AuthContext';
-import { receiptRepository, categoryRepository } from '../../../services/firebase/db';
-import { ReceiptDocument, CategoryDocument } from '../../../domain/schema';
+import { receiptRepository, categoryRepository, settingsRepository } from '../../../services/firebase/db';
+import { ReceiptDocument, CategoryDocument, AppSettingsDocument, AppSettingsSchema } from '../../../domain/schema';
 import { filterAndSortReceipts, FilterState, SortState } from './libraryUtils';
 
 interface ReceiptsLibraryContextType {
@@ -9,6 +9,7 @@ interface ReceiptsLibraryContextType {
   pendingReceipts: ReceiptDocument[];
   filteredReceipts: ReceiptDocument[];
   categories: CategoryDocument[];
+  settings: AppSettingsDocument;
   loading: boolean;
   error: Error | null;
   syncState: 'syncing' | 'synced' | 'offline' | 'error';
@@ -28,6 +29,7 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
   const [receipts, setReceipts] = useState<ReceiptDocument[]>([]);
   const [pendingReceipts, setPendingReceipts] = useState<ReceiptDocument[]>([]);
   const [categories, setCategories] = useState<CategoryDocument[]>([]);
+  const [settings, setSettings] = useState<AppSettingsDocument>(() => AppSettingsSchema.parse({}));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [syncState, setSyncState] = useState<'syncing' | 'synced' | 'offline' | 'error'>('syncing');
@@ -51,7 +53,9 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!user) {
       setReceipts([]);
+      setPendingReceipts([]);
       setCategories([]);
+      setSettings(AppSettingsSchema.parse({}));
       setLoading(false);
       return;
     }
@@ -105,10 +109,15 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
       console.error(err);
     });
 
+    const unsubSettings = settingsRepository.subscribeToSettings(user.uid, setSettings, (err) => {
+      console.error(err);
+    });
+
     return () => {
       unsubReceipts();
       unsubPending();
       unsubCategories();
+      unsubSettings();
     };
   }, [user]);
 
@@ -143,6 +152,7 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
       pendingReceipts,
       filteredReceipts,
       categories,
+      settings,
       loading,
       error,
       syncState,

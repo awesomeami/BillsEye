@@ -2,6 +2,8 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ReceiptDocument } from '../../domain/schema';
 
+type PdfWithAutoTable = jsPDF & { lastAutoTable?: { finalY?: number } };
+
 export function exportPDF(receipts: ReceiptDocument[], dateRangeStr: string) {
   const doc = new jsPDF();
   
@@ -19,7 +21,7 @@ export function exportPDF(receipts: ReceiptDocument[], dateRangeStr: string) {
   const tableData = receipts.map(r => [
     r.transactionDate || 'Unknown',
     r.merchantNormalized || r.merchantRaw || 'Unknown',
-    r.printedGrandTotal !== null ? (r.printedGrandTotal / 100).toFixed(2) : 'Unknown',
+    r.printedGrandTotal != null ? (r.printedGrandTotal / 100).toFixed(2) : 'Unknown',
     r.currency || 'PKR',
     r.status
   ]);
@@ -34,7 +36,7 @@ export function exportPDF(receipts: ReceiptDocument[], dateRangeStr: string) {
   });
 
   doc.setFontSize(10);
-  const finalY = (doc as any).lastAutoTable?.finalY || 55;
+  const finalY = (doc as PdfWithAutoTable).lastAutoTable?.finalY ?? 55;
   doc.text('* Data quality note: Some receipts may have OCR discrepancies.', 14, finalY + 10);
   doc.text('* Note: RTL/Urdu script is not supported in this PDF export. Please use CSV/Excel.', 14, finalY + 15);
 

@@ -87,23 +87,21 @@ export function extractObservations(receipts: ReceiptDocument[]): ItemObservatio
     const isReceiptRefund = (r.printedGrandTotal ?? 0) < 0;
 
     for (const item of r.items) {
-      if (item.lineTotal === null) continue;
+      const lineTotal = item.lineTotal;
+      if (lineTotal == null) continue;
       
-      const isRefund = isReceiptRefund || item.lineTotal < 0;
+      const isRefund = isReceiptRefund || lineTotal < 0;
       if (isRefund) continue; // For now, we skip refunds for pricing analytics to avoid skewed averages
 
-      // Assume a property `estimatedQuantity` might exist in future or from user input.
-      // For now we don't have it in schema, but we can support it if added.
-      const isEst = (item as any).estimatedQuantity === true;
-      const unit = parseUnit(item.quantity, item.unit, isEst);
+      const unit = parseUnit(item.quantity ?? null, item.unit ?? null, false);
       
       if (unit.standardValue === 0) continue; // Prevent division by zero
-      if (item.lineTotal === 0) continue; // Ignore zero price items (freebies)
+      if (lineTotal === 0) continue; // Ignore zero price items (freebies)
 
       // Calculate unit price per standard unit (e.g. per kg, per L, per piece)
-      const unitPrice = item.lineTotal / unit.standardValue;
+      const unitPrice = lineTotal / unit.standardValue;
       
-      const canonicalName = getCanonicalItemName(item.name || item.rawLineText, item.brand);
+      const canonicalName = getCanonicalItemName(item.name ?? item.rawLineText ?? '', item.brand ?? undefined);
 
       obs.push({
         receiptId: r.id,
@@ -112,7 +110,7 @@ export function extractObservations(receipts: ReceiptDocument[]): ItemObservatio
         rawName: item.rawLineText || item.name || 'Unknown',
         canonicalName,
         unit,
-        lineTotal: item.lineTotal,
+        lineTotal,
         unitPrice,
         isRefund
       });
@@ -181,7 +179,7 @@ export function analyzeItem(observations: ItemObservation[]): ItemAnalytics | nu
   if (strictObs.length > 1) {
     const latestMonth = latestObs.transactionDate.substring(0, 7);
     // Find all observations in the most recent month PRIOR to latestMonth
-    let priorMonth = null;
+    let priorMonth: string | null = null;
     for (let i = strictObs.length - 1; i >= 0; i--) {
       const obsMonth = strictObs[i].transactionDate.substring(0, 7);
       if (obsMonth < latestMonth) {

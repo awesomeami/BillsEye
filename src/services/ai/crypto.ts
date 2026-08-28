@@ -3,7 +3,7 @@
 export const CryptoUtils = {
   // Convert base64 to Uint8Array
   base64ToArrayBuffer(base64: string): Uint8Array {
-    const binary_string = window.atob(base64);
+    const binary_string = globalThis.atob(base64);
     const len = binary_string.length;
     const bytes = new Uint8Array(len);
     for (let i = 0; i < len; i++) {
@@ -20,7 +20,11 @@ export const CryptoUtils = {
     for (let i = 0; i < len; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
-    return window.btoa(binary);
+    return globalThis.btoa(binary);
+  },
+
+  generateSalt(): Uint8Array {
+    return crypto.getRandomValues(new Uint8Array(16));
   },
 
   async deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
@@ -48,17 +52,12 @@ export const CryptoUtils = {
   },
 
   async encryptSecret(secret: string, passphrase: string): Promise<{ ciphertextBase64: string, ivBase64: string, saltBase64: string }> {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const salt = this.generateSalt();
     const iv = crypto.getRandomValues(new Uint8Array(12));
     
     const key = await this.deriveKey(passphrase, salt);
     
-    const enc = new TextEncoder();
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      enc.encode(secret)
-    );
+    const ciphertext = await this.encryptWithKey(secret, key, iv);
 
     return {
       ciphertextBase64: this.arrayBufferToBase64(ciphertext),
@@ -74,14 +73,17 @@ export const CryptoUtils = {
 
     const key = await this.deriveKey(passphrase, salt);
 
-    const decryptedBuffer = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      ciphertext
-    );
+    return this.decryptWithKey(ciphertext, key, iv);
+  },
 
-    const dec = new TextDecoder();
-    return dec.decode(decryptedBuffer);
+  async encryptWithKey(secret: string, key: CryptoKey, iv = crypto.getRandomValues(new Uint8Array(12))): Promise<ArrayBuffer> {
+    const enc = new TextEncoder();
+    return crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(secret));
+  },
+
+  async decryptWithKey(ciphertext: ArrayBuffer | Uint8Array, key: CryptoKey, iv: Uint8Array): Promise<string> {
+    const decryptedBuffer = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+    return new TextDecoder().decode(decryptedBuffer);
   },
 
   maskKey(secret: string): string {
@@ -90,7 +92,7 @@ export const CryptoUtils = {
   },
 
   redactString(text: string): string {
-    // Redact Gemini API keys (starts with AIza and is 39 chars long)
-    return text.replace(/AIza[a-zA-Z0-9-_]{35}/g, '[REDACTED_KEY]');
+    // Redact the complete key-shaped token, including malformed or future-length values.
+    return text.replace(/AIza[a-zA-Z0-9_-]+/g, '[REDACTED_KEY]');
   }
 };

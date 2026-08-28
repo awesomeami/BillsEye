@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert';
-import { queueReducer, QueueItem } from '../queueReducer';
+import { isRetryableQueueStatus, queueReducer, QueueItem } from '../queueReducer';
 
 describe('queueReducer', () => {
   const createMockItem = (id: string, status: QueueItem['status'] = 'queued', objectUrl = `blob:http://localhost/${id}`, abortController = new AbortController()): QueueItem => ({
@@ -31,55 +31,32 @@ describe('queueReducer', () => {
     assert.strictEqual(newState[0].progress, 50);
   });
 
-  test('removes item, aborts inflight controller, and cleans up objectUrl', () => {
-    let aborted = false;
-    let revokedUrl = '';
-    const originalRevoke = URL.revokeObjectURL;
-    URL.revokeObjectURL = (url: string) => {
-      revokedUrl = url;
-    };
+  test('claims a queued item once and records the attempt', () => {
+    const initialState: QueueItem[] = [createMockItem('1')];
+    const claimed = queueReducer(initialState, { type: 'START_ATTEMPT', id: '1', timestamp: 100 });
+    const claimedAgain = queueReducer(claimed, { type: 'START_ATTEMPT', id: '1', timestamp: 200 });
 
-    const mockController = {
-      abort: () => {
-        aborted = true;
-      }
-    } as unknown as AbortController;
-
-    const initialState: QueueItem[] = [
-      {
-        ...createMockItem('1', 'extracting', 'blob:http://localhost/test1234', mockController),
-        progress: 30
-      }
-    ];
-    
-    try {
-      const newState = queueReducer(initialState, { type: 'REMOVE_ITEM', id: '1' });
-      assert.strictEqual(newState.length, 0);
-      assert.strictEqual(aborted, true);
-      assert.strictEqual(revokedUrl, 'blob:http://localhost/test1234');
-    } finally {
-      URL.revokeObjectURL = originalRevoke;
-    }
+    assert.strictEqual(claimed[0].status, 'preprocessing');
+    assert.deepStrictEqual(claimed[0].attempts, [{ timestamp: 100 }]);
+    assert.deepStrictEqual(claimedAgain[0].attempts, [{ timestamp: 100 }]);
   });
 
-  test('cancels inflight item and sets status to cancelled', () => {
-    let aborted = false;
-    const mockController = {
-      abort: () => {
-        aborted = true;
-      }
-    } as unknown as AbortController;
-
+  test('removes item state without duplicating provider-owned resource cleanup', () => {
     const initialState: QueueItem[] = [
-      {
-        ...createMockItem('1', 'extracting', 'blob:http://localhost/test1', mockController),
-        progress: 50
-      }
+      createMockItem('1', 'extracting', 'blob:http://localhost/test1234')
+    ];
+
+    const newState = queueReducer(initialState, { type: 'REMOVE_ITEM', id: '1' });
+    assert.strictEqual(newState.length, 0);
+  });
+
+  test('marks an inflight item as cancelled', () => {
+    const initialState: QueueItem[] = [
+      { ...createMockItem('1', 'extracting', 'blob:http://localhost/test1'), progress: 50 }
     ];
     
     const newState = queueReducer(initialState, { type: 'CANCEL_ITEM', id: '1' });
     assert.strictEqual(newState[0].status, 'cancelled');
-    assert.strictEqual(aborted, true);
   });
 
   test('retries failed item and resets error and retry state', () => {
@@ -96,5 +73,16 @@ describe('queueReducer', () => {
     assert.strictEqual(newState[0].error, undefined);
     assert.strictEqual(newState[0].retryAfter, undefined);
     assert.ok(newState[0].abortController);
+  });
+
+  test('identifies both retryable failure states for the queue controls', () => {
+    assert.strictEqual(isRetryableQueueStatus('retry-wait'), true);
+    assert.strictEqual(isRetryableQueueStatus('failed-permanent'), true);
+    assert.strictEqual(isRetryableQueueStatus('duplicate'), false);
+  });
+
+  test('clears every queue item at an auth boundary', () => {
+    const state = [createMockItem('1'), createMockItem('2', 'retry-wait')];
+    assert.deepStrictEqual(queueReducer(state, { type: 'CLEAR_QUEUE' }), []);
   });
 });
