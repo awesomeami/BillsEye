@@ -84,7 +84,15 @@ export function createAccountRouter(
       return res.status(401).json({ error: 'Missing or invalid Authorization header' });
     }
 
-    const admin = getAdmin();
+    let admin: FirebaseAdminForAccountRoute;
+    try {
+      admin = getAdmin();
+    } catch {
+      return res.status(503).json({
+        error: 'Account service is temporarily unavailable.',
+        code: 'CONFIGURATION_UNAVAILABLE',
+      });
+    }
     let decodedToken: { uid: string; auth_time?: unknown };
     try {
       decodedToken = await admin.auth.verifyIdToken(token, true);

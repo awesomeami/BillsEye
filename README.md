@@ -20,10 +20,10 @@ Use the versions pinned in `package.json`: Node.js `24.15.0` and npm `11.12.1`. 
 1. Create a Firebase project and enable Firestore and Google sign-in in Firebase Authentication.
 2. Do **not** enable Firebase Storage.
 3. Copy `.firebaserc.example` to `.firebaserc`, replace `your-firebase-project-id`, and keep that local file uncommitted.
-4. Copy `.env.example` to `.env.local` and replace every placeholder with your Firebase web configuration and the private Firebase Admin service-account JSON. `.env.local` is ignored by Git.
+4. Copy `.env.example` to `.env.local`. Set every `VITE_FIREBASE_*` variable together from one Firebase web app, then set the server-only `FIREBASE_PROJECT_ID`, `FIREBASE_DATABASE_ID`, `FIREBASE_SERVICE_ACCOUNT`, and `GEMINI_EXTRACTION_MODEL` variables. The client and Admin project/database IDs must match. `.env.local` is ignored by Git.
 5. Add `http://localhost:3000` to Firebase Authentication's Authorized domains while developing locally.
 
-The supplied `firebase.json` intentionally targets your project's default Firestore database; it does not embed a developer-specific project or database name. If you deliberately use a named database, set both `VITE_FIREBASE_DATABASE_ID` and `FIREBASE_DATABASE_ID` to that name and adjust your Firebase CLI configuration deliberately.
+The committed Firebase web bootstrap can be used only by the explicit `development`, `test`, or `e2e` modes. Preview and production require complete environment configuration. The supplied `firebase.json` intentionally targets your project's default Firestore database; it does not embed a developer-specific project or database name. If you deliberately use a named database, set both `VITE_FIREBASE_DATABASE_ID` and `FIREBASE_DATABASE_ID` to that name and adjust your Firebase CLI configuration deliberately.
 
 Deploy rules and indexes with the project-local Firebase CLI:
 
@@ -70,6 +70,8 @@ $env:RUN_E2E = '1'
 npm run verify
 ```
 
+`npm run test:e2e` starts the dedicated `e2e` development mode. `VITE_E2E_MOCKS` is confined to that mode and causes every build to fail, preventing fake authentication or the in-memory repository from entering a deployment.
+
 `npm run clean` removes generated `dist` directories on Windows, macOS, and Linux.
 
 ## Pull-request checks
@@ -79,7 +81,7 @@ GitHub Actions runs `npm ci`, linting, type checking, unit tests, Firestore emul
 ## Vercel deployment
 
 1. Import the repository into Vercel and retain `npm run build` as the build command with `dist` as the output directory.
-2. Add the Firebase values from `.env.example` as Vercel environment variables. Keep `FIREBASE_SERVICE_ACCOUNT` server-only; never expose it with a `VITE_` prefix.
+2. Add the required names from `.env.example` as Vercel environment variables. Keep `FIREBASE_SERVICE_ACCOUNT` and `GEMINI_EXTRACTION_MODEL` server-only; never expose either with a `VITE_` prefix. Do not set `FIREBASE_ADMIN_USE_ADC` in production.
 3. Add the deployed Vercel domain to Firebase Authentication's Authorized domains.
 4. Deploy Firestore rules and indexes from the same Firebase project before allowing users to write data.
 

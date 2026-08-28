@@ -66,6 +66,19 @@ function postDeletion(app: express.Express, body: unknown) {
 }
 
 describe('Account Deletion Route authentication', () => {
+  it('returns a safe 503 when Admin configuration is unavailable', async () => {
+    const app = express();
+    app.use('/api/account', createAccountRouter(() => {
+      throw new Error('configuration contains sensitive values');
+    }));
+
+    const response = await postDeletion(app, { action: 'delete_data' });
+
+    assert.strictEqual(response.status, 503);
+    assert.strictEqual(response.body.code, 'CONFIGURATION_UNAVAILABLE');
+    assert.ok(!JSON.stringify(response.body).includes('sensitive'));
+  });
+
   it('checks revocation and rejects revoked tokens without exposing verifier details', async () => {
     let checkRevoked: boolean | undefined;
     const { app, db } = createRouteHarness({

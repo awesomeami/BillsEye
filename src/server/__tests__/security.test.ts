@@ -3,12 +3,18 @@ import assert from 'node:assert';
 import request from 'supertest';
 import express from 'express';
 import extractionRoute from '../extractionRoute';
-import accountRoute from '../accountRoute';
+import { createAccountRouter } from '../accountRoute';
 import serverApp from '../app';
 
 const app = express();
 app.use('/api', extractionRoute);
-app.use('/api/account', accountRoute);
+app.use('/api/account', createAccountRouter(() => ({
+  auth: {
+    verifyIdToken: async () => { throw new Error('invalid test token'); },
+    deleteUser: async () => undefined,
+  },
+  db: {} as never,
+})));
 
 test('Security Audit - API Tests', async (t) => {
 

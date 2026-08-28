@@ -5,6 +5,7 @@ import { CryptoUtils } from '../../../services/ai/crypto';
 import { KeyRotationManager } from '../../../services/ai/KeyRotationManager';
 import { AiRequestExecutor } from '../../../services/ai/AiRequestExecutor';
 import { useAuth } from '../../auth/AuthContext';
+import { isE2eMockMode } from '../../../config/e2eMocks';
 
 interface AiKeysContextType {
   slots: AiKeySlot[];
@@ -26,7 +27,7 @@ interface AiKeysContextType {
 }
 
 const AiKeysContext = createContext<AiKeysContextType | undefined>(undefined);
-const useE2eMocks = import.meta.env.VITE_E2E_MOCKS === 'true';
+const useE2eMocks = isE2eMockMode;
 const e2eKeySlot: AiKeySlot = {
   slotId: 0,
   label: 'Browser-test key',

@@ -11,6 +11,7 @@ import { auth, googleProvider } from '../../services/firebase/config';
 import { userRepository } from '../../services/firebase/db';
 import { useToast } from '../../components/ui/Toast';
 import { ImageSessionStore } from '../../utils/imageSessionStore';
+import { isE2eMockMode } from '../../config/e2eMocks';
 
 export interface AuthenticatedUser {
   uid: string;
@@ -31,7 +32,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const useE2eMocks = import.meta.env.VITE_E2E_MOCKS === 'true';
+const useE2eMocks = isE2eMockMode;
 const e2eUser: AuthenticatedUser = {
   uid: 'e2e-user',
   email: 'e2e@example.test',

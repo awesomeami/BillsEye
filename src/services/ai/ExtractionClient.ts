@@ -1,7 +1,8 @@
 import { ExtractionResultSchema, type ExtractionResultDTO } from '../../domain/schema';
 import { getAuth } from 'firebase/auth';
+import { isE2eMockMode } from '../../config/e2eMocks';
 
-const useE2eMocks = import.meta.env.VITE_E2E_MOCKS === 'true';
+const useE2eMocks = isE2eMockMode;
 
 class ExtractionRequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {

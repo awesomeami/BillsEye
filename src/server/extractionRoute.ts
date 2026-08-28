@@ -9,7 +9,7 @@ import {
   type ExtractionAdmission,
 } from './extractionControls';
 import { GoogleGenAI } from '@google/genai';
-import { RECEIPT_EXTRACTION_MODEL, EXTRACTION_SCHEMA_VERSION } from './geminiConfig';
+import { getReceiptExtractionModel, EXTRACTION_SCHEMA_VERSION } from './geminiConfig';
 import { RawGeminiReceiptV2 } from '../domain/schema';
 import { parseMajorToMinor } from '../domain/money';
 import { reconcileReceipt } from '../domain/reconciliation';
@@ -141,9 +141,18 @@ export const createExtractionRoute = (options: ExtractionRouteOptions = {}) => {
     }
 
     const token = authHeader.slice('Bearer '.length);
+    let admin;
+    try {
+      admin = getFirebaseAdmin();
+    } catch {
+      logSafe(generateRequestId(), 'Firebase Admin configuration unavailable');
+      res.status(503).json({ error: 'Extraction service is temporarily unavailable', code: 'CONFIGURATION_UNAVAILABLE' });
+      return;
+    }
+
     let uid: string;
     try {
-      const decodedToken = await getFirebaseAdmin().auth.verifyIdToken(token);
+      const decodedToken = await admin.auth.verifyIdToken(token);
       uid = decodedToken.uid;
     } catch {
       logSafe(generateRequestId(), 'Invalid or expired Firebase ID token');
@@ -239,6 +248,7 @@ router.post('/extract', authenticateAndAcquire, multipartParser, async (req, res
 
     // 3. Initialize SDK
     logSafe(reqId, 'Initializing GoogleGenAI');
+    const extractionModel = getReceiptExtractionModel();
     const ai = new GoogleGenAI({
       apiKey: geminiKey,
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
@@ -261,7 +271,7 @@ Return only the requested structured JSON result.`.trim();
     let result;
     try {
       result = await ai.models.generateContent({
-        model: RECEIPT_EXTRACTION_MODEL,
+        model: extractionModel,
         contents: [
           {
             role: 'user',
@@ -337,7 +347,7 @@ Return only the requested structured JSON result.`.trim();
         providerStatus: typeof providerError.status === 'number' ? providerError.status : undefined,
       });
       
-      let retryAfterSeconds = null;
+      let retryAfterSeconds: number | null = null;
       if (providerError.response?.headers) {
         retryAfterSeconds = extractRetryAfter(providerError.response.headers);
       }
@@ -466,9 +476,9 @@ Return only the requested structured JSON result.`.trim();
       documentWarnings: docWarnings,
       warnings: [...docWarnings, ...reconciliation.warnings],
       
-      extractionSchemaVersion: parseInt(EXTRACTION_SCHEMA_VERSION, 10),
-      extractionModel: RECEIPT_EXTRACTION_MODEL,
-      extractionModelActual: result.modelVersion || RECEIPT_EXTRACTION_MODEL,
+      extractionSchemaVersion: EXTRACTION_SCHEMA_VERSION,
+      extractionModel,
+      extractionModelActual: result.modelVersion || extractionModel,
       extractionDurationMs
     };
 

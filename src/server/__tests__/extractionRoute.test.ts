@@ -6,6 +6,11 @@ import { createExtractionRoute, type ExtractionRouteOptions } from '../extractio
 import { getFirebaseAdmin } from '../firebaseAdmin';
 import { ExtractionControlService, InMemoryExtractionControlStore } from '../extractionControls';
 
+process.env.FIREBASE_PROJECT_ID ??= 'test-project';
+process.env.FIREBASE_DATABASE_ID ??= '(default)';
+process.env.FIREBASE_ADMIN_USE_ADC ??= 'true';
+process.env.GEMINI_EXTRACTION_MODEL ??= 'gemini-2.5-flash';
+
 const createTestApp = (options: Pick<ExtractionRouteOptions, 'multipartParser'> = {}) => {
   const app = express();
   const controls = new ExtractionControlService(new InMemoryExtractionControlStore(), {
@@ -255,6 +260,7 @@ describe('Extraction Route Contract Tests', () => {
     assert.strictEqual(res.body.isReceipt, true);
     assert.strictEqual(res.body.merchantRaw, 'Imtiaz Super Market');
     assert.strictEqual(res.body.items.length, 1);
+    assert.strictEqual(res.body.extractionSchemaVersion, '2');
   });
 
   test('Unreadable values (nulls)', async () => {

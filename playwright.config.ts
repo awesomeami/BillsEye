@@ -24,10 +24,10 @@ export default defineConfig({
     },
   }],
   webServer: {
-    command: 'npm run dev',
+    command: `node ./node_modules/vite/bin/vite.js --mode e2e --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}/login`,
     timeout: 120_000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     env: {
       ...process.env,
       PORT: String(port),

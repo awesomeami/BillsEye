@@ -1,9 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache } from 'firebase/firestore';
 
-// Platform-injected Firebase configuration
-import { getValidatedFirebaseConfig } from './coreConfig';
+import { getValidatedClientFirebaseConfig } from './clientConfig';
 
 const envOverrides = {
   FIREBASE_PROJECT_ID: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -15,7 +14,9 @@ const envOverrides = {
   FIREBASE_MESSAGING_SENDER_ID: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
 };
 
-export const firebaseConfig = getValidatedFirebaseConfig(envOverrides);
+export const firebaseConfig = getValidatedClientFirebaseConfig(envOverrides, {
+  mode: import.meta.env.MODE,
+});
 export const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);

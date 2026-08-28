@@ -2,9 +2,9 @@ import { describe, test, afterEach, before, after } from 'node:test';
 import assert from 'node:assert';
 import { initializeTestEnvironment, RulesTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import * as fs from 'fs';
-import { getValidatedFirebaseConfig } from '../coreConfig';
+import { getValidatedClientFirebaseConfig } from '../clientConfig';
 
-const firebaseConfig = getValidatedFirebaseConfig();
+const firebaseConfig = getValidatedClientFirebaseConfig({}, { mode: 'test' });
 let testEnv: RulesTestEnvironment;
 
 before(async () => {

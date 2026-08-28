@@ -5,14 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:e2e": "vite --mode e2e --host 127.0.0.1",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist-server/server.cjs",
     "start": "node dist-server/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist dist-server",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:unit": "tsx --test src/domain/__tests__/*.test.ts src/features/**/__tests__/*.test.ts src/server/__tests__/*.test.ts src/services/export/__tests__/*.test.ts src/services/ai/__tests__/*.test.ts src/services/firebase/__tests__/errors.test.ts",
+    "test:unit": "tsx --test src/config/__tests__/*.test.ts src/domain/__tests__/*.test.ts src/features/**/__tests__/*.test.ts src/server/__tests__/*.test.ts src/services/export/__tests__/*.test.ts src/services/ai/__tests__/*.test.ts src/services/firebase/__tests__/errors.test.ts",
     "test:firestore": "firebase emulators:exec --only firestore \"npx tsx --test src/services/firebase/__tests__/firestore.rules.test.ts src/services/firebase/__tests__/integration.test.ts\"",
+    "test:e2e": "playwright test",
     "test": "npm run test:unit && npm run test:firestore",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
   },

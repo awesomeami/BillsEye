@@ -3,6 +3,7 @@ build/
 dist/
 dist-server/
 coverage/
+test-results/
 .DS_Store
 *.log
 .env*

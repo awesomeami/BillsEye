@@ -77,11 +77,16 @@ test('mocked sign-in, upload, review, confirmation, dashboard and reports journe
   await reviewLink.click();
   await expect(page.getByRole('heading', { name: 'Review Receipt' })).toBeVisible();
   await page.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByText('Saved successfully!')).toBeVisible();
 
   await page.getByRole('link', { name: 'Inbox' }).click();
   await expect(page.getByRole('heading', { name: 'AI Inbox' })).toBeVisible();
   await expect(page.getByText('Example Market')).toBeVisible();
+  await page.getByRole('link', { name: 'Review Details' }).click();
+  await expect(page.getByRole('heading', { name: 'Review Receipt' })).toBeVisible();
   await page.getByRole('button', { name: 'Confirm & Save' }).click();
+
+  await page.getByRole('link', { name: 'Inbox' }).click();
   await expect(page.getByRole('heading', { name: "You're all caught up!" })).toBeVisible();
 
   await page.getByRole('link', { name: 'Home' }).click();
