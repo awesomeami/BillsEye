@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { useAiKeys } from '../../settings/ai/AiKeysContext';
-import { queueReducer, QueueItem, QueueAction } from './queueReducer';
+import { queueReducer, QueueItem, QueueAction, isTerminalQueueStatus } from './queueReducer';
 import { useQueueProcessor } from './useQueueProcessor';
+import { ImageSessionStore } from '../../../utils/imageSessionStore';
 
 interface ReceiptQueueContextType {
   items: QueueItem[];
@@ -16,25 +17,61 @@ interface ReceiptQueueContextType {
 
 const ReceiptQueueContext = createContext<ReceiptQueueContextType | null>(null);
 
+function disposeQueueItem(item: QueueItem) {
+  if (!item.abortController.signal.aborted) item.abortController.abort();
+  if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
+  if (item.receiptId) ImageSessionStore.delete(item.receiptId);
+}
+
 export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
   const { executor, getDecryptedKey, rotationManager } = useAiKeys();
   const [items, dispatch] = useReducer(queueReducer, []);
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  const userId = user?.uid ?? null;
+  const previousUserIdRef = useRef<string | null>(userId);
 
-  // Cleanup object urls on unmount
-  useEffect(() => {
-    return () => {
-      itemsRef.current.forEach(item => {
-        if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
-        item.abortController.abort();
-      });
-    };
+  const clearQueue = useCallback(() => {
+    itemsRef.current.forEach(disposeQueueItem);
+    itemsRef.current = [];
+    ImageSessionStore.clear();
+    dispatch({ type: 'CLEAR_QUEUE' });
   }, []);
 
+  // Queue files and object URLs are owned by the active account only.
+  useEffect(() => {
+    if (previousUserIdRef.current !== userId) {
+      clearQueue();
+      previousUserIdRef.current = userId;
+    }
+  }, [userId, clearQueue]);
+
+  useEffect(() => {
+    return () => {
+      clearQueue();
+    };
+  }, [clearQueue]);
+
+  // A successful review hand-off uses ImageSessionStore, and duplicates cannot
+  // be retried, so their queue preview URLs have no remaining consumer.
+  useEffect(() => {
+    const releasable = items.filter(item =>
+      item.objectUrl && (item.status === 'needs-review' || item.status === 'duplicate')
+    );
+    if (releasable.length === 0) return;
+
+    releasable.forEach(item => URL.revokeObjectURL(item.objectUrl!));
+    itemsRef.current = itemsRef.current.map(item =>
+      releasable.some(released => released.id === item.id) ? { ...item, objectUrl: undefined } : item
+    );
+    releasable.forEach(item => {
+      dispatch({ type: 'UPDATE_ITEM', id: item.id, updates: { objectUrl: undefined } });
+    });
+  }, [items]);
+
   const warnBeforeUnload = useCallback((e: BeforeUnloadEvent) => {
-    const hasActive = items.some(i => !['completed', 'failed-permanent', 'cancelled', 'needs-review', 'duplicate'].includes(i.status));
+    const hasActive = items.some(i => !isTerminalQueueStatus(i.status));
     if (hasActive) {
       e.preventDefault();
       e.returnValue = '';
@@ -86,6 +123,7 @@ export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
     }
     
     if (newItems.length > 0) {
+      itemsRef.current = [...itemsRef.current, ...newItems];
       dispatch({ type: 'ADD_ITEMS', items: newItems });
     }
   };
@@ -103,19 +141,32 @@ export const ReceiptQueueProvider = ({ children }: { children: ReactNode }) => {
       attempts: []
     }));
     
+    itemsRef.current = [...itemsRef.current, ...newItems];
     dispatch({ type: 'ADD_ITEMS', items: newItems });
   };
 
-  const removeItem = (id: string) => dispatch({ type: 'REMOVE_ITEM', id });
-  const cancelItem = (id: string) => dispatch({ type: 'CANCEL_ITEM', id });
+  const removeItem = (id: string) => {
+    const item = itemsRef.current.find(candidate => candidate.id === id);
+    if (item) disposeQueueItem(item);
+    itemsRef.current = itemsRef.current.filter(candidate => candidate.id !== id);
+    dispatch({ type: 'REMOVE_ITEM', id });
+  };
+  const cancelItem = (id: string) => {
+    const item = itemsRef.current.find(candidate => candidate.id === id);
+    if (item && !item.abortController.signal.aborted) item.abortController.abort();
+    dispatch({ type: 'CANCEL_ITEM', id });
+  };
   const retryItem = (id: string) => dispatch({ type: 'RETRY_ITEM', id });
 
   const updateCroppedImage = (id: string, newBlob: Blob) => {
-    const item = items.find(i => i.id === id);
+    const item = itemsRef.current.find(i => i.id === id);
     if (item?.objectUrl) {
       URL.revokeObjectURL(item.objectUrl);
     }
     const objectUrl = URL.createObjectURL(newBlob);
+    itemsRef.current = itemsRef.current.map(candidate =>
+      candidate.id === id ? { ...candidate, file: newBlob, objectUrl, mimeType: 'image/jpeg' } : candidate
+    );
     dispatch({ type: 'UPDATE_ITEM', id, updates: { file: newBlob, objectUrl, mimeType: 'image/jpeg' } });
   };
 

@@ -1,0 +1,57 @@
+name: Quality checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: true
+      RUN_E2E: '1'
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: npm
+
+      - name: Set up Java for the Firestore emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install the browser used by mocked end-to-end tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Run lint, types, tests, emulator, browser journey, and build
+        run: npm run verify
+
+      - name: Upload generated verification report and failed browser artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-artifacts
+          path: |
+            TEST_REPORT.md
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7

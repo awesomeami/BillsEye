@@ -1,17 +1,27 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useToast } from '../../components/ui/Toast';
 import { useParams, useNavigate } from 'react-router-dom';
 import { APP_CONFIG } from "../../utilities/config";
 import { useAuth } from '../auth/AuthContext';
-import { getDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../services/firebase/config';
-import { ReceiptDocument } from '../../domain/schema';
+import { MAX_RECEIPT_ITEMS, ReceiptDocument } from '../../domain/schema';
 import { ImageSessionStore } from '../../utils/imageSessionStore';
-import { createSha256Hash } from '../../utils/imageUtils';
-import { receiptRepository, aliasRepository } from '../../services/firebase/db';
-import { FileText, Upload, AlertTriangle, Check, ArrowLeft, Trash2, Plus, Minus, Info } from 'lucide-react';
+import { createSha256Hash, preprocessImage } from '../../utils/imageUtils';
+import { aliasRepository, receiptRepository } from '../../services/firebase/db';
+import { Upload, AlertTriangle, Check, ArrowLeft, Trash2, Plus } from 'lucide-react';
 import { parseMajorToMinor } from '../../domain/money';
 import { reconcileReceipt } from '../../domain/reconciliation';
+import {
+  applyMerchantCategoryAlias,
+  canonicalizeReceiptItemCategories,
+  resolveReceiptItemCategoryId,
+} from '../../domain/categories';
+import { useReceiptsLibrary } from './library/ReceiptsLibraryContext';
+
+type ReceiptItem = ReceiptDocument['items'][number];
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
 
 function minorToStr(value: number | null | undefined): string {
   if (value === null || value === undefined) return '';
@@ -31,9 +41,8 @@ export function ReviewReceiptScreen() {
   const { showToast } = useToast();
   const { id } = useParams();
   const { user } = useAuth();
+  const { categories, settings } = useReceiptsLibrary();
   const navigate = useNavigate();
-  
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   const [receipt, setReceipt] = useState<ReceiptDocument | null>(null);
   const [formData, setFormData] = useState<Partial<ReceiptDocument>>({});
@@ -45,97 +54,132 @@ export function ReviewReceiptScreen() {
   const [isSaving, setIsSaving] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageUrlRef = useRef<string | null>(null);
+
+  const clearImagePreview = useCallback(() => {
+    if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
+    imageUrlRef.current = null;
+    setImageUrl(null);
+  }, []);
+
+  const setImagePreview = useCallback((image: Blob) => {
+    if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
+    const nextUrl = URL.createObjectURL(image);
+    imageUrlRef.current = nextUrl;
+    setImageUrl(nextUrl);
+  }, []);
 
   useEffect(() => {
+    let isCurrent = true;
+
     async function load() {
-      if (!user || !id) return;
+      if (!user || !id) {
+        setLoading(false);
+        return;
+      }
       try {
-        const docSnap = await getDoc(doc(db, `users/${user.uid}/receipts`, id));
-        if (docSnap.exists()) {
-          const data = docSnap.data() as ReceiptDocument;
+        const data = await receiptRepository.getReceipt(user.uid, id);
+        if (data) {
+          if (!isCurrent) return;
           setReceipt(data);
-          setFormData(JSON.parse(JSON.stringify(data)));
+          const canonicalItems = canonicalizeReceiptItemCategories(data.items, categories);
+          const alias = data.merchantNormalized
+            ? await aliasRepository.getAliasForMerchant(user.uid, data.merchantNormalized)
+            : null;
+          if (!isCurrent) return;
+          setFormData({
+            ...data,
+            items: alias ? applyMerchantCategoryAlias(canonicalItems, alias.categoryId) : canonicalItems,
+          });
           
-          if (data.merchantNormalized && data.transactionDate && data.printedGrandTotal !== null) {
-            // Apply aliases deterministically before checking duplicates
-            const _aliases = await aliasRepository.getAliases(user.uid);
-            const _checkMerchant = data.merchantNormalized;
-            // if we have an alias mapping for this merchant, we can use the original or check if we want to remap. Wait, the duplicate logic just checks if the merchant matches. If it matches aliased merchant?
-            // Actually, `aliasRepository` in our schema has `merchantNormalized` and `categoryId`. So it's an alias that maps a merchant to a category, NOT merchant to merchant. 
-            // So for duplicate check, we just use merchantNormalized! 
-            // Wait, the prompt says: "Apply merchant aliases deterministically before duplicate checks/reports"
-            // Wait, maybe the merchant alias is meant to normalize the name itself? No, the schema says: "categoryId: string".
-            // Let's just leave duplicate logic alone, but ensure we import aliasRepository if we want to apply default categories for items!
+          if (data.merchantNormalized && data.transactionDate && data.printedGrandTotal != null) {
             const possibleDups = await receiptRepository.findPossibleDuplicates(
               user.uid, 
               data.merchantNormalized, 
               data.transactionDate, 
               data.printedGrandTotal
             );
-            setDuplicates(possibleDups.filter(d => d.id !== data.id));
+            if (isCurrent) setDuplicates(possibleDups.filter(d => d.id !== data.id));
           }
 
           const sessionImage = ImageSessionStore.get(id);
-          if (sessionImage) {
-            setImageUrl(URL.createObjectURL(sessionImage));
-          }
+          if (isCurrent && sessionImage) setImagePreview(sessionImage);
         } else {
-          setError('Receipt not found.');
+          if (isCurrent) setError('Receipt not found or cannot be reviewed safely.');
         }
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err: unknown) {
+        if (isCurrent) setError(getErrorMessage(err, 'Could not load this receipt.'));
       } finally {
-        setLoading(false);
+        if (isCurrent) setLoading(false);
       }
     }
     load();
     
     return () => {
-      if (imageUrl) {
-        URL.revokeObjectURL(imageUrl);
-      }
+      isCurrent = false;
+      clearImagePreview();
     };
-  }, [id, user]);
+  }, [id, user, categories, clearImagePreview, setImagePreview]);
 
   const handleReattach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !receipt) return;
     setReattachError(null);
     try {
-      const hash = await createSha256Hash(file);
+      const { blob: processedBlob } = await preprocessImage(file);
+      const hash = await createSha256Hash(processedBlob);
       if (hash === receipt.sourceSha256) {
-        ImageSessionStore.set(receipt.id, file);
-        if (imageUrl) URL.revokeObjectURL(imageUrl);
-        setImageUrl(URL.createObjectURL(file));
+        ImageSessionStore.set(receipt.id, processedBlob);
+        setImagePreview(processedBlob);
       } else {
         setReattachError('Hash mismatch. This is not the original file.');
       }
-    } catch (err: any) {
-      setReattachError(err.message);
+    } catch (err: unknown) {
+      setReattachError(getErrorMessage(err, 'Could not prepare the selected image.'));
     }
     if (e.target) e.target.value = '';
   };
 
-  const updateField = (field: keyof ReceiptDocument, value: any) => {
+  const updateField = <K extends keyof ReceiptDocument>(field: K, value: ReceiptDocument[K]) => {
     setFormData(prev => ({ ...prev, [field]: value, wasEditedByUser: true }));
   };
 
-  const updateItem = (index: number, field: string, value: any) => {
+  const updateItem = <K extends keyof ReceiptItem>(index: number, field: K, value: ReceiptItem[K]) => {
     setFormData(prev => {
       const newItems = [...(prev.items || [])];
-      newItems[index] = { ...newItems[index], [field]: value, userEdited: true };
+      if (field === 'categoryId') {
+        const { category: _legacyCategory, ...withoutLegacyCategory } = newItems[index];
+        newItems[index] = {
+          ...withoutLegacyCategory,
+          categoryId: typeof value === 'string' && value ? value : null,
+          userEdited: true,
+        };
+      } else {
+        newItems[index] = { ...newItems[index], [field]: value, userEdited: true };
+      }
       return { ...prev, items: newItems, wasEditedByUser: true };
     });
   };
 
   const addItem = () => {
+    if (currentItems.length >= MAX_RECEIPT_ITEMS) {
+      showToast(`Receipts support up to ${MAX_RECEIPT_ITEMS} items. Remove an item before adding another.`, 'error');
+      return;
+    }
     setFormData(prev => ({
       ...prev,
       items: [...(prev.items || []), {
         id: crypto.randomUUID(),
         rawLineText: '',
-        name: '',
+        name: null,
+        brand: null,
         quantity: 1,
+        unit: null,
+        unitPrice: null,
+        discount: null,
+        lineTotal: null,
+        categoryId: null,
+        confidence: 1,
         userEdited: true,
         warnings: []
       }],
@@ -164,7 +208,7 @@ export function ReviewReceiptScreen() {
       printedRounding: formData.printedRounding,
       printedGrandTotal: formData.printedGrandTotal,
     },
-    0 // Default tolerance
+    settings.discrepancyTolerance,
   );
 
   const handleSave = async (status: 'confirmed' | 'pendingReview' = 'confirmed') => {
@@ -178,11 +222,12 @@ export function ReviewReceiptScreen() {
     }
 
     try {
-      const payload: any = {
+      const payload: Partial<ReceiptDocument> = {
         ...formData,
+        items: canonicalizeReceiptItemCategories(formData.items || [], categories),
         status,
-        confirmedAt: status === 'confirmed' 
-          ? (receipt.status === 'confirmed' && receipt.confirmedAt ? undefined : serverTimestamp()) 
+        confirmedAt: status === 'confirmed'
+          ? receipt.confirmedAt || new Date().toISOString()
           : null,
         computedLineTotal: reconciliation.computedLineTotal,
         computedExpectedTotal: reconciliation.computedExpectedTotal,
@@ -196,14 +241,14 @@ export function ReviewReceiptScreen() {
       await receiptRepository.updateReceipt(user.uid, receipt.id, payload, receipt.revision);
       if (status === 'confirmed') {
         ImageSessionStore.delete(receipt.id);
-        if (imageUrl) URL.revokeObjectURL(imageUrl);
-        navigate('/dashboard');
+        clearImagePreview();
+        navigate('/');
       } else {
         showToast("Saved successfully!", "success");
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      showToast(e.message || 'Failed to save receipt. Conflict may have occurred.', "error");
+      showToast(getErrorMessage(e, 'Failed to save receipt. Conflict may have occurred.'), "error");
     } finally {
       setIsSaving(false);
     }
@@ -215,8 +260,8 @@ export function ReviewReceiptScreen() {
       try {
         await receiptRepository.deleteReceipt(user.uid, receipt.id);
         ImageSessionStore.delete(receipt.id);
-        if (imageUrl) URL.revokeObjectURL(imageUrl);
-        navigate('/dashboard');
+        clearImagePreview();
+        navigate('/');
       } catch (e) {
         console.error(e);
         showToast("Failed to delete receipt", "error");
@@ -261,7 +306,7 @@ export function ReviewReceiptScreen() {
       {/* Right side: Edit Form */}
       <div className="flex-1 bg-white border border-gray-200 rounded-2xl p-6 shadow-sm overflow-auto" style={{ maxHeight: 'calc(100vh - 120px)' }}>
          
-         {duplicates.length > 0 && (
+          {duplicates.length > 0 && (
            <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm">
              <div className="flex items-start gap-2 text-orange-800">
                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-orange-500" />
@@ -275,7 +320,21 @@ export function ReviewReceiptScreen() {
                </div>
              </div>
            </div>
-         )}
+          )}
+
+          {(formData.warnings || []).length > 0 && (
+            <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-bold text-base mb-1">Extraction notes</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {formData.warnings?.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
          
          <div className="space-y-8">
            <section>
@@ -322,8 +381,8 @@ export function ReviewReceiptScreen() {
 
            <section>
              <div className="flex justify-between items-center border-b pb-2 mb-4">
-               <h3 className="text-lg font-bold text-gray-900">Items</h3>
-               <button onClick={addItem} className="text-sm font-medium text-blue-600 flex items-center gap-1 hover:text-blue-800"><Plus size={16}/> Add Item</button>
+                <h3 className="text-lg font-bold text-gray-900">Items ({currentItems.length}/{MAX_RECEIPT_ITEMS})</h3>
+                <button onClick={addItem} disabled={currentItems.length >= MAX_RECEIPT_ITEMS} className="text-sm font-medium text-blue-600 flex items-center gap-1 hover:text-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed"><Plus size={16}/> Add Item</button>
              </div>
              
              <div className="space-y-4">
@@ -353,7 +412,16 @@ export function ReviewReceiptScreen() {
                      </div>
                      <div className="sm:col-span-6">
                        <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
-                       <input type="text" value={item.category || ''} onChange={e => updateItem(index, 'category', e.target.value)} className="w-full border-gray-300 rounded text-sm px-2 py-1.5 focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+                       <select
+                         value={resolveReceiptItemCategoryId(item, categories) || ''}
+                         onChange={e => updateItem(index, 'categoryId', e.target.value)}
+                         className="w-full border-gray-300 rounded text-sm px-2 py-1.5 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                       >
+                         <option value="">Uncategorized</option>
+                         {categories
+                           .filter(category => category.isActive || category.id === item.categoryId)
+                           .map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+                       </select>
                      </div>
                    </div>
                  </div>

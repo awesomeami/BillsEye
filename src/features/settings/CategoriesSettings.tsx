@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '../../components/ui/Toast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { ChevronRight, Plus, Trash2, Edit2, Check, X, GripVertical, AlertTriangle } from 'lucide-react';
+import { ChevronRight, Plus, Trash2, Edit2, Check, X, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
-import { categoryRepository, receiptRepository } from '../../services/firebase/db';
-import { CategoryDocument, ReceiptDocument } from '../../domain/schema';
+import { categoryRepository } from '../../services/firebase/db';
+import { CategoryDocument } from '../../domain/schema';
 
 export function CategoriesSettings({ onBack }: { onBack: () => void }) {
   const { user } = useAuth();
@@ -23,12 +23,12 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
   // Delete modal state
   const [deletingCategory, setDeletingCategory] = useState<CategoryDocument | null>(null);
   const [replacementCategory, setReplacementCategory] = useState<string>('');
-  const [usageCount, setUsageCount] = useState(0);
+  const [referenceCounts, setReferenceCounts] = useState({ receiptItems: 0, aliases: 0 });
 
   useEffect(() => {
     if (!user) return;
     const unsub = categoryRepository.subscribeToCategories(user.uid, (data) => {
-      setCategories(data.sort((a, b) => a.order - b.order));
+      setCategories([...data].sort((a, b) => a.order - b.order));
       setLoading(false);
     }, (err) => {
       setError(err.message);
@@ -43,40 +43,34 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
       await categoryRepository.addCategory(user.uid, newName.trim(), true);
       setNewName('');
       setIsAdding(false);
-      setError(null);
-    } catch (err: any) {
-      setError(err.message);
+      setError('');
+    } catch (addError: unknown) {
+      setError(addError instanceof Error ? addError.message : 'Could not create category.');
     }
   };
 
   const handleUpdate = async (id: string) => {
     if (!user || !editName.trim()) return;
-    await categoryRepository.updateCategory(user.uid, id, { name: editName.trim() });
-    setEditingId(null);
+    try {
+      await categoryRepository.renameCategory(user.uid, id, editName.trim());
+      setEditingId(null);
+    } catch (renameError: unknown) {
+      setError(renameError instanceof Error ? renameError.message : 'Could not rename category.');
+    }
   };
 
   const toggleActive = async (cat: CategoryDocument) => {
-    if (!user || !cat.isCustom) return; // cannot deactivate defaults based on typical rules, or maybe we can? The prompt says "deactivate custom categories"
+    if (!user) return;
     await categoryRepository.updateCategory(user.uid, cat.id, { isActive: !cat.isActive });
   };
 
   const checkUsageAndPromptDelete = async (cat: CategoryDocument) => {
     if (!user) return;
-    if (!cat.isCustom) return; // cannot delete defaults
-
-    // Check if category is in use
-    const allReceipts = await receiptRepository.getReceipts(user.uid);
-    let count = 0;
-    allReceipts.forEach(r => {
-      r.items.forEach(i => {
-        if (i.category === cat.name) count++;
-      });
-    });
-
-    if (count > 0) {
-      setUsageCount(count);
+    const counts = await categoryRepository.getReferenceCounts(user.uid, cat);
+    if (counts.receiptItems > 0 || counts.aliases > 0) {
+      setReferenceCounts(counts);
       setDeletingCategory(cat);
-      setReplacementCategory(categories.find(c => c.id !== cat.id)?.name || '');
+      setReplacementCategory(categories.find(category => category.id !== cat.id && category.isActive)?.id || '');
     } else {
       setConfirmAction({
         message: `Delete category "${cat.name}"?`,
@@ -84,8 +78,8 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
           try {
             await categoryRepository.deleteCategory(user.uid, cat.id);
             showToast("Category deleted", "success");
-          } catch (e: any) {
-            showToast("Failed to delete category: " + e.message, "error");
+          } catch (deleteError: unknown) {
+            showToast(`Failed to delete category: ${deleteError instanceof Error ? deleteError.message : 'Unknown error'}`, 'error');
           }
         }
       });
@@ -96,24 +90,13 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
     if (!user || !deletingCategory || !replacementCategory) return;
     
     // 1. Update all receipts using this category
-    const allReceipts = await receiptRepository.getReceipts(user.uid);
-    for (const r of allReceipts) {
-      let changed = false;
-      const newItems = r.items.map(item => {
-        if (item.category === deletingCategory.name) {
-          changed = true;
-          return { ...item, category: replacementCategory };
-        }
-        return item;
-      });
-      if (changed) {
-        await receiptRepository.updateReceipt(user.uid, r.id, { items: newItems, wasEditedByUser: true });
-      }
+    try {
+      await categoryRepository.replaceCategory(user.uid, deletingCategory.id, replacementCategory);
+      setDeletingCategory(null);
+      showToast('Category references were moved and the old category was deleted.', 'success');
+    } catch (replaceError: unknown) {
+      setError(replaceError instanceof Error ? replaceError.message : 'Could not replace this category safely.');
     }
-
-    // 2. Delete the category
-    await categoryRepository.deleteCategory(user.uid, deletingCategory.id);
-    setDeletingCategory(null);
   };
 
   if (loading) return <div>Loading...</div>;
@@ -126,8 +109,8 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
             <ChevronRight className="rotate-180" size={20} />
           </button>
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Custom Categories</h2>
-            <p className="text-xs text-gray-500">Manage categories used for receipts</p>
+            <h2 className="text-xl font-bold text-gray-900">Categories</h2>
+            <p className="text-xs text-gray-500">Manage the categories used for receipt items.</p>
           </div>
         </div>
         <button 
@@ -158,10 +141,9 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
             </li>
           )}
           
-          {categories.map((cat, idx) => (
+          {categories.map(cat => (
             <li key={cat.id} className={`p-4 flex items-center justify-between hover:bg-gray-50 group ${!cat.isActive ? 'opacity-50' : ''}`}>
               <div className="flex items-center gap-3 flex-1">
-                <GripVertical size={16} className="text-gray-300 cursor-grab" />
                 {editingId === cat.id ? (
                   <input
                     autoFocus
@@ -187,14 +169,12 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
                   </>
                 ) : (
                   <>
-                    {cat.isCustom && (
-                      <button 
-                        onClick={() => toggleActive(cat)} 
-                        className="text-xs px-2 py-1 mr-2 text-gray-500 hover:bg-gray-100 rounded border border-gray-200"
-                      >
-                        {cat.isActive ? 'Deactivate' : 'Activate'}
-                      </button>
-                    )}
+                    <button
+                      onClick={() => toggleActive(cat)}
+                      className="text-xs px-2 py-1 mr-2 text-gray-500 hover:bg-gray-100 rounded border border-gray-200"
+                    >
+                      {cat.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
                     <button 
                       onClick={() => { setEditingId(cat.id); setEditName(cat.name); }} 
                       className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Rename"
@@ -202,15 +182,13 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
                     >
                       <Edit2 size={16}/>
                     </button>
-                    {cat.isCustom && (
-                      <button 
-                        onClick={() => checkUsageAndPromptDelete(cat)} 
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Delete"
-                        title="Delete"
-                      >
-                        <Trash2 size={16}/>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => checkUsageAndPromptDelete(cat)}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Delete"
+                      title="Delete"
+                    >
+                      <Trash2 size={16}/>
+                    </button>
                   </>
                 )}
               </div>
@@ -230,8 +208,8 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
             </div>
             <div className="p-4 space-y-4 text-sm">
               <p>
-                The category <strong>{deletingCategory.name}</strong> is currently used by {usageCount} item(s).
-                To delete it, you must select a replacement category for these items.
+                The category <strong>{deletingCategory.name}</strong> is used by {referenceCounts.receiptItems} receipt item(s)
+                {referenceCounts.aliases > 0 && ` and ${referenceCounts.aliases} merchant alias(es)`}. Choose a replacement before deleting it.
               </p>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Replacement Category</label>
@@ -240,8 +218,8 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
                   value={replacementCategory}
                   onChange={e => setReplacementCategory(e.target.value)}
                 >
-                  {categories.filter(c => c.id !== deletingCategory.id).map(c => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
+                  {categories.filter(category => category.id !== deletingCategory.id && category.isActive).map(category => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
                   ))}
                 </select>
               </div>
@@ -255,7 +233,8 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
               </button>
               <button 
                 onClick={confirmDeleteWithReplacement}
-                className="px-4 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                disabled={!replacementCategory}
+                className="px-4 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
               >
                 Replace & Delete
               </button>
@@ -263,6 +242,19 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmAction !== null}
+        title="Delete Category"
+        message={confirmAction?.message || ''}
+        confirmText="Delete"
+        isDestructive={true}
+        onConfirm={() => {
+          if (confirmAction) void confirmAction.action();
+          setConfirmAction(null);
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

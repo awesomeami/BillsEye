@@ -1,7 +1,9 @@
 
-import { ReceiptDocument } from './schema';
+import { CategoryDocument, ReceiptDocument } from './schema';
 import { groupAndAnalyzeItems, ItemAnalytics } from './items';
 import { reconcileReceipt } from './reconciliation';
+import { getReceiptItemCategoryLabel, resolveReceiptItemCategoryId } from './categories';
+import { APP_CONFIG } from '../utilities/config';
 
 export type DateRangeFilter = 'this_month' | 'last_month' | 'previous_3_months' | 'current_and_previous_2_months' | 'this_year' | 'all_time' | 'custom';
 
@@ -12,7 +14,7 @@ export interface DateRange {
 
 export function getKarachiYYYYMMDD(date: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Karachi',
+    timeZone: APP_CONFIG.timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
@@ -115,7 +117,8 @@ export function applyMerchantAlias(name: string): string {
 
 export function calculateDashboardSummary(
   allReceipts: ReceiptDocument[], 
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  categories: CategoryDocument[] = [],
 ): DashboardSummary {
   const pendingCount = allReceipts.filter(r => r.status === 'pendingReview').length;
   const confirmed = getConfirmedReceipts(allReceipts);
@@ -172,8 +175,8 @@ export function calculateDashboardSummary(
     const mName = applyMerchantAlias(r.merchantNormalized || r.merchantRaw || 'Unknown');
     merchantMap.set(mName, (merchantMap.get(mName) || 0) + rTotal);
     
-    const day = r.transactionDate!.substring(8, 10);
-    dailyMap.set(day, (dailyMap.get(day) || 0) + rTotal);
+    const date = r.transactionDate!;
+    dailyMap.set(date, (dailyMap.get(date) || 0) + rTotal);
     
     for (const item of r.items) {
       const itemName = applyMerchantAlias(item.name || item.rawLineText || 'Unknown Item');
@@ -181,7 +184,7 @@ export function calculateDashboardSummary(
     }
   }
 
-  const categoryComposition = generateCategoryReport(thisMonthReceipts, thisMonthRange);
+  const categoryComposition = generateCategoryReport(thisMonthReceipts, thisMonthRange, categories);
 
   return {
     currentTotal,
@@ -203,7 +206,7 @@ export function calculateDashboardSummary(
 }
 
 export function getFilteredReceipts(receipts: ReceiptDocument[], range: DateRange): ReceiptDocument[] {
-  return receipts.filter(r => r.status === 'confirmed' && isDateInRange(r.transactionDate, range));
+  return receipts.filter(r => r.status === 'confirmed' && isDateInRange(r.transactionDate ?? null, range));
 }
 
 export interface MonthlyReportItem {
@@ -256,14 +259,47 @@ export function generateMonthlyReport(receipts: ReceiptDocument[], range: DateRa
 
 export interface CategoryReportItem {
   category: string;
+  categoryId: string | null;
+  filterValue: string | null;
   total: number;
   proportion: number;
   receiptCount: number;
 }
 
-export function generateCategoryReport(receipts: ReceiptDocument[], range: DateRange): CategoryReportItem[] {
+function getCategoryReference(item: ReceiptDocument['items'][number], categories: CategoryDocument[]) {
+  const categoryId = resolveReceiptItemCategoryId(item, categories);
+  if (categoryId) {
+    return {
+      key: `id:${categoryId}`,
+      categoryId,
+      filterValue: categoryId,
+      label: getReceiptItemCategoryLabel(item, categories),
+    };
+  }
+  if (item.category) {
+    return {
+      key: `legacy:${item.category}`,
+      categoryId: null,
+      filterValue: item.category,
+      label: getReceiptItemCategoryLabel(item, categories),
+    };
+  }
+  return { key: 'uncategorized', categoryId: null, filterValue: null, label: 'Uncategorized' };
+}
+
+export function generateCategoryReport(
+  receipts: ReceiptDocument[],
+  range: DateRange,
+  categories: CategoryDocument[] = [],
+): CategoryReportItem[] {
   const filtered = getFilteredReceipts(receipts, range);
-  const map = new Map<string, { total: number; receiptIds: Set<string> }>();
+  const map = new Map<string, {
+    total: number;
+    receiptIds: Set<string>;
+    category: string;
+    categoryId: string | null;
+    filterValue: string | null;
+  }>();
   let grandTotal = 0;
   
   for (const r of filtered) {
@@ -272,13 +308,20 @@ export function generateCategoryReport(receipts: ReceiptDocument[], range: DateR
 
     let itemSum = 0;
     for (const item of r.items) {
-      if (item.lineTotal === null) continue;
-      const cat = item.category || 'Uncategorized';
-      const current = map.get(cat) || { total: 0, receiptIds: new Set() };
-      current.total += item.lineTotal;
+      const lineTotal = item.lineTotal;
+      if (lineTotal == null) continue;
+      const category = getCategoryReference(item, categories);
+      const current = map.get(category.key) || {
+        total: 0,
+        receiptIds: new Set(),
+        category: category.label,
+        categoryId: category.categoryId,
+        filterValue: category.filterValue,
+      };
+      current.total += lineTotal;
       current.receiptIds.add(r.id);
-      map.set(cat, current);
-      itemSum += item.lineTotal;
+      map.set(category.key, current);
+      itemSum += lineTotal;
     }
     
     grandTotal += rTotal;
@@ -286,17 +329,24 @@ export function generateCategoryReport(receipts: ReceiptDocument[], range: DateR
     // Refund/negative means diff goes the other way.
     const diff = rTotal - itemSum;
     if (diff !== 0) {
-      const cat = 'Adjustments / Unallocated';
-      const current = map.get(cat) || { total: 0, receiptIds: new Set() };
+      const current = map.get('adjustments') || {
+        total: 0,
+        receiptIds: new Set(),
+        category: 'Adjustments / Unallocated',
+        categoryId: null,
+        filterValue: null,
+      };
       current.total += diff;
       current.receiptIds.add(r.id);
-      map.set(cat, current);
+      map.set('adjustments', current);
     }
   }
 
   return Array.from(map.entries())
-    .map(([category, data]) => ({
-      category,
+    .map(([, data]) => ({
+      category: data.category,
+      categoryId: data.categoryId,
+      filterValue: data.filterValue,
       total: data.total,
       proportion: grandTotal > 0 ? (Math.abs(data.total) / Math.abs(grandTotal)) * 100 : 0,
       receiptCount: data.receiptIds.size
@@ -358,7 +408,11 @@ export interface SummaryInsights {
   }[];
 }
 
-export function generateSummaryInsights(receipts: ReceiptDocument[], referenceDate: Date = new Date()): SummaryInsights {
+export function generateSummaryInsights(
+  receipts: ReceiptDocument[],
+  referenceDate: Date = new Date(),
+  categories: CategoryDocument[] = [],
+): SummaryInsights {
   const thisMonthRange = getDateRange('this_month', referenceDate);
   const lastMonthRange = getDateRange('last_month', referenceDate);
   const thisMonthReceipts = getFilteredReceipts(receipts, thisMonthRange);
@@ -378,17 +432,21 @@ export function generateSummaryInsights(receipts: ReceiptDocument[], referenceDa
     .sort((a, b) => b.totalSpent - a.totalSpent)
     .slice(0, 5);
 
-  const thisMonthCats = generateCategoryReport(thisMonthReceipts, {start: null, end: null}); 
-  const lastMonthCats = generateCategoryReport(lastMonthReceipts, {start: null, end: null});
-  const lastMonthCatMap = new Map(lastMonthCats.map(c => [c.category, c.total]));
-  const categoryChanges = [];
+  const thisMonthCats = generateCategoryReport(thisMonthReceipts, {start: null, end: null}, categories);
+  const lastMonthCats = generateCategoryReport(lastMonthReceipts, {start: null, end: null}, categories);
+  const lastMonthCatMap = new Map(lastMonthCats.map(c => [c.filterValue ?? c.category, c.total]));
+  const categoryChanges: SummaryInsights['categoryChanges'] = [];
   
   for (const cat of thisMonthCats) {
-    const prevTotal = lastMonthCatMap.get(cat.category);
+    const categoryKey = cat.filterValue ?? cat.category;
+    const prevTotal = lastMonthCatMap.get(categoryKey);
     if (prevTotal && prevTotal > 0) {
       const changePct = ((cat.total - prevTotal) / prevTotal) * 100;
       if (Math.abs(changePct) > 5) { 
-        const catReceipts = thisMonthReceipts.filter(r => r.items.some(i => (i.category || 'Uncategorized') === cat.category));
+        const catReceipts = thisMonthReceipts.filter(receipt => receipt.items.some(item => {
+          const itemReference = getCategoryReference(item, categories);
+          return (itemReference.filterValue ?? itemReference.label) === categoryKey;
+        }));
         
         const itemSpendMap = new Map<string, number>();
         const merchantSpendMap = new Map<string, number>();
@@ -396,7 +454,8 @@ export function generateSummaryInsights(receipts: ReceiptDocument[], referenceDa
           const merchant = applyMerchantAlias(r.merchantNormalized || r.merchantRaw || 'Unknown');
           let rCatSpend = 0;
           for (const item of r.items) {
-            if ((item.category || 'Uncategorized') === cat.category) {
+            const itemReference = getCategoryReference(item, categories);
+            if ((itemReference.filterValue ?? itemReference.label) === categoryKey) {
               const lineTotal = item.lineTotal || 0;
               rCatSpend += lineTotal;
               const itemName = applyMerchantAlias(item.name || item.rawLineText || 'Unknown');
@@ -405,12 +464,12 @@ export function generateSummaryInsights(receipts: ReceiptDocument[], referenceDa
           }
           merchantSpendMap.set(merchant, (merchantSpendMap.get(merchant) || 0) + rCatSpend);
         }
-        let leadingItem = null;
+        let leadingItem: string | null = null;
         let maxItemSpend = 0;
         for (const [name, spend] of itemSpendMap.entries()) {
           if (spend > maxItemSpend) { maxItemSpend = spend; leadingItem = name; }
         }
-        let leadingMerchant = null;
+        let leadingMerchant: string | null = null;
         let maxMerchantSpend = 0;
         for (const [name, spend] of merchantSpendMap.entries()) {
           if (spend > maxMerchantSpend) { maxMerchantSpend = spend; leadingMerchant = name; }

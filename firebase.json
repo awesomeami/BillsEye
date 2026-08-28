@@ -1,9 +1,6 @@
 {
-  "firestore": [
-    {
-      "database": "ai-studio-kharchalens-ee592688-7237-4dd5-80de-9db1abc34416",
-      "rules": "firestore.rules",
-      "indexes": "firestore.indexes.json"
-    }
-  ]
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
 }

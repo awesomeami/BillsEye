@@ -2,21 +2,23 @@ export const APP_CONFIG = {
   currency: 'PKR',
   locale: 'en-PK',
   timeZone: 'Asia/Karachi',
-};
+} as const;
 
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat(APP_CONFIG.locale, {
+export type RegionalConfig = Pick<typeof APP_CONFIG, 'currency' | 'locale' | 'timeZone'>;
+
+export function formatCurrency(amount: number, config: RegionalConfig = APP_CONFIG): string {
+  return new Intl.NumberFormat(config.locale, {
     style: 'currency',
-    currency: APP_CONFIG.currency,
+    currency: config.currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
 }
 
-export function formatDate(date: Date | string | number): string {
+export function formatDate(date: Date | string | number, config: RegionalConfig = APP_CONFIG): string {
   const d = new Date(date);
-  return new Intl.DateTimeFormat(APP_CONFIG.locale, {
-    timeZone: APP_CONFIG.timeZone,
+  return new Intl.DateTimeFormat(config.locale, {
+    timeZone: config.timeZone,
     year: 'numeric',
     month: 'short',
     day: 'numeric',

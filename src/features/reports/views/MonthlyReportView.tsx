@@ -28,7 +28,7 @@ export function MonthlyReportView({ receipts, range }: Props) {
           <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
             <XAxis dataKey="month" stroke="#9ca3af" fontSize={12} tickMargin={10} />
-            <YAxis tickFormatter={(val) => `$${val / 100}`} stroke="#9ca3af" fontSize={12} width={60} />
+            <YAxis tickFormatter={(val: number) => formatCurrency(val / 100)} stroke="#9ca3af" fontSize={12} width={80} />
             <Tooltip 
               formatter={(value: number) => formatCurrency(value / 100)}
               cursor={{ fill: '#f3f4f6' }}

@@ -1,18 +1,36 @@
 import { ExtractionResultSchema, type ExtractionResultDTO } from '../../domain/schema';
 import { getAuth } from 'firebase/auth';
 
+const useE2eMocks = import.meta.env.VITE_E2E_MOCKS === 'true';
+
+class ExtractionRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message);
+    this.name = 'ExtractionRequestError';
+  }
+}
+
+function getErrorResponse(data: unknown): { message?: string; code?: string } {
+  if (typeof data !== 'object' || data === null) return {};
+  const record = data as Record<string, unknown>;
+  return {
+    message: typeof record.error === 'string' ? record.error : undefined,
+    code: typeof record.code === 'string' ? record.code : undefined,
+  };
+}
+
 export class ExtractionClient {
   static async extractReceipt(
     geminiKey: string,
     imageFile: File,
     signal?: AbortSignal
   ): Promise<ExtractionResultDTO> {
-    const auth = getAuth();
-    if (!auth.currentUser) {
-      throw new Error('User is not authenticated');
+    let token = 'e2e-test-firebase-token';
+    if (!useE2eMocks) {
+      const auth = getAuth();
+      if (!auth.currentUser) throw new Error('User is not authenticated');
+      token = await auth.currentUser.getIdToken();
     }
-
-    const token = await auth.currentUser.getIdToken();
     
     // Validate MIME (already done by preprocessor, but good for safety)
     const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -35,19 +53,16 @@ export class ExtractionClient {
 
     if (!response.ok) {
       let errorMessage = 'Extraction failed';
-      let errorData;
+      let errorData: { message?: string; code?: string } | undefined;
       try {
-        errorData = await response.json();
-        errorMessage = errorData.error || errorMessage;
-      } catch (e) {
+        errorData = getErrorResponse(await response.json());
+        errorMessage = errorData.message || errorMessage;
+      } catch {
         // Not JSON
         errorMessage = await response.text();
       }
       
-      const error: any = new Error(errorMessage);
-      error.status = response.status;
-      error.code = errorData?.code;
-      throw error;
+      throw new ExtractionRequestError(errorMessage, response.status, errorData?.code);
     }
 
     

@@ -46,7 +46,9 @@ export function filterAndSortReceipts(receipts: ReceiptDocument[], filters: Filt
     result = result.filter(r => r.merchantNormalized === filters.merchant);
   }
   if (filters.category) {
-    result = result.filter(r => r.items.some(item => item.category === filters.category));
+    result = result.filter(receipt => receipt.items.some(item =>
+      item.categoryId === filters.category || (!item.categoryId && item.category === filters.category),
+    ));
   }
   if (filters.item) {
     result = result.filter(r => r.items.some(item => item.name === filters.item));

@@ -1,126 +1,297 @@
-import { ReceiptDocument, CategoryDocument, AppSettingsDocument } from '../../domain/schema';
-
-export interface BackupEnvelope {
-  version: number;
-  timestamp: string;
-  appSettings?: AppSettingsDocument;
-  categories: CategoryDocument[];
-  receipts: ReceiptDocument[];
-  checksum: string;
-}
-
+import { z } from 'zod';
+import {
+  AliasDocument,
+  AliasSchema,
+  AppSettingsDocument,
+  AppSettingsSchema,
+  CategoryDocument,
+  CategorySchema,
+  ReceiptDocument,
+  ReceiptWriteSchema,
+  UserProfileDocument,
+  UserProfileSchema,
+} from '../../domain/schema';
 
 const MAX_BACKUP_BYTES = 10 * 1024 * 1024; // 10MB
-const MAX_STRING_LENGTH = 10000;
-const MAX_ARRAY_LENGTH = 5000;
+const SENSITIVE_KEY_FIELDS = new Set([
+  'key', 'apikey', 'geminikey', 'geminiapikey',
+  'ciphertextbase64', 'ivbase64', 'saltbase64', 'passphrase', 'authorization'
+]);
 
-function enforceLimitsAndStripUnknowns(obj: any, schemaFields: string[]): any {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj === 'string') {
-    if (obj.length > MAX_STRING_LENGTH) throw new Error('String length exceeds limit');
-    // Check for base64/data URLs loosely
-    if (obj.startsWith('data:image/') || obj.length > 5000 && !obj.includes(' ')) {
-      throw new Error('Base64/Image data not allowed in backup');
-    }
-    return obj;
-  }
-  if (typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) {
-    if (obj.length > MAX_ARRAY_LENGTH) throw new Error('Array length exceeds limit');
-    return obj.map(item => enforceLimitsAndStripUnknowns(item, []));
-  }
+const isSensitiveKeyField = (field: string) => SENSITIVE_KEY_FIELDS.has(field.toLowerCase());
 
-  const cleanObj: any = {};
-  for (const key of Object.keys(obj)) {
-    if (schemaFields.length > 0 && !schemaFields.includes(key)) {
-      continue; // Strip unknown field
-    }
-    // recursive call but we don't know the exact schema of nested objects perfectly here without a deep schema definition.
-    // We will just let them pass if they pass the string limits, or we define specific sub-schemas.
-    cleanObj[key] = enforceLimitsAndStripUnknowns(obj[key], []);
-  }
-  return cleanObj;
+const BACKUP_VERSION = 2;
+
+const BackupIntegritySchema = z.object({
+  algorithm: z.literal('SHA-256'),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+
+const BackupContentsSchema = z.object({
+  profile: UserProfileSchema.strict().nullable(),
+  receipts: z.array(ReceiptWriteSchema),
+  categories: z.array(CategorySchema.strict()),
+  aliases: z.array(AliasSchema.strict()),
+  settings: AppSettingsSchema.strict().nullable(),
+}).strict();
+
+const BackupEnvelopeSchema = BackupContentsSchema.extend({
+  version: z.literal(BACKUP_VERSION),
+  timestamp: z.string().datetime(),
+  integrity: BackupIntegritySchema,
+}).strict();
+
+export interface BackupContents {
+  profile: UserProfileDocument | null;
+  receipts: ReceiptDocument[];
+  categories: CategoryDocument[];
+  aliases: AliasDocument[];
+  settings: AppSettingsDocument | null;
 }
 
-const RECEIPT_FIELDS = [
-  'id', 'schemaVersion', 'revision', 'status', 'createdAt', 'updatedAt', 'confirmedAt',
-  'sourceFileName', 'sourceMimeType', 'sourceSha256', 'sourcePageNumber',
-  'merchantRaw', 'merchantNormalized', 'branchAddress', 'receiptNumber',
-  'transactionDate', 'transactionTime', 'dateAmbiguous',
-  'currency', 'paymentMethod',
-  'items',
-  'printedGrandTotal', 'printedSubtotal', 'printedDiscount', 'printedTax', 'printedFees', 'printedRounding',
-  'computedLineTotal', 'computedExpectedTotal', 'discrepancy', 'reconciliationStatus',
-  'rawOcrText', 'overallConfidence', 'warnings', 'ambiguousFields',
-  'extractionModel', 'extractionModelActual', 'extractionSchemaVersion', 'extractionDurationMs',
-  'userNote', 'wasEditedByUser'
-];
-const CATEGORY_FIELDS = ['id', 'name', 'isCustom', 'createdAt', 'updatedAt'];
-const SETTINGS_FIELDS = ['id', 'language', 'theme', 'currency', 'timezone', 'createdAt', 'updatedAt'];
-
-
-function generateChecksum(data: string): string {
-  // Simple hash for validation (in production could use crypto, but simple hash is fine for simple backup)
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    const char = data.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return hash.toString();
-}
-
-export function generateJSONBackup(
-  receipts: ReceiptDocument[],
-  categories: CategoryDocument[],
-  appSettings?: AppSettingsDocument
-): string {
-  // Strip sensitive fields
-  const cleanReceipts = receipts.map(r => enforceLimitsAndStripUnknowns(r, RECEIPT_FIELDS) as ReceiptDocument);
-
-  const envelope: BackupEnvelope = {
-    version: 1,
-    timestamp: new Date().toISOString(),
-    appSettings: appSettings ? enforceLimitsAndStripUnknowns(appSettings, SETTINGS_FIELDS) : undefined,
-    categories: categories.map(c => enforceLimitsAndStripUnknowns(c, CATEGORY_FIELDS)),
-    receipts: cleanReceipts,
-    checksum: ''
+export interface BackupEnvelope extends BackupContents {
+  version: typeof BACKUP_VERSION;
+  timestamp: string;
+  integrity: {
+    algorithm: 'SHA-256';
+    digest: string;
   };
-
-  const payloadString = JSON.stringify({
-    version: envelope.version,
-    categories: envelope.categories,
-    receipts: envelope.receipts
-  });
-
-  envelope.checksum = generateChecksum(payloadString);
-
-  return JSON.stringify(envelope, null, 2);
 }
 
-export function validateBackup(jsonString: string): { isValid: boolean; envelope?: BackupEnvelope; error?: string } {
+export interface RestoreRecordCounts {
+  new: number;
+  overwritten: number;
+  unchanged: number;
+}
+
+const utf8Length = (value: string) => new TextEncoder().encode(value).byteLength;
+
+function isRawImageBase64(value: string): boolean {
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) return false;
   try {
-    const parsed = JSON.parse(jsonString) as BackupEnvelope;
-    
-    if (jsonString.length > MAX_BACKUP_BYTES) return { isValid: false, error: 'Backup exceeds maximum allowed size (10MB)' };
+    const bytes = Uint8Array.from(atob(value), character => character.charCodeAt(0));
+    return (
+      (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)
+      || (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
+      || (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38)
+      || (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+        && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50)
+    );
+  } catch {
+    return false;
+  }
+}
 
-    if (!parsed.version || !parsed.receipts || !parsed.categories) {
-      return { isValid: false, error: 'Invalid backup format: Missing required fields.' };
+function normalizeTimestamp(value: unknown): unknown {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) throw new Error('Invalid timestamp in backup data.');
+    return value.toISOString();
+  }
+
+  if (value && typeof value === 'object') {
+    const candidate = value as {
+      toDate?: () => Date;
+      seconds?: unknown;
+      nanoseconds?: unknown;
+    };
+    if (typeof candidate.toDate === 'function') return normalizeTimestamp(candidate.toDate());
+    if (typeof candidate.seconds === 'number') {
+      const nanoseconds = typeof candidate.nanoseconds === 'number' ? candidate.nanoseconds : 0;
+      const date = new Date(candidate.seconds * 1000 + nanoseconds / 1_000_000);
+      if (Number.isNaN(date.getTime())) throw new Error('Invalid timestamp in backup data.');
+      return date.toISOString();
+    }
+  }
+  return value;
+}
+
+function normalizeTimestamps(value: unknown): unknown {
+  const normalized = normalizeTimestamp(value);
+  if (normalized !== value) return normalized;
+  if (Array.isArray(value)) return value.map(normalizeTimestamps);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, nested]) => [key, normalizeTimestamps(nested)]),
+    );
+  }
+  return value;
+}
+
+function assertSafeValues(value: unknown, path = 'backup'): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertSafeValues(item, `${path}[${index}]`));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (isSensitiveKeyField(key)) {
+        throw new Error(`Backup contains prohibited key material at ${path}.${key}.`);
+      }
+      assertSafeValues(nested, `${path}.${key}`);
+    }
+    return;
+  }
+  if (typeof value === 'string' && value.trimStart().toLowerCase().startsWith('data:')) {
+    throw new Error(`Backup contains data-URL content at ${path}. Images are not supported in backups.`);
+  }
+  if (typeof value === 'string' && isRawImageBase64(value)) {
+    throw new Error(`Backup contains encoded image content at ${path}. Images are not supported in backups.`);
+  }
+}
+
+function formatZodError(error: z.ZodError): string {
+  const firstIssue = error.issues[0];
+  return firstIssue
+    ? `Invalid backup data at ${firstIssue.path.join('.') || 'root'}: ${firstIssue.message}`
+    : 'Invalid backup data.';
+}
+
+function parseBackupContents(input: unknown): BackupContents {
+  const parsed = BackupContentsSchema.safeParse(normalizeTimestamps(input));
+  if (!parsed.success) throw new Error(formatZodError(parsed.error));
+  const asIsoTimestamp = (value: string, path: string): string => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) throw new Error(`Invalid timestamp in backup data at ${path}.`);
+    return date.toISOString();
+  };
+  return {
+    profile: parsed.data.profile
+      ? {
+        ...parsed.data.profile,
+        createdAt: asIsoTimestamp(parsed.data.profile.createdAt, 'profile.createdAt'),
+        lastLoginAt: asIsoTimestamp(parsed.data.profile.lastLoginAt, 'profile.lastLoginAt'),
+      }
+      : null,
+    receipts: parsed.data.receipts.map(receipt => ({
+      ...receipt,
+      createdAt: asIsoTimestamp(receipt.createdAt, `receipts.${receipt.id}.createdAt`),
+      updatedAt: asIsoTimestamp(receipt.updatedAt, `receipts.${receipt.id}.updatedAt`),
+      confirmedAt: receipt.confirmedAt == null
+        ? receipt.confirmedAt
+        : asIsoTimestamp(receipt.confirmedAt, `receipts.${receipt.id}.confirmedAt`),
+    })),
+    categories: parsed.data.categories.map(category => ({
+      ...category,
+      createdAt: asIsoTimestamp(category.createdAt, `categories.${category.id}.createdAt`),
+    })),
+    aliases: parsed.data.aliases.map(alias => ({
+      ...alias,
+      createdAt: asIsoTimestamp(alias.createdAt, `aliases.${alias.id}.createdAt`),
+      updatedAt: asIsoTimestamp(alias.updatedAt, `aliases.${alias.id}.updatedAt`),
+    })),
+    settings: parsed.data.settings ?? null,
+  };
+}
+
+function payloadForIntegrity(envelope: Omit<BackupEnvelope, 'integrity'>): string {
+  return JSON.stringify({
+    version: envelope.version,
+    timestamp: envelope.timestamp,
+    profile: envelope.profile,
+    receipts: envelope.receipts,
+    categories: envelope.categories,
+    aliases: envelope.aliases,
+    settings: envelope.settings,
+  });
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** Convert Firestore-shaped values to the app's JSON-safe data contract. */
+export function normalizeBackupContents(input: unknown): BackupContents {
+  assertSafeValues(input);
+  return parseBackupContents(input);
+}
+
+/** Summarize a restore without changing data, using document IDs as conflicts. */
+export function summarizeRestoreRecords<T extends { id: string }>(
+  incoming: T[],
+  existing: T[],
+): RestoreRecordCounts {
+  const existingById = new Map(existing.map(record => [record.id, record]));
+  return incoming.reduce<RestoreRecordCounts>((counts, record) => {
+    const current = existingById.get(record.id);
+    if (!current) counts.new += 1;
+    else if (JSON.stringify(record) === JSON.stringify(current)) counts.unchanged += 1;
+    else counts.overwritten += 1;
+    return counts;
+  }, { new: 0, overwritten: 0, unchanged: 0 });
+}
+
+/** Existing receipts are restored through the repository transaction, not setDoc. */
+export function receiptRestorePatch(receipt: ReceiptDocument): Partial<ReceiptDocument> {
+  const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, revision: _revision, ...changes } = receipt;
+  return changes;
+}
+
+export async function generateJSONBackup(contents: BackupContents): Promise<string> {
+  const canonical = normalizeBackupContents(contents);
+  const unsigned: Omit<BackupEnvelope, 'integrity'> = {
+    version: BACKUP_VERSION,
+    timestamp: new Date().toISOString(),
+    profile: canonical.profile,
+    receipts: canonical.receipts,
+    categories: canonical.categories,
+    aliases: canonical.aliases,
+    settings: canonical.settings,
+  };
+  const envelope: BackupEnvelope = {
+    ...unsigned,
+    integrity: {
+      algorithm: 'SHA-256',
+      digest: await sha256(payloadForIntegrity(unsigned)),
+    },
+  };
+  const json = JSON.stringify(envelope, null, 2);
+  if (utf8Length(json) > MAX_BACKUP_BYTES) {
+    throw new Error('Backup exceeds the 10 MB maximum size.');
+  }
+  return json;
+}
+
+export async function validateBackup(jsonString: string): Promise<{
+  isValid: boolean;
+  envelope?: BackupEnvelope;
+  error?: string;
+}> {
+  try {
+    if (utf8Length(jsonString) > MAX_BACKUP_BYTES) {
+      return { isValid: false, error: 'Backup exceeds the 10 MB maximum size.' };
+    }
+    const parsedJson: unknown = JSON.parse(jsonString);
+    assertSafeValues(parsedJson);
+    const parsedEnvelope = BackupEnvelopeSchema.safeParse(normalizeTimestamps(parsedJson));
+    if (!parsedEnvelope.success) {
+      return { isValid: false, error: formatZodError(parsedEnvelope.error) };
     }
 
-    const payloadString = JSON.stringify({
-      version: parsed.version,
-      categories: parsed.categories,
-      receipts: parsed.receipts
+    const { integrity, ...unsigned } = parsedEnvelope.data;
+    const canonicalUnsigned: Omit<BackupEnvelope, 'integrity'> = {
+      version: BACKUP_VERSION,
+      timestamp: unsigned.timestamp,
+      profile: unsigned.profile ?? null,
+      receipts: unsigned.receipts,
+      categories: unsigned.categories,
+      aliases: unsigned.aliases,
+      settings: unsigned.settings ?? null,
+    };
+    const expectedDigest = await sha256(payloadForIntegrity(canonicalUnsigned));
+    if (integrity.digest !== expectedDigest) {
+      return { isValid: false, error: 'Backup integrity check failed. The file may be corrupted or changed.' };
+    }
+
+    const contents = normalizeBackupContents({
+      profile: canonicalUnsigned.profile,
+      receipts: canonicalUnsigned.receipts,
+      categories: canonicalUnsigned.categories,
+      aliases: canonicalUnsigned.aliases,
+      settings: canonicalUnsigned.settings,
     });
-
-    const expectedChecksum = generateChecksum(payloadString);
-    if (parsed.checksum !== expectedChecksum) {
-      return { isValid: false, error: 'Checksum mismatch. The file may be corrupted.' };
-    }
-
-    return { isValid: true, envelope: parsed };
-  } catch (e: any) {
-    return { isValid: false, error: e.message };
+    return { isValid: true, envelope: { ...canonicalUnsigned, ...contents, integrity } };
+  } catch (error) {
+    return { isValid: false, error: error instanceof Error ? error.message : 'Invalid backup file.' };
   }
 }

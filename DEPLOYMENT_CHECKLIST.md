@@ -1,54 +1,37 @@
-# KharchaLens: Vercel & Firebase Deployment Checklist
+# KharchaLens deployment checklist
 
-This document verifies the readiness of KharchaLens for deployment to Vercel (Hobby Tier) and Firebase.
+## Before deployment
 
-## 1. Automated Verification & Scans
-- **`npm run verify`**: Passed. Linting, typechecking, and the full Node.js test suite ran successfully.
-- **Production Build**: Passed. The Vite and esbuild steps produce optimized client SPA assets in `dist/` and a server bundle `dist/server.cjs`. Vercel will rely on `api/index.ts` to serve the API routes and natively serve the Vite static assets.
-- **API Direct-Route Tests**: Passed. The API routes correctly initialize Firebase Admin (using local emulators/mocked auth during tests) and appropriately fail unauthenticated requests.
-- **Mocked Authenticated API**: Passed. The test suite correctly mocks `verifyIdToken` and validates extraction proxy behavior.
-- **Source/Bundle Security Scans**:
-  - **Service Credentials**: No service account JSONs or `FIREBASE_SERVICE_ACCOUNT` variables are hardcoded. `.gitignore` explicitly prevents `.env` and `firebase-service-account.json` from being committed.
-  - **Gemini Keys**: No Gemini keys are hardcoded in the bundle. BYOK is correctly implemented via the `x-gemini-key` header sent by the client.
-  - **Real Receipts**: No real user data or receipt fixtures exist outside of the `syntheticReceipts.ts` mock data.
-  - **Image Persistence**: Mocked persistence tests confirm that Base64/Blob representations of images are NOT written to `localStorage`, `IndexedDB`, or service worker caches.
-  - **Firebase Storage**: The codebase does not initialize or depend on Firebase Storage. All images remain in volatile RAM.
-  - **Development Logs**: Removed or wrapped inside `process.env.NODE_ENV === "development"` checks.
+1. Use the Node.js and npm versions pinned in `package.json`, then run `npm ci`.
+2. Copy `.firebaserc.example` to a local `.firebaserc`, set it to the Firebase project being deployed, and keep it uncommitted.
+3. Create production environment variables from `.env.example`. `FIREBASE_SERVICE_ACCOUNT` is private server configuration and must not use a `VITE_` prefix.
+4. Enable Firestore and Google Sign-In in Firebase Authentication. Do **not** enable Firebase Storage.
+5. Run `npm run verify`. The command's actual result and any lint warnings belong in `TEST_REPORT.md`; do not claim a passing result without a recorded run.
 
-## 2. Vercel Configuration Readiness
-- **Vercel API Setup**: Configured `api/index.ts` to expose the Express app cleanly for Vercel's Serverless Functions.
-- **Routing Rules**: `vercel.json` properly routes `/api/(.*)` to the Serverless handler and fallback UI paths to `/index.html`.
-- **Payload Limits**: Vercel Serverless Functions have a 4.5 MB request body limit. The Express server explicitly enforces a `4MB` Multer memory limit (`limits: { fileSize: 4 * 1024 * 1024 }`), ensuring it fails safely before hitting Vercel's infrastructure limit.
-- **Environment Handling**: The backend gracefully falls back to default Firebase App initialization (useful for AI Studio) while parsing `FIREBASE_SERVICE_ACCOUNT` securely when present on Vercel.
+## Firebase
 
-## 3. Manual Deployment Actions
+1. Review the strict Firestore rules and indexes in this repository.
+2. Deploy them from the selected Firebase project:
 
-### A. Firebase Setup
-1. Go to the [Firebase Console](https://console.firebase.google.com/) and create a new project.
-2. Enable **Firestore Database** (start in production mode) and **Authentication** (enable Google Sign-In).
-3. Do **NOT** enable Firebase Storage.
-4. Go to Project Settings -> Service Accounts -> Generate New Private Key. Save the JSON file securely (do not commit to Git).
-5. In the Firebase CLI, deploy security rules and indexes:
-   ```bash
-   firebase deploy --only firestore:rules
-   firebase deploy --only firestore:indexes
+   ```powershell
+   npx firebase deploy --only firestore
    ```
-6. Add your Vercel deployment domain to the Authorized Domains list in Firebase Authentication settings.
 
-### B. GitHub Sync
-1. Open the AI Studio settings menu for this applet.
-2. Select **Export to GitHub** or sync changes to your existing GitHub repository.
+3. Add both `http://localhost:3000` (development) and the Vercel deployment domain (production) to Firebase Authentication's Authorized domains.
 
-### C. Vercel Deployment
-1. Log into [Vercel](https://vercel.com/) and Import the GitHub repository.
-2. In the "Environment Variables" section, add:
-   - All `VITE_FIREBASE_*` variables from your Firebase web config.
-   - `FIREBASE_SERVICE_ACCOUNT`: Paste the ENTIRE contents of the service account JSON downloaded in step A.4.
-3. Keep the default Build Command (`npm run build`) and Output Directory (`dist`).
-4. Click **Deploy**.
+`firebase.json` is intentionally project-neutral and uses the selected project's default Firestore database. A named database is an explicit deployment choice: configure the same name for the client, API, and Firebase CLI before deployment.
 
-### D. Smoke Test (Vercel)
-1. Open the Vercel deployed URL.
-2. Open Settings -> AI Configuration and enter a Gemini API Key (stored in local device storage).
-3. Upload a sample receipt and verify that extraction completes successfully (ensuring Serverless Function execution).
-4. Verify that the receipt appears in the Library, syncing correctly with Firestore.
+## Vercel
+
+1. Import the repository, use `npm run build`, and set the output directory to `dist`.
+2. Keep `vercel.json` in place: it sends `/api/*` to `api/index.ts`, sends SPA paths to `index.html`, applies the security headers, and configures a 60-second function duration.
+3. Set the Firebase environment variables from `.env.example` in the appropriate Production/Preview scope.
+4. Test an authenticated extraction and a client-side route after deployment.
+
+The extractor accepts one `multipart/form-data` upload with `receiptImage` and `geminiKey` fields. It authenticates the Firebase token before parsing the upload, limits the image to 4 MiB, and stops upstream work after 55 seconds. Vercel's platform request/response payload ceiling is 4.5 MB and is not configurable in this project. The configured 60-second function duration requires a Vercel plan/runtime that permits it.
+
+## Privacy checks
+
+- Receipt images remain in volatile memory only; Firebase Storage is absent.
+- Persistent Gemini keys use the encrypted local vault and start locked after reload. Session-only keys are not persisted. Never place a Gemini key in an environment file, commit, backup, header, log, or test output.
+- The service worker precaches build assets only. API, Gemini/Google API, and object-URL traffic are network-only and never stored in its cache.

@@ -5,8 +5,23 @@ import {defineConfig} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
+  const useE2eMocks = process.env.VITE_E2E_MOCKS === 'true';
+  const firebaseRepositoryPath = path.resolve(__dirname, 'src/services/firebase/db.ts');
+  const e2eRepositoryMockPath = path.resolve(__dirname, 'e2e/mocks/firebaseDb.ts');
+
   return {
     plugins: [
+      ...(useE2eMocks ? [{
+        name: 'e2e-firebase-repository-mock',
+        enforce: 'pre' as const,
+        resolveId(source: string, importer?: string) {
+          if (!importer || !source.startsWith('.')) return null;
+          const candidate = path.resolve(path.dirname(importer), source);
+          return candidate === firebaseRepositoryPath || `${candidate}.ts` === firebaseRepositoryPath
+            ? e2eRepositoryMockPath
+            : null;
+        },
+      }] : []),
       react(), 
       tailwindcss(),
       VitePWA({
@@ -35,11 +50,15 @@ export default defineConfig(() => {
         workbox: {
           globIgnores: ['**/node_modules/**/*', '**/pdfjs*', '**/exceljs*', '**/jspdf*', '**/recharts*'],
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-          navigateFallbackDenylist: [/\/api\//],
+          // API routes must never be answered with cached SPA HTML.
+          navigateFallbackDenylist: [/^\/api(?:\/|$)/],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           runtimeCaching: [
             {
-              urlPattern: /\/api\/|googleapis|blob:/,
+              // There is intentionally no cache-first runtime route. In
+              // particular, uploads, object URLs, and any Google API traffic
+              // always bypass the service-worker cache.
+              urlPattern: /\/api(?:\/|$)|googleapis|generativelanguage\.google\.com|^blob:/,
               handler: 'NetworkOnly'
             }
           ]

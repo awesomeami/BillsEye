@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { generateCategoryReport } from '../../../domain/analytics';
-import { ReceiptDocument } from '../../../domain/schema';
+import { CategoryDocument, ReceiptDocument } from '../../../domain/schema';
 import { formatCurrency } from '../../../utilities/config';
 import { DateRange } from '../../../domain/analytics';
 
@@ -10,11 +10,12 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 
 interface Props {
   receipts: ReceiptDocument[];
+  categories: CategoryDocument[];
   range: DateRange;
 }
 
-export function CategoryReportView({ receipts, range }: Props) {
-  const data = useMemo(() => generateCategoryReport(receipts, range), [receipts, range]);
+export function CategoryReportView({ receipts, categories, range }: Props) {
+  const data = useMemo(() => generateCategoryReport(receipts, range, categories), [receipts, categories, range]);
 
   if (data.length === 0) {
     return (
@@ -38,7 +39,7 @@ export function CategoryReportView({ receipts, range }: Props) {
               paddingAngle={2}
               dataKey="total"
               nameKey="category"
-              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
             >
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -67,9 +68,11 @@ export function CategoryReportView({ receipts, range }: Props) {
               {data.map((row) => (
                 <tr key={row.category} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 font-medium text-blue-600">
-                    <Link to={`/receipts?category=${encodeURIComponent(row.category)}`} className="hover:underline">
-                      {row.category}
-                    </Link>
+                    {row.filterValue ? (
+                      <Link to={`/receipts?category=${encodeURIComponent(row.filterValue)}`} className="hover:underline">
+                        {row.category}
+                      </Link>
+                    ) : row.category}
                   </td>
                   <td className="px-6 py-4 text-right">{formatCurrency(row.total / 100)}</td>
                   <td className="px-6 py-4 text-right">{row.proportion.toFixed(1)}%</td>

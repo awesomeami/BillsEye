@@ -5,26 +5,57 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useToast } from '../../../components/ui/Toast';
 
 export function AiKeysSettings({ onBack }: { onBack: () => void }) {
-  const { slots, setKey, removeKey, toggleKey } = useAiKeys();
+  const {
+    slots,
+    vaultState,
+    legacySlotIds,
+    setInitialPassphrase,
+    unlockVault,
+    lockVault,
+    clearLegacyKeys,
+    setKey,
+    removeKey,
+    toggleKey
+  } = useAiKeys();
   const { showToast } = useToast();
 
   const [editingSlotId, setEditingSlotId] = useState<number | null>(null);
   const [newKey, setNewKey] = useState('');
   const [newLabel, setNewLabel] = useState('');
   const [isSessionOnly, setIsSessionOnly] = useState(false);
+  const [passphrase, setPassphrase] = useState('');
+  const [vaultBusy, setVaultBusy] = useState(false);
   
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const handleSaveKey = async () => {
     if (!newKey || !editingSlotId) return;
     try {
+      if (!isSessionOnly && (vaultState === 'unconfigured' || (vaultState === 'migration-required' && passphrase))) {
+        await setInitialPassphrase(passphrase);
+      }
       await setKey(editingSlotId, newKey, newLabel || `Key ${editingSlotId}`, isSessionOnly);
       setEditingSlotId(null);
       setNewKey('');
       setNewLabel('');
-      showToast('Key saved successfully', 'success');
-    } catch (err: any) {
-      showToast('Failed to save key', 'error');
+      setPassphrase('');
+      showToast(isSessionOnly ? 'Session-only key added' : 'Encrypted key saved on this device', 'success');
+    } catch {
+      showToast('Could not save the key. Unlock the vault or provide a 12+ character passphrase.', 'error');
+    }
+  };
+
+  const handleUnlock = async () => {
+    setVaultBusy(true);
+    try {
+      if (await unlockVault(passphrase)) {
+        setPassphrase('');
+        showToast('Local key vault unlocked for this session.', 'success');
+      } else {
+        showToast('Could not unlock this vault. Check the passphrase.', 'error');
+      }
+    } finally {
+      setVaultBusy(false);
     }
   };
 
@@ -60,6 +91,55 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
+      {vaultState === 'locked' && (
+        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-sm text-amber-900 space-y-3">
+          <p className="font-medium">Persistent keys are locked after reload.</p>
+          <p>Enter the passphrase to decrypt keys for this browser session. A forgotten passphrase cannot recover locally encrypted keys.</p>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={passphrase}
+              onChange={event => setPassphrase(event.target.value)}
+              placeholder="Vault passphrase"
+              className="flex-1 px-3 py-2 border border-amber-300 rounded-lg bg-white"
+            />
+            <button onClick={handleUnlock} disabled={vaultBusy || !passphrase} className="px-4 py-2 bg-amber-700 text-white rounded-lg disabled:opacity-50">
+              Unlock
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(vaultState === 'unconfigured' || vaultState === 'migration-required') && (
+        <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm text-slate-800 space-y-2">
+          <p className="font-medium">Persistent keys require a local vault passphrase.</p>
+          <p>The passphrase stays only in memory. It cannot be recovered, so forgotten passphrases cannot unlock saved keys.</p>
+        </div>
+      )}
+
+      {vaultState === 'unlocked' && (
+        <div className="flex justify-between items-center rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          <span>Persistent keys are decrypted only for this browser session.</span>
+          <button onClick={lockVault} className="px-3 py-1.5 border border-green-300 rounded-lg hover:bg-green-100">Lock now</button>
+        </div>
+      )}
+
+      {legacySlotIds.length > 0 && (
+        <div className="bg-red-50 border border-red-200 p-4 rounded-xl text-sm text-red-900 space-y-3">
+          <p className="font-medium">Legacy unencrypted key records need attention.</p>
+          <p>For safety, existing plaintext records are not loaded. Re-enter each listed key to replace it with encryption, or remove the legacy records from this device.</p>
+          <button onClick={() => {
+            if (window.confirm('Remove all legacy unencrypted key records from this device? This cannot be undone.')) {
+              void clearLegacyKeys()
+                .then(() => showToast('Legacy unencrypted key records removed.', 'success'))
+                .catch(() => showToast('Could not remove legacy key records.', 'error'));
+            }
+          }} className="px-3 py-2 border border-red-300 rounded-lg hover:bg-red-100">
+            Remove legacy records
+          </button>
+        </div>
+      )}
+
       <div className="space-y-4">
         {slots.map(slot => (
           <div key={slot.slotId} className={`bg-white border rounded-2xl p-4 transition-colors ${!slot.isEnabled ? 'opacity-60 border-gray-200' : 'border-gray-300 shadow-sm'}`}>
@@ -80,6 +160,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
                     {slot.status === 'untested' && <span className="text-gray-500 flex items-center gap-1"><AlertTriangle size={14}/> Ready</span>}
                     
                     {slot.isSessionOnly && <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded">Session Only</span>}
+                    {slot.requiresMigration && <span className="ml-2 bg-red-100 text-red-700 px-2 py-0.5 rounded">Re-enter to encrypt</span>}
                   </div>
                 </div>
               </div>
@@ -101,6 +182,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
                 <button onClick={() => {
                   setEditingSlotId(slot.slotId);
                   setNewLabel(slot.label || '');
+                  setIsSessionOnly(slot.isSessionOnly);
                 }} className="p-2 text-gray-400 hover:text-blue-600 transition-colors" title="Replace Key">
                   <KeyRound size={18} />
                 </button>
@@ -116,7 +198,10 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
           <button 
             onClick={() => {
               const next = nextAvailableSlot();
-              if (next) setEditingSlotId(next);
+              if (next) {
+                setEditingSlotId(next);
+                setIsSessionOnly(false);
+              }
             }}
             className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-2xl text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
           >
@@ -171,7 +256,21 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
                   />
                   <span className="text-sm font-medium text-gray-900">Save on this Device</span>
                 </label>
-                <p className="text-xs text-gray-500 ml-6">Saved in local browser IndexedDB storage.</p>
+                <p className="text-xs text-gray-500 ml-6">Encrypted with your passphrase using AES-GCM in browser IndexedDB. It starts locked after reload.</p>
+
+                {!isSessionOnly && (vaultState === 'unconfigured' || vaultState === 'migration-required') && (
+                  <div className="ml-6 mt-2">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Create vault passphrase (12+ characters)</label>
+                    <input
+                      type="password"
+                      value={passphrase}
+                      onChange={event => setPassphrase(event.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      placeholder="Not recoverable if forgotten"
+                    />
+                    <p className="text-xs text-amber-700 mt-1">A forgotten passphrase cannot recover locally encrypted keys.</p>
+                  </div>
+                )}
                 
                 <label className="flex items-center gap-2 cursor-pointer mt-2">
                   <input 
@@ -191,6 +290,7 @@ export function AiKeysSettings({ onBack }: { onBack: () => void }) {
               <button onClick={() => {
                 setEditingSlotId(null);
                 setNewKey('');
+                setPassphrase('');
               }} className="flex-1 px-4 py-2 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50">
                 Cancel
               </button>
