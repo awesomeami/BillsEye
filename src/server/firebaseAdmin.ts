@@ -1,7 +1,7 @@
 import { getApps, initializeApp, cert, getApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
-import { getValidatedFirebaseAdminConfig } from './adminConfig';
+import { getValidatedFirebaseAdminConfig } from './adminConfig.js';
 
 const ADMIN_APP_NAME = 'kharchalens-server';
 

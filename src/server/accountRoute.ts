@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getFirebaseAdmin } from './firebaseAdmin';
+import { getFirebaseAdmin } from './firebaseAdmin.js';
 import express from 'express';
 import { z } from 'zod';
 import {
@@ -7,7 +7,7 @@ import {
   deleteUserOwnedData,
   UserDeletionError,
   UserDeletionProgress,
-} from './accountDeletion';
+} from './accountDeletion.js';
 
 interface FirebaseAdminForAccountRoute {
   auth: {

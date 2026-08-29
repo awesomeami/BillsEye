@@ -1,18 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
-import { getFirebaseAdmin } from './firebaseAdmin';
+import { getFirebaseAdmin } from './firebaseAdmin.js';
 import {
   ExtractionControlService,
   FirestoreExtractionControlStore,
   InMemoryExtractionControlStore,
   type ExtractionAdmission,
-} from './extractionControls';
+} from './extractionControls.js';
 import { GoogleGenAI } from '@google/genai';
-import { getReceiptExtractionModel, EXTRACTION_SCHEMA_VERSION } from './geminiConfig';
-import { RawGeminiReceiptV2 } from '../domain/schema';
-import { parseMajorToMinor } from '../domain/money';
-import { calculateReceiptTotals } from '../domain/reconciliation';
+import { getReceiptExtractionModel, EXTRACTION_SCHEMA_VERSION } from './geminiConfig.js';
+import { RawGeminiReceiptV2 } from '../domain/schema.js';
+import { parseMajorToMinor } from '../domain/money.js';
+import { calculateReceiptTotals } from '../domain/reconciliation.js';
 
 // Store only in memory, limit to ~4MB to be safe for Vercel
 const upload = multer({

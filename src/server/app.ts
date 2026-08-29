@@ -1,8 +1,8 @@
 import express from 'express';
 import helmet from 'helmet';
-import extractionRoute from './extractionRoute';
-import accountRoute from './accountRoute';
-import { isForbiddenArtifactPath } from './clientAssets';
+import extractionRoute from './extractionRoute.js';
+import accountRoute from './accountRoute.js';
+import { isForbiddenArtifactPath } from './clientAssets.js';
 
 const app = express();
 

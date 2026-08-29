@@ -1,4 +1,4 @@
-import { ReceiptDocument } from './schema'
+import { ReceiptDocument } from './schema.js'
 
 export type ReconciliationStatus = 'matched' | 'mismatched' | 'unknown'
 export type SubtotalSource = 'items' | 'printed_subtotal' | 'unavailable'

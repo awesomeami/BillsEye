@@ -108,6 +108,40 @@ describe('KeyRotationManager Fake Clock Tests', () => {
     assert.strictEqual(slots[1].failureCount, undefined);
   });
 
+  test('AiRequestExecutor: server failure does not put a valid key on cooldown', async () => {
+    krm.updateSlots([
+      { slotId: 1, isEnabled: true, status: 'healthy', maskedKey: 'key-1', isSessionOnly: false },
+      { slotId: 2, isEnabled: true, status: 'healthy', maskedKey: 'key-2', isSessionOnly: false }
+    ]);
+
+    const executor = new AiRequestExecutor(krm);
+    let attemptsCount = 0;
+
+    await assert.rejects(
+      () => executor.execute(
+        'extractReceipt',
+        async () => {
+          attemptsCount++;
+          throw Object.assign(new Error('Internal Server Error'), { status: 500 });
+        },
+        async (index) => `decrypted-key-${index}`,
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /temporarily unavailable/i);
+        assert.strictEqual((error as Error & { status?: number }).status, 500);
+        return true;
+      },
+    );
+
+    assert.strictEqual(attemptsCount, 1, 'Should not rotate keys for an app server failure');
+    for (const slot of krm.getSlotsForTesting()) {
+      assert.strictEqual(slot.status, 'healthy');
+      assert.strictEqual(slot.cooldownUntil, undefined);
+      assert.strictEqual(slot.failureCount, undefined);
+    }
+  });
+
   test('AiRequestExecutor: rotates to next key on rate_limit and applies cooldown', async () => {
     krm.updateSlots([
       { slotId: 1, isEnabled: true, status: 'healthy', maskedKey: 'key-1', isSessionOnly: false },

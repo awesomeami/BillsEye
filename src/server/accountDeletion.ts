@@ -2,7 +2,7 @@ import {
   USER_OWNED_SUBCOLLECTIONS,
   USER_OWNED_SUBCOLLECTION_NAMES,
   UserOwnedSubcollection,
-} from '../domain/userData';
+} from '../domain/userData.js';
 
 export interface DeletionCollectionReference {
   get(): Promise<{ docs: Array<{ ref: DeletionDocumentReference }> }>;

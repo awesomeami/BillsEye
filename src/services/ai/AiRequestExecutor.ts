@@ -102,6 +102,16 @@ export class AiRequestExecutor {
           throw new Error(`AI Request Failed: ${aiError.message}`);
         }
 
+        if (aiError.code === 'network_error') {
+          // A failed app server or connection is not evidence that Gemini
+          // rejected this key. Preserve the slot and let the receipt queue
+          // retry the service request instead of reporting key cooldown.
+          throw Object.assign(
+            new Error('Receipt extraction service is temporarily unavailable. Please try again.'),
+            { status: details.status ?? details.statusCode ?? 503 },
+          );
+        }
+
         this.rotationManager.handleError(keyIndex, aiError);
 
         if (aiError.code === 'cancelled') {
@@ -113,7 +123,7 @@ export class AiRequestExecutor {
           throw new Error(`AI Request Failed: ${aiError.message}`);
         }
 
-        // For auth_failed, rate_limit, network_error, we loop and try the next key
+        // For auth_failed and rate_limit, loop and try the next key.
         if (attempts >= maxAttempts) {
           throw new Error(`Request failed after ${attempts} attempts. Last error: ${aiError.message}`);
         }
