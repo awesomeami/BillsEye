@@ -6,6 +6,7 @@ import {
   QueueAttemptServices,
   QueueExecutor,
   QueueProcessingOutcome,
+  QueueRetryScheduler,
   SequentialQueueRunner
 } from '../queueProcessor';
 import { ReceiptDocument } from '../../../../domain/schema';
@@ -277,5 +278,34 @@ describe('receipt queue processor', () => {
     assert.deepStrictEqual(processed, ['delayed', 'eligible']);
     assert.strictEqual(state[0].status, 'retry-wait');
     assert.strictEqual(state[1].status, 'needs-review');
+  });
+
+  test('invokes browser timer functions with the global receiver', () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
+    let setTimeoutUsesGlobalReceiver = false;
+    let clearTimeoutUsesGlobalReceiver = false;
+    const fakeHandle = {} as ReturnType<typeof setTimeout>;
+
+    globalThis.setTimeout = (function (this: unknown) {
+      setTimeoutUsesGlobalReceiver = this === globalThis;
+      return fakeHandle;
+    }) as unknown as typeof globalThis.setTimeout;
+    globalThis.clearTimeout = (function (this: unknown) {
+      clearTimeoutUsesGlobalReceiver = this === globalThis;
+    }) as unknown as typeof globalThis.clearTimeout;
+
+    try {
+      const scheduler = new QueueRetryScheduler(() => undefined);
+      const retryItem: QueueItem = { ...createItem('timer'), status: 'retry-wait', retryAfter: 100 };
+      scheduler.schedule([retryItem], 0);
+      scheduler.cancel();
+
+      assert.strictEqual(setTimeoutUsesGlobalReceiver, true);
+      assert.strictEqual(clearTimeoutUsesGlobalReceiver, true);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+      globalThis.clearTimeout = originalClearTimeout;
+    }
   });
 });

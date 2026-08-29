@@ -38,6 +38,14 @@ export interface RetryTimer {
   clearTimeout(handle: ReturnType<typeof setTimeout>): void;
 }
 
+// Browser timer functions are host methods. Calling a captured timer as a
+// property of another object can throw "Illegal invocation" in Chromium, so
+// keep the global object as the receiver through these wrappers.
+const defaultRetryTimer: RetryTimer = {
+  setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+  clearTimeout: handle => globalThis.clearTimeout(handle),
+};
+
 /** Schedules the earliest retry wake-up and is explicitly disposable on unmount. */
 export class QueueRetryScheduler {
   private handle: ReturnType<typeof setTimeout> | null = null;
@@ -45,7 +53,7 @@ export class QueueRetryScheduler {
 
   constructor(
     private readonly onRetryDue: () => void,
-    private readonly timers: RetryTimer = { setTimeout, clearTimeout },
+    private readonly timers: RetryTimer = defaultRetryTimer,
   ) {}
 
   schedule(items: QueueItem[], now = Date.now()) {
