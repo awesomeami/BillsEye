@@ -1,4 +1,5 @@
 import assert from 'node:assert';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
@@ -33,4 +34,18 @@ test('Vercel packages the server modules imported by the function entrypoint', (
   };
 
   assert.strictEqual(config.functions?.['api/index.ts']?.includeFiles, 'src/**');
+});
+
+test('Firebase Auth loads without Node require(esm) interoperability', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--no-experimental-require-module', '-e', "require('firebase-admin/auth')"],
+    { encoding: 'utf8' },
+  );
+
+  assert.strictEqual(
+    result.status,
+    0,
+    `Firebase Auth must load in Vercel's CommonJS dependency loader:\n${result.stderr}`,
+  );
 });
