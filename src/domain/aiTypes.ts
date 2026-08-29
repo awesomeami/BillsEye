@@ -16,26 +16,27 @@ export interface LegacyKeyReentryMetadata {
   slotId: number;
 }
 
-export interface EncryptedKeyRecord {
+/**
+ * A Gemini key saved in this browser for one authenticated account.
+ *
+ * The browser must be able to read the key after a reload to submit a receipt,
+ * so this is deliberately a device-local IndexedDB record rather than a
+ * passphrase-encrypted vault. It is never sent to Firestore; its local record
+ * is scoped by the authenticated account ID.
+ */
+export interface LocalKeyRecord {
   slotId: number;
   label?: string;
   maskedKey: string;
   isEnabled: boolean;
-  recordVersion: 2;
-  ciphertextBase64: string;
-  ivBase64: string;
+  recordVersion: 3;
+  key: string;
 }
 
-export interface VaultMetadata {
-  metadataVersion: 2;
-  saltBase64: string;
-}
-
-export type VaultState = 'unconfigured' | 'locked' | 'unlocked' | 'migration-required';
+export type VaultState = 'unconfigured' | 'unlocked' | 'migration-required';
 
 export interface VaultInspection {
-  metadata: VaultMetadata | null;
-  encryptedKeys: EncryptedKeyRecord[];
+  localKeys: LocalKeyRecord[];
   legacyKeys: LegacyKeyReentryMetadata[];
 }
 

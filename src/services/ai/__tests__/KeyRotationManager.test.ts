@@ -168,4 +168,30 @@ describe('KeyRotationManager Fake Clock Tests', () => {
     assert.strictEqual(slots[0].status, 'invalid');
     assert.strictEqual(slots[1].status, 'healthy');
   });
+
+  test('AiRequestExecutor: unavailable browser storage does not mark a key invalid', async () => {
+    krm.updateSlots([
+      { slotId: 1, isEnabled: true, status: 'healthy', maskedKey: 'key-1', isSessionOnly: false },
+    ]);
+
+    const executor = new AiRequestExecutor(krm);
+    let operationCalled = false;
+
+    await assert.rejects(
+      () => executor.execute(
+        'extractReceipt',
+        async () => {
+          operationCalled = true;
+          return 'unexpected';
+        },
+        async () => null,
+      ),
+      /saved AI key is not available/i,
+    );
+
+    assert.strictEqual(operationCalled, false);
+    const [slot] = krm.getSlotsForTesting();
+    assert.strictEqual(slot.status, 'healthy');
+    assert.strictEqual(slot.failureCount, undefined);
+  });
 });

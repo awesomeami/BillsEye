@@ -251,3 +251,15 @@ test('an available PWA update waits for memory-only queue work and dirty receipt
   await expect(updatePrompt).toContainText('receipt edits');
   await expect(updateButton).toBeDisabled();
 });
+
+test('AI key settings save browser-local keys without a passphrase gate', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'AI Configuration' }).click();
+
+  await expect(page.getByRole('heading', { name: 'AI Configuration' })).toBeVisible();
+  await expect(page.getByText(/passphrase/i)).toHaveCount(0);
+  await page.getByRole('button', { name: /Add Key/ }).click();
+  await expect(page.getByText('No passphrase is required.')).toBeVisible();
+});

@@ -5,6 +5,7 @@ import express from 'express';
 import { createExtractionRoute, type ExtractionRouteOptions } from '../extractionRoute';
 import { getFirebaseAdmin } from '../firebaseAdmin';
 import { ExtractionControlService, InMemoryExtractionControlStore } from '../extractionControls';
+import { ExtractionResultSchema } from '../../domain/schema';
 
 process.env.FIREBASE_PROJECT_ID ??= 'test-project';
 process.env.FIREBASE_DATABASE_ID ??= '(default)';
@@ -237,7 +238,12 @@ describe('Extraction Route Contract Tests', () => {
             text: JSON.stringify({
               isReceipt: true,
               merchantRaw: 'Imtiaz Super Market',
+              merchantNormalizedSuggestion: 'Imtiaz',
+              transactionDateCandidate: '2026-08-28',
+              transactionTimeCandidate: '14:30',
+              dateInterpretationNote: 'Date is unambiguous.',
               currency: 'PKR',
+              paymentMethodCandidate: 'Card',
               items: [{ rawLineText: 'Lipton Yellow Label 380g', confidence: 0.95, warnings: [] }],
               overallConfidence: 0.9,
               documentWarnings: [],
@@ -260,6 +266,13 @@ describe('Extraction Route Contract Tests', () => {
     assert.strictEqual(res.body.isReceipt, true);
     assert.strictEqual(res.body.merchantRaw, 'Imtiaz Super Market');
     assert.strictEqual(res.body.items.length, 1);
+    assert.match(res.body.items[0].id, /^[a-f0-9-]{36}$/i);
+    assert.strictEqual(res.body.merchantNormalized, 'Imtiaz');
+    assert.strictEqual(res.body.transactionDate, '2026-08-28');
+    assert.strictEqual(res.body.transactionTime, '14:30');
+    assert.strictEqual(res.body.dateAmbiguous, false);
+    assert.strictEqual(res.body.paymentMethod, 'Card');
+    assert.doesNotThrow(() => ExtractionResultSchema.parse(res.body));
     assert.strictEqual(res.body.extractionSchemaVersion, '2');
   });
 

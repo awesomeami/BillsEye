@@ -33,5 +33,5 @@ The extractor accepts one `multipart/form-data` upload with `receiptImage` and `
 ## Privacy checks
 
 - Receipt images remain in volatile memory only; Firebase Storage is absent.
-- Persistent Gemini keys use the encrypted local vault and start locked after reload. Session-only keys are not persisted. Never place a Gemini key in an environment file, commit, backup, header, log, or test output.
+- Gemini keys are stored only in the browser's local IndexedDB for the signed-in account and remain available after reload. Never place a Gemini key in an environment file, commit, backup, header, log, or test output.
 - The service worker precaches build assets only. API, Gemini/Google API, and object-URL traffic are network-only and never stored in its cache.

@@ -416,10 +416,20 @@ Return only the requested structured JSON result.`.trim();
       };
 
       return {
-        ...item,
+        // The browser persists receipt items using ReceiptItemSchema, which
+        // requires a stable item ID. Gemini should never be asked to invent
+        // one, so the server owns this contract boundary.
+        id: randomUUID(),
+        rawLineText: item.rawLineText,
+        name: item.name,
+        brand: item.brand,
+        quantity: item.quantity,
+        unit: item.unit,
         unitPrice: safeParseItemAmount(item.unitPrice),
         discount: safeParseItemAmount(item.discount),
         lineTotal: safeParseItemAmount(item.lineTotal),
+        category: item.categorySuggestion,
+        confidence: item.confidence,
         warnings: itemWarnings,
       };
     });
@@ -452,14 +462,14 @@ Return only the requested structured JSON result.`.trim();
     const finalDto = {
       isReceipt: true,
       merchantRaw: rawGeminiResult.merchantRaw,
-      merchantNormalizedSuggestion: rawGeminiResult.merchantNormalizedSuggestion,
+      merchantNormalized: rawGeminiResult.merchantNormalizedSuggestion,
       branchAddress: rawGeminiResult.branchAddress,
       receiptNumber: rawGeminiResult.receiptNumber,
-      transactionDateCandidate: rawGeminiResult.transactionDateCandidate,
-      transactionTimeCandidate: rawGeminiResult.transactionTimeCandidate,
-      dateInterpretationNote: rawGeminiResult.dateInterpretationNote,
+      transactionDate: rawGeminiResult.transactionDateCandidate,
+      transactionTime: rawGeminiResult.transactionTimeCandidate,
+      dateAmbiguous: /\b(?:ambiguous|uncertain|unclear)\b/i.test(rawGeminiResult.dateInterpretationNote ?? ''),
       currency: rawGeminiResult.currency || 'PKR',
-      paymentMethodCandidate: rawGeminiResult.paymentMethodCandidate,
+      paymentMethod: rawGeminiResult.paymentMethodCandidate,
       
       items: parsedItems,
       

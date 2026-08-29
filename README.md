@@ -7,7 +7,7 @@ KharchaLens extracts structured expense data from Pakistani retail receipts and 
 - Receipt images are used only in memory while an extraction is running. They are not stored in Firestore, browser storage, a service-worker cache, Firebase Storage, or any other file store.
 - Firebase Storage is deliberately not used. Do not enable it for this project.
 - A Gemini key is sent only in the authenticated `multipart/form-data` extraction request as the `geminiKey` field. The application does not send it in an HTTP header.
-- Persistent Gemini keys are encrypted locally with AES-GCM using a passphrase-derived key. They start locked after a reload; a forgotten passphrase cannot recover them. Session-only keys are never persisted, and keys are never included in backups.
+- Gemini keys are stored only in browser-local IndexedDB for the signed-in account. They remain available after a reload, are never synced to Firestore, and are never included in backups.
 
 ## Local setup (Windows)
 

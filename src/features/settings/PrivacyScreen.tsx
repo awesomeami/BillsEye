@@ -28,7 +28,7 @@ export function PrivacyScreen() {
 
         <h3 className="text-lg font-bold text-gray-900 mt-6">API Keys</h3>
         <p>
-          If you choose persistent Gemini API-key storage, the key is encrypted in this browser's IndexedDB with AES-GCM using a passphrase you provide. The passphrase stays only in memory, so keys start locked after reload and cannot be recovered if the passphrase is forgotten. Session-only keys are never persisted. Keys are never saved to Firestore or included in exports or backups; an unlocked key is sent only to the transient extraction route for each request.
+          Gemini API keys are stored only in this browser and scoped to your signed-in account, so they remain available after a reload without a passphrase. Keys are never saved to Firestore or included in exports or backups; a key is sent only to the transient extraction route for each request.
         </p>
       </div>
     </div>

@@ -74,9 +74,10 @@ export class AiRequestExecutor {
 
       const key = await getDecryptedKey(keyIndex);
       if (!key) {
-        // Edge case: key couldn't be decrypted, mark it invalid
-        this.rotationManager.handleError(keyIndex, { code: 'auth_failed', message: 'Key decryption failed' });
-        continue;
+        // A browser-storage read problem is not evidence that Gemini rejected
+        // the key. Never poison the slot as invalid until the API returns an
+        // actual authentication failure.
+        throw new Error('The saved AI key is not available in this browser. Open Settings and save the key again.');
       }
 
       attempts++;

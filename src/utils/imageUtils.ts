@@ -37,14 +37,24 @@ export const preprocessImage = async (file: Blob, signal?: AbortSignal, maxSizeB
     throw new DOMException('Aborted', 'AbortError');
   }
 
-  let width = bmp.width;
-  let height = bmp.height;
+  const originalWidth = bmp.width;
+  const originalHeight = bmp.height;
+  let width = originalWidth;
+  let height = originalHeight;
   const MAX_DIMENSION = 4096;
 
   if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
     const scale = MAX_DIMENSION / Math.max(width, height);
     width = Math.round(width * scale);
     height = Math.round(height * scale);
+  }
+
+  // Preserve an already-small PNG without recompressing it. Capture the
+  // original dimensions before closing the ImageBitmap; closed bitmaps report
+  // zero dimensions in supported browsers.
+  if (actualMime === 'image/png' && file.size <= maxSizeBytes && width === originalWidth && height === originalHeight) {
+    bmp.close();
+    return { blob: file, mimeType: actualMime };
   }
 
   const canvas = document.createElement('canvas');
@@ -63,14 +73,12 @@ export const preprocessImage = async (file: Blob, signal?: AbortSignal, maxSizeB
     throw new DOMException('Aborted', 'AbortError');
   }
 
-  // Iterative compression for JPEG/WebP
-  const targetMime = actualMime === 'image/png' ? 'image/png' : 'image/jpeg';
+  // Every image that needs processing is encoded as JPEG. In particular,
+  // canvas ignores quality for PNG, so repeatedly emitting a large PNG could
+  // exceed the API limit and make a photo upload fail every time.
+  const targetMime = 'image/jpeg';
   let quality = 0.95;
   let resultBlob: Blob | null = null;
-  
-  if (actualMime === 'image/png' && file.size <= maxSizeBytes && width === bmp.width && height === bmp.height) {
-     return { blob: file, mimeType: actualMime };
-  }
 
   while (quality >= 0.5) {
     resultBlob = await new Promise<Blob | null>((resolve) => {
@@ -87,8 +95,8 @@ export const preprocessImage = async (file: Blob, signal?: AbortSignal, maxSizeB
     quality -= 0.15;
   }
 
-  if (!resultBlob) {
-    throw new Error('Failed to encode image.');
+  if (!resultBlob || resultBlob.size > maxSizeBytes) {
+    throw new Error('Image is too large after compression. Crop it and try again.');
   }
 
   return { blob: resultBlob, mimeType: targetMime };
