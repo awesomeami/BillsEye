@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 import { validateViteConfiguration } from '../buildConfig';
 import { getValidatedClientFirebaseConfig } from '../../services/firebase/clientConfig';
 import { getValidatedFirebaseAdminConfig } from '../../server/adminConfig';
-import { getReceiptExtractionModel } from '../../server/geminiConfig';
+import { getReceiptExtractionModel, RECEIPT_EXTRACTION_MODEL } from '../../server/geminiConfig';
 
 const validEnvironment = {
   VITE_FIREBASE_PROJECT_ID: 'test-project',
@@ -16,7 +16,6 @@ const validEnvironment = {
   FIREBASE_PROJECT_ID: 'test-project',
   FIREBASE_DATABASE_ID: '(default)',
   FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ project_id: 'test-project' }),
-  GEMINI_EXTRACTION_MODEL: 'gemini-2.5-flash',
 };
 
 describe('configuration boundaries', () => {
@@ -98,7 +97,7 @@ describe('configuration boundaries', () => {
     }, { mode: 'test' }).useApplicationDefaultCredentials, true);
   });
 
-  test('production build rejects E2E mocks, mismatched Firebase projects, and missing model configuration', () => {
+  test('production build rejects E2E mocks and mismatched Firebase projects', () => {
     assert.throws(
       () => validateViteConfiguration({ ...validEnvironment, VITE_E2E_MOCKS: 'true' }, 'production', 'build'),
       /VITE_E2E_MOCKS/,
@@ -110,10 +109,6 @@ describe('configuration boundaries', () => {
     assert.throws(
       () => validateViteConfiguration({ ...validEnvironment, FIREBASE_PROJECT_ID: 'other-project' }, 'production', 'build'),
       /project IDs must match/,
-    );
-    assert.throws(
-      () => validateViteConfiguration({ ...validEnvironment, GEMINI_EXTRACTION_MODEL: undefined }, 'production', 'build'),
-      /GEMINI_EXTRACTION_MODEL/,
     );
   });
 
@@ -128,11 +123,8 @@ describe('configuration boundaries', () => {
     );
   });
 
-  test('requires a pinned server-only Gemini model and rejects moving aliases', () => {
-    assert.strictEqual(getReceiptExtractionModel(validEnvironment, { mode: 'production' }), 'gemini-2.5-flash');
-    assert.throws(
-      () => getReceiptExtractionModel({ GEMINI_EXTRACTION_MODEL: 'gemini-flash-latest' }, { mode: 'production' }),
-      /invalid GEMINI_EXTRACTION_MODEL/,
-    );
+  test('uses one fixed server-controlled receipt extraction model', () => {
+    assert.strictEqual(RECEIPT_EXTRACTION_MODEL, 'gemini-3.5-flash-lite');
+    assert.strictEqual(getReceiptExtractionModel(), RECEIPT_EXTRACTION_MODEL);
   });
 });

@@ -1,25 +1,10 @@
 export const EXTRACTION_SCHEMA_VERSION = '2';
-
-type GeminiModelEnvironment = Record<string, string | undefined>;
-
-type GeminiModelOptions = {
-  mode: string;
-};
+export const RECEIPT_EXTRACTION_MODEL = 'gemini-3.5-flash-lite';
 
 /**
- * Models are server-only and intentionally have no VITE_ equivalent. A moving
- * alias is rejected so model behavior cannot change without configuration.
+ * Receipt extraction uses one server-owned stable model ID. The browser and
+ * deployment environment cannot override it per request.
  */
-export function getReceiptExtractionModel(
-  environment: GeminiModelEnvironment = process.env,
-  { mode }: GeminiModelOptions = { mode: process.env.NODE_ENV ?? 'development' },
-): string {
-  const model = environment.GEMINI_EXTRACTION_MODEL?.trim();
-  if (!model) {
-    throw new Error(`Server configuration is missing required field: GEMINI_EXTRACTION_MODEL for ${mode} mode.`);
-  }
-  if (!/^gemini-[a-z0-9][a-z0-9.-]{0,127}$/i.test(model) || /(?:^|-)latest$/i.test(model)) {
-    throw new Error('Server configuration has an invalid GEMINI_EXTRACTION_MODEL.');
-  }
-  return model;
+export function getReceiptExtractionModel(): string {
+  return RECEIPT_EXTRACTION_MODEL;
 }

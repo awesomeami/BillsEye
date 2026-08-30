@@ -36,7 +36,7 @@ export function validateViteConfiguration(
     if (clientConfig.firestoreDatabaseId !== adminConfig.firestoreDatabaseId) {
       throw new Error('Firebase client and Admin Firestore database IDs must match.');
     }
-    getReceiptExtractionModel(environment, { mode: 'production' });
+    getReceiptExtractionModel();
   }
 
   return { useE2eMocks };

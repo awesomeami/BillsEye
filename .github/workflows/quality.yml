@@ -30,7 +30,6 @@ jobs:
       FIREBASE_PROJECT_ID: kharchalens-ci
       FIREBASE_DATABASE_ID: (default)
       FIREBASE_ADMIN_USE_ADC: 'true'
-      GEMINI_EXTRACTION_MODEL: gemini-2.5-flash
     steps:
       - name: Check out the pull request
         uses: actions/checkout@v4

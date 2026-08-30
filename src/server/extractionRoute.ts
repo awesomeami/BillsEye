@@ -8,7 +8,7 @@ import {
   InMemoryExtractionControlStore,
   type ExtractionAdmission,
 } from './extractionControls.js';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { getReceiptExtractionModel, EXTRACTION_SCHEMA_VERSION } from './geminiConfig.js';
 import { RawGeminiReceiptV2 } from '../domain/schema.js';
 import { parseMajorToMinor } from '../domain/money.js';
@@ -289,6 +289,9 @@ Return only the requested structured JSON result.`.trim();
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
+          thinkingConfig: {
+            thinkingLevel: ThinkingLevel.MINIMAL,
+          },
           // Ensure it's not stored
           // @ts-expect-error - GenAI SDK missing store typings
           store: false,

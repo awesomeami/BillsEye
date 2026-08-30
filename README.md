@@ -20,7 +20,7 @@ Use the versions pinned in `package.json`: Node.js `24.15.0` and npm `11.12.1`. 
 1. Create a Firebase project and enable Firestore and Google sign-in in Firebase Authentication.
 2. Do **not** enable Firebase Storage.
 3. Copy `.firebaserc.example` to `.firebaserc`, replace `your-firebase-project-id`, and keep that local file uncommitted.
-4. Copy `.env.example` to `.env.local`. Set every `VITE_FIREBASE_*` variable together from one Firebase web app, then set the server-only `FIREBASE_PROJECT_ID`, `FIREBASE_DATABASE_ID`, `FIREBASE_SERVICE_ACCOUNT`, and `GEMINI_EXTRACTION_MODEL` variables. The client and Admin project/database IDs must match. `.env.local` is ignored by Git.
+4. Copy `.env.example` to `.env.local`. Set every `VITE_FIREBASE_*` variable together from one Firebase web app, then set the server-only `FIREBASE_PROJECT_ID`, `FIREBASE_DATABASE_ID`, and `FIREBASE_SERVICE_ACCOUNT` variables. The client and Admin project/database IDs must match. Receipt extraction is fixed server-side to `gemini-3.5-flash-lite` in `src/server/geminiConfig.ts`. `.env.local` is ignored by Git.
 5. Add `http://localhost:3000` to Firebase Authentication's Authorized domains while developing locally.
 
 The committed Firebase web bootstrap can be used only by the explicit `development`, `test`, or `e2e` modes. Preview and production require complete environment configuration. The supplied `firebase.json` intentionally targets your project's default Firestore database; it does not embed a developer-specific project or database name. If you deliberately use a named database, set both `VITE_FIREBASE_DATABASE_ID` and `FIREBASE_DATABASE_ID` to that name and adjust your Firebase CLI configuration deliberately.
@@ -81,7 +81,7 @@ GitHub Actions runs `npm ci`, linting, type checking, unit tests, Firestore emul
 ## Vercel deployment
 
 1. Import the repository into Vercel and retain `npm run build` as the build command with `dist` as the output directory.
-2. Add the required names from `.env.example` as Vercel environment variables. Keep `FIREBASE_SERVICE_ACCOUNT` and `GEMINI_EXTRACTION_MODEL` server-only; never expose either with a `VITE_` prefix. Do not set `FIREBASE_ADMIN_USE_ADC` in production.
+2. Add the required names from `.env.example` as Vercel environment variables. Keep `FIREBASE_SERVICE_ACCOUNT` server-only; never expose it with a `VITE_` prefix. The receipt-extraction model is fixed in server code and does not require an environment variable. Do not set `FIREBASE_ADMIN_USE_ADC` in production.
 3. Add the deployed Vercel domain to Firebase Authentication's Authorized domains.
 4. Deploy Firestore rules and indexes from the same Firebase project before allowing users to write data.
 

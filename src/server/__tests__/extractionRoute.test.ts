@@ -10,7 +10,6 @@ import { ExtractionResultSchema } from '../../domain/schema';
 process.env.FIREBASE_PROJECT_ID ??= 'test-project';
 process.env.FIREBASE_DATABASE_ID ??= '(default)';
 process.env.FIREBASE_ADMIN_USE_ADC ??= 'true';
-process.env.GEMINI_EXTRACTION_MODEL ??= 'gemini-2.5-flash';
 
 const createTestApp = (options: Pick<ExtractionRouteOptions, 'multipartParser'> = {}) => {
   const app = express();
@@ -346,11 +345,16 @@ describe('Extraction Route Contract Tests', () => {
     assert.strictEqual(res.body.code, 'QUOTA_EXCEEDED');
   });
 
-  test('Sends store: false explicitly', async () => {
+  test('Sends the fixed Flash-Lite model with minimal thinking and store: false', async () => {
     mockAuthSuccess();
-    
-    const mockFetch = mock.fn(() => {
+
+    let requestedUrl = '';
+    let requestBody: Record<string, unknown> | undefined;
+    const mockFetch = mock.fn((input: string | URL | Request, init?: RequestInit) => {
+      requestedUrl = input instanceof Request ? input.url : String(input);
+      requestBody = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : undefined;
       return Promise.resolve(new Response(JSON.stringify({
+        modelVersion: 'gemini-3.5-flash-lite-001',
         candidates: [{
           content: {
             parts: [{
@@ -374,6 +378,13 @@ describe('Extraction Route Contract Tests', () => {
       .attach('receiptImage', Buffer.from('fake'), { filename: 'test.jpg', contentType: 'image/jpeg' });
       
     assert.strictEqual(res.status, 200);
+    assert.match(requestedUrl, /\/models\/gemini-3\.5-flash-lite:generateContent$/);
+    assert.deepStrictEqual(
+      (requestBody?.generationConfig as { thinkingConfig?: unknown } | undefined)?.thinkingConfig,
+      { thinkingLevel: 'MINIMAL' },
+    );
+    assert.strictEqual(res.body.extractionModel, 'gemini-3.5-flash-lite');
+    assert.strictEqual(res.body.extractionModelActual, 'gemini-3.5-flash-lite-001');
   });
 
   test('Gracefully degrades malformed amount fields instead of 500', async () => {
