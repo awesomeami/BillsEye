@@ -61,6 +61,41 @@ describe('receipt total calculation', () => {
     assert.strictEqual(getDiscrepancyLabel(result.discrepancyDirection), 'Printed total is higher than calculated total');
   });
 
+  test('infers a small whole-rupee rounding adjustment from a complete item total', () => {
+    const result = calculateReceiptTotals(
+      [{ lineTotal: 50893 }],
+      { printedGrandTotal: 50900 },
+    );
+
+    assert.strictEqual(result.roundingAdjustment, 7);
+    assert.strictEqual(result.roundingSource, 'inferred');
+    assert.strictEqual(result.computedExpectedTotal, 50900);
+    assert.strictEqual(result.discrepancy, 0);
+    assert.strictEqual(result.reconciliationStatus, 'matched');
+  });
+
+  test('does not hide non-rounding or incomplete-total differences', () => {
+    const nonWholePrintedTotal = calculateReceiptTotals(
+      [{ lineTotal: 50893 }],
+      { printedGrandTotal: 50925 },
+    );
+    const incompleteItems = calculateReceiptTotals(
+      [{ lineTotal: 50893 }, { lineTotal: null }],
+      { printedGrandTotal: 50900 },
+    );
+    const largeDifference = calculateReceiptTotals(
+      [{ lineTotal: 50893 }],
+      { printedGrandTotal: 51000 },
+    );
+
+    assert.strictEqual(nonWholePrintedTotal.roundingSource, 'none');
+    assert.strictEqual(nonWholePrintedTotal.reconciliationStatus, 'mismatched');
+    assert.strictEqual(incompleteItems.roundingSource, 'none');
+    assert.strictEqual(incompleteItems.reconciliationStatus, 'unknown');
+    assert.strictEqual(largeDifference.roundingSource, 'none');
+    assert.strictEqual(largeDifference.reconciliationStatus, 'mismatched');
+  });
+
   test('retains an unknown total instead of displaying a numeric zero', () => {
     const result = calculateReceiptTotals([{ lineTotal: null }], {});
 

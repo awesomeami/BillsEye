@@ -74,7 +74,15 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm bg-gray-50 rounded-lg p-3">
-            <div><span className="text-gray-500">Calculated total</span><p className="font-medium">{formatOptionalMinor(reconciliation.computedExpectedTotal)}</p></div>
+            <div>
+              <span className="text-gray-500">Calculated total</span>
+              <p className="font-medium">{formatOptionalMinor(reconciliation.computedExpectedTotal)}</p>
+              {reconciliation.roundingSource === 'inferred' && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Includes inferred whole-rupee rounding: {formatOptionalMinor(reconciliation.roundingAdjustment)}
+                </p>
+              )}
+            </div>
             <div><span className="text-gray-500">Printed − calculated</span><p className="font-medium">{formatOptionalMinor(reconciliation.discrepancy)}</p></div>
             <div><span className="text-gray-500">Comparison</span><p className="font-medium">{getDiscrepancyLabel(reconciliation.discrepancyDirection)}</p></div>
           </div>

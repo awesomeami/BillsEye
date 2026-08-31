@@ -3,6 +3,10 @@ import { ReceiptDocument } from './schema.js'
 export type ReconciliationStatus = 'matched' | 'mismatched' | 'unknown'
 export type SubtotalSource = 'items' | 'printed_subtotal' | 'unavailable'
 export type DiscrepancyDirection = 'printed_higher' | 'calculated_higher' | 'none' | 'unknown'
+export type RoundingSource = 'printed' | 'inferred' | 'none'
+
+const MINOR_UNITS_PER_MAJOR_UNIT = 100
+const MAX_INFERRED_WHOLE_UNIT_ROUNDING = 50
 
 export interface ReceiptTotalFields {
   printedSubtotal?: number | null
@@ -31,6 +35,10 @@ export interface ReconciliationResult {
   discrepancy: number | null
   discrepancyDirection: DiscrepancyDirection
   reconciliationStatus: ReconciliationStatus
+  /** The rounding amount included in the calculated total. */
+  roundingAdjustment: number
+  /** Whether the rounding was printed explicitly or inferred conservatively. */
+  roundingSource: RoundingSource
   warnings: string[]
 }
 
@@ -55,11 +63,45 @@ export function getDiscrepancyLabel(direction: DiscrepancyDirection): string {
   }
 }
 
+function inferWholeUnitRounding(
+  subtotalSource: SubtotalSource,
+  totalBeforeRounding: number | null,
+  printedGrandTotal: number | null,
+): number | null {
+  // Infer only the narrow, common case of a complete item total with a
+  // fractional amount being rounded to the nearest whole currency unit. This
+  // deliberately leaves larger and non-whole-unit differences for review.
+  if (
+    subtotalSource !== 'items'
+    || totalBeforeRounding == null
+    || totalBeforeRounding <= 0
+    || printedGrandTotal == null
+    || printedGrandTotal <= 0
+    || totalBeforeRounding % MINOR_UNITS_PER_MAJOR_UNIT === 0
+    || printedGrandTotal % MINOR_UNITS_PER_MAJOR_UNIT !== 0
+  ) {
+    return null
+  }
+
+  const inferredRounding = printedGrandTotal - totalBeforeRounding
+  const roundedTotal = Math.round(totalBeforeRounding / MINOR_UNITS_PER_MAJOR_UNIT) * MINOR_UNITS_PER_MAJOR_UNIT
+  if (
+    inferredRounding === 0
+    || Math.abs(inferredRounding) > MAX_INFERRED_WHOLE_UNIT_ROUNDING
+    || printedGrandTotal !== roundedTotal
+  ) {
+    return null
+  }
+
+  return inferredRounding
+}
+
 /**
  * Calculates every receipt total in minor currency units.
  *
  * The subtotal is the complete line-item sum, falling back only to a printed
- * subtotal. Missing tax, fees, and rounding are zero adjustments; rounding
+ * subtotal. Missing tax and fees are zero adjustments. With complete item totals,
+ * a small whole-unit rounding adjustment may be inferred; explicit rounding
  * preserves its sign. Discounts are normalized once to a negative adjustment.
  * A line-item subtotal is known only when every line item has a numeric total,
  * so partial line-item sums are intentionally never presented as complete.
@@ -95,11 +137,22 @@ export function calculateReceiptTotals(
   const normalizedDiscount = normalizeDiscount(totals.printedDiscount)
   const tax = totals.printedTax ?? 0
   const fees = totals.printedFees ?? 0
-  const rounding = totals.printedRounding ?? 0
-  const computedExpectedTotal = baseSubtotal == null
+  const totalBeforeRounding = baseSubtotal == null
     ? null
-    : baseSubtotal + normalizedDiscount + tax + fees + rounding
+    : baseSubtotal + normalizedDiscount + tax + fees
   const printedGrandTotal = totals.printedGrandTotal ?? null
+  const inferredRounding = totals.printedRounding == null
+    ? inferWholeUnitRounding(subtotalSource, totalBeforeRounding, printedGrandTotal)
+    : null
+  const roundingAdjustment = totals.printedRounding ?? inferredRounding ?? 0
+  const roundingSource: RoundingSource = totals.printedRounding != null
+    ? 'printed'
+    : inferredRounding != null
+      ? 'inferred'
+      : 'none'
+  const computedExpectedTotal = totalBeforeRounding == null
+    ? null
+    : totalBeforeRounding + roundingAdjustment
   const effectiveTotal = printedGrandTotal ?? computedExpectedTotal
 
   if (printedGrandTotal == null) {
@@ -118,6 +171,8 @@ export function calculateReceiptTotals(
       discrepancy: null,
       discrepancyDirection: 'unknown',
       reconciliationStatus: 'unknown',
+      roundingAdjustment,
+      roundingSource,
       warnings,
     }
   }
@@ -133,6 +188,8 @@ export function calculateReceiptTotals(
       discrepancy: null,
       discrepancyDirection: 'unknown',
       reconciliationStatus: 'unknown',
+      roundingAdjustment,
+      roundingSource,
       warnings,
     }
   }
@@ -162,6 +219,8 @@ export function calculateReceiptTotals(
     discrepancy,
     discrepancyDirection,
     reconciliationStatus,
+    roundingAdjustment,
+    roundingSource,
     warnings,
   }
 }

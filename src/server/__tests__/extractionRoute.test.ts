@@ -275,6 +275,49 @@ describe('Extraction Route Contract Tests', () => {
     assert.strictEqual(res.body.extractionSchemaVersion, '2');
   });
 
+  test('infers a bounded whole-rupee rounding adjustment without changing raw extracted totals', async () => {
+    mockAuthSuccess();
+    const mockFetch = mock.fn(() => Promise.resolve(new Response(JSON.stringify({
+      candidates: [{
+        content: {
+          parts: [{
+            text: JSON.stringify({
+              isReceipt: true,
+              items: [{
+                rawLineText: 'CHICKEN KARHAI CUT (18 PIECES)',
+                quantity: 0.994,
+                unitPrice: '512.00',
+                lineTotal: '508.93',
+                confidence: 0.95,
+                warnings: [],
+              }],
+              printedTax: '0.00',
+              printedGrandTotal: '509.00',
+              overallConfidence: 0.95,
+              documentWarnings: [],
+              rawOcrText: 'Qty 0.994 Rate 512.00 Amount 508.93 Net Amount 509.00',
+              ambiguousFields: [],
+            }),
+          }],
+        },
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    mock.method(global, 'fetch', mockFetch);
+
+    const res = await request(app)
+      .post('/api/extract')
+      .set('Authorization', 'Bearer valid-token')
+      .field('geminiKey', 'test-key')
+      .attach('receiptImage', Buffer.from('fake'), { filename: 'test.jpg', contentType: 'image/jpeg' });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.printedRounding, null);
+    assert.strictEqual(res.body.computedExpectedTotal, 50900);
+    assert.strictEqual(res.body.discrepancy, 0);
+    assert.strictEqual(res.body.reconciliationStatus, 'matched');
+    assert.ok(!res.body.warnings.includes('Printed total is higher than calculated total'));
+  });
+
   test('Unreadable values (nulls)', async () => {
     mockAuthSuccess();
     const mockFetch = mock.fn(() => Promise.resolve(new Response(JSON.stringify({
