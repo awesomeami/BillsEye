@@ -23,13 +23,15 @@ Use the versions pinned in `package.json`: Node.js `24.15.0` and npm `11.12.1`. 
 4. Copy `.env.example` to `.env.local`. Set every `VITE_FIREBASE_*` variable together from one Firebase web app, then set the server-only `FIREBASE_PROJECT_ID`, `FIREBASE_DATABASE_ID`, and `FIREBASE_SERVICE_ACCOUNT` variables. The client and Admin project/database IDs must match. Receipt extraction is fixed server-side to `gemini-3.5-flash-lite` in `src/server/geminiConfig.ts`. `.env.local` is ignored by Git.
 5. Add `http://localhost:3000` to Firebase Authentication's Authorized domains while developing locally.
 
-The committed Firebase web bootstrap can be used only by the explicit `development`, `test`, or `e2e` modes. Preview and production require complete environment configuration. The supplied `firebase.json` intentionally targets your project's default Firestore database; it does not embed a developer-specific project or database name. If you deliberately use a named database, set both `VITE_FIREBASE_DATABASE_ID` and `FIREBASE_DATABASE_ID` to that name and adjust your Firebase CLI configuration deliberately.
+The committed Firebase web bootstrap can be used only by the explicit `development`, `test`, or `e2e` modes. Preview and production require complete environment configuration. The supplied `firebase.json` targets KharchaLens's existing production database, `ai-studio-kharchalens-ee592688-7237-4dd5-80de-9db1abc34416`. Keep its `firestore.database` value aligned with both `VITE_FIREBASE_DATABASE_ID` and `FIREBASE_DATABASE_ID`. For a separate installation, explicitly change all three values to that installation's database ID (`(default)` for a default database).
 
 Deploy rules and indexes with the project-local Firebase CLI:
 
 ```powershell
 npx firebase deploy --only firestore
 ```
+
+Vercel deployments do not publish Firestore rules. For a rules-only update to the existing KharchaLens production database, run `npx firebase deploy --project gen-lang-client-0051411328 --only firestore:rules`. This publishes the repository's receipt-header and nested `items` rules without deploying indexes or rewriting receipt documents.
 
 ### Install and run
 

@@ -215,6 +215,33 @@ describe('Firestore Security Rules', () => {
     await assertSucceeds(batch.commit());
   });
 
+  test('atomically saves a complete extracted receipt with 40 items and preserves owner-only access', async () => {
+    const aliceDb = testEnv.authenticatedContext('alice').firestore();
+    const bobDb = testEnv.authenticatedContext('bob').firestore();
+    const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('extracted-receipt');
+    const batch = aliceDb.batch();
+    batch.set(receiptRef, {
+      ...makeCompleteReceiptHeader('extracted-receipt'),
+      extractionModel: 'gemini-3.5-flash-lite',
+      extractionModelActual: 'gemini-3.5-flash-lite',
+    });
+    for (let index = 0; index < 40; index += 1) {
+      batch.set(receiptRef.collection('items').doc(String(index)), {
+        ...makeReceiptItem(`item-${index}`, index),
+        categoryId: 'cat_groceries',
+      });
+    }
+
+    await assertSucceeds(batch.commit());
+    assert.equal((await receiptRef.get()).data()?.itemStorageVersion, 2);
+    assert.equal((await receiptRef.collection('items').get()).size, 40);
+
+    const bobItemRef = bobDb.collection('users').doc('alice').collection('receipts')
+      .doc('extracted-receipt').collection('items').doc('0');
+    await assertFails(bobItemRef.get());
+    await assertFails(bobItemRef.set(makeReceiptItem('item-0', 0)));
+  });
+
   test('receipt header allows canonical extraction metadata but rejects unapproved fields', async () => {
     const aliceDb = testEnv.authenticatedContext('alice').firestore();
     const receiptRef = aliceDb.collection('users').doc('alice').collection('receipts').doc('canonical-header');
