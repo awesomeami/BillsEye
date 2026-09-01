@@ -15,8 +15,16 @@ export function formatCurrency(amount: number, config: RegionalConfig = APP_CONF
   }).format(amount);
 }
 
-export function formatDate(date: Date | string | number, config: RegionalConfig = APP_CONFIG): string {
+export function formatDate(date: Date | string | number | null | undefined, config: RegionalConfig = APP_CONFIG): string {
+  if (date == null || (typeof date === 'string' && date.trim() === '')) {
+    return 'Unknown Date';
+  }
+
   const d = new Date(date);
+  if (Number.isNaN(d.getTime())) {
+    return 'Unknown Date';
+  }
+
   return new Intl.DateTimeFormat(config.locale, {
     timeZone: config.timeZone,
     year: 'numeric',
