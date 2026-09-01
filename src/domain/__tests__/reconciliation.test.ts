@@ -96,6 +96,38 @@ describe('receipt total calculation', () => {
     assert.strictEqual(largeDifference.reconciliationStatus, 'mismatched');
   });
 
+  test('uses a matching printed subtotal when item totals already include the separately printed tax', () => {
+    const result = calculateReceiptTotals(
+      [{ lineTotal: 399900 }],
+      {
+        printedSubtotal: 341800,
+        printedDiscount: 0,
+        printedTax: 58100,
+        printedGrandTotal: 399900,
+      },
+    );
+
+    assert.strictEqual(result.computedLineTotal, 399900);
+    assert.strictEqual(result.baseSubtotal, 341800);
+    assert.strictEqual(result.subtotalSource, 'printed_subtotal');
+    assert.strictEqual(result.computedExpectedTotal, 399900);
+    assert.strictEqual(result.discrepancy, 0);
+    assert.strictEqual(result.reconciliationStatus, 'matched');
+    assert.ok(result.warnings.some(warning => warning.includes('used the printed subtotal')));
+  });
+
+  test('does not prefer a printed subtotal when neither interpretation reconciles', () => {
+    const result = calculateReceiptTotals(
+      [{ lineTotal: 1000 }],
+      { printedSubtotal: 900, printedTax: 50, printedGrandTotal: 2000 },
+    );
+
+    assert.strictEqual(result.baseSubtotal, 1000);
+    assert.strictEqual(result.subtotalSource, 'items');
+    assert.strictEqual(result.computedExpectedTotal, 1050);
+    assert.strictEqual(result.reconciliationStatus, 'mismatched');
+  });
+
   test('retains an unknown total instead of displaying a numeric zero', () => {
     const result = calculateReceiptTotals([{ lineTotal: null }], {});
 

@@ -2,7 +2,11 @@ import { test, describe, mock, afterEach } from 'node:test';
 import assert from 'node:assert';
 import request from 'supertest';
 import express from 'express';
-import { createExtractionRoute, type ExtractionRouteOptions } from '../extractionRoute';
+import {
+  createExtractionRoute,
+  RECEIPT_EXTRACTION_INSTRUCTION,
+  type ExtractionRouteOptions,
+} from '../extractionRoute';
 import { getFirebaseAdmin } from '../firebaseAdmin';
 import { ExtractionControlService, InMemoryExtractionControlStore } from '../extractionControls';
 import { ExtractionResultSchema } from '../../domain/schema';
@@ -272,7 +276,65 @@ describe('Extraction Route Contract Tests', () => {
     assert.strictEqual(res.body.dateAmbiguous, false);
     assert.strictEqual(res.body.paymentMethod, 'Card');
     assert.doesNotThrow(() => ExtractionResultSchema.parse(res.body));
-    assert.strictEqual(res.body.extractionSchemaVersion, '2');
+    assert.strictEqual(res.body.extractionSchemaVersion, '3');
+  });
+
+  test('handles a combined sales-tax amount/rate column without double-counting tax', async () => {
+    mockAuthSuccess();
+    const mockFetch = mock.fn(() => Promise.resolve(new Response(JSON.stringify({
+      candidates: [{
+        content: {
+          parts: [{
+            text: JSON.stringify({
+              isReceipt: true,
+              merchantRaw: 'BATA PAKISTAN LIMITED',
+              receiptNumber: '1010190009',
+              transactionDateCandidate: '2019-10-10',
+              transactionTimeCandidate: '15:11:32',
+              currency: 'PKR',
+              paymentMethodCandidate: 'Cash',
+              items: [{
+                rawLineText: '4116909 40 1 3,418 0 581 17 3,999',
+                name: 'Article 4116909',
+                quantity: 1,
+                unitPrice: '3418',
+                discount: '0',
+                taxAmount: '581',
+                taxRatePercent: '17',
+                lineTotal: '3999',
+                confidence: 0.98,
+                warnings: [],
+              }],
+              printedSubtotal: '3418',
+              printedDiscount: '0',
+              printedTax: null,
+              printedGrandTotal: '3999',
+              rawOcrText: 'Price Disc S.Tax@% Total\n3,418 0 581 17 3,999\nCASH 4,000\nChange Due 1',
+              overallConfidence: 0.98,
+              documentWarnings: [],
+              ambiguousFields: [],
+            }),
+          }],
+        },
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    mock.method(global, 'fetch', mockFetch);
+
+    const res = await request(app)
+      .post('/api/extract')
+      .set('Authorization', 'Bearer valid-token')
+      .field('geminiKey', 'test-key')
+      .attach('receiptImage', Buffer.from('fake'), { filename: 'bata.jpg', contentType: 'image/jpeg' });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.printedSubtotal, 341800);
+    assert.strictEqual(res.body.printedTax, 58100);
+    assert.strictEqual(res.body.printedGrandTotal, 399900);
+    assert.strictEqual(res.body.computedLineTotal, 399900);
+    assert.strictEqual(res.body.computedExpectedTotal, 399900);
+    assert.strictEqual(res.body.discrepancy, 0);
+    assert.strictEqual(res.body.reconciliationStatus, 'matched');
+    assert.ok(!res.body.warnings.includes('Calculated total is higher than printed total'));
   });
 
   test('infers a bounded whole-rupee rounding adjustment without changing raw extracted totals', async () => {
@@ -388,7 +450,7 @@ describe('Extraction Route Contract Tests', () => {
     assert.strictEqual(res.body.code, 'QUOTA_EXCEEDED');
   });
 
-  test('Sends the fixed Flash-Lite model with minimal thinking and store: false', async () => {
+  test('Sends the fixed Flash-Lite model with low thinking and store: false', async () => {
     mockAuthSuccess();
 
     let requestedUrl = '';
@@ -424,8 +486,10 @@ describe('Extraction Route Contract Tests', () => {
     assert.match(requestedUrl, /\/models\/gemini-3\.5-flash-lite:generateContent$/);
     assert.deepStrictEqual(
       (requestBody?.generationConfig as { thinkingConfig?: unknown } | undefined)?.thinkingConfig,
-      { thinkingLevel: 'MINIMAL' },
+      { thinkingLevel: 'LOW' },
     );
+    assert.match(RECEIPT_EXTRACTION_INSTRUCTION, /S\.Tax@%/);
+    assert.match(RECEIPT_EXTRACTION_INSTRUCTION, /Cash\/tendered\/card-paid amounts and change due are payment metadata/);
     assert.strictEqual(res.body.extractionModel, 'gemini-3.5-flash-lite');
     assert.strictEqual(res.body.extractionModelActual, 'gemini-3.5-flash-lite-001');
   });

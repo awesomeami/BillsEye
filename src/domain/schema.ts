@@ -158,6 +158,8 @@ export const RawGeminiItemV2 = z.object({
   unit: z.string().nullable().default(null),
   unitPrice: z.string().nullable().default(null), // Decimal string
   discount: z.string().nullable().default(null), // Decimal string
+  taxAmount: z.string().nullable().default(null), // Decimal string; extraction-only per-line tax
+  taxRatePercent: z.string().nullable().default(null), // Decimal percentage; never a money amount
   lineTotal: z.string().nullable().default(null), // Decimal string
   categorySuggestion: z.enum(['Groceries', 'Meat', 'Fruit & Vegetables', 'Household', 'Medicine', 'Eating Out', 'Miscellaneous']).nullable().default(null),
   confidence: z.number().min(0).max(1).default(1),

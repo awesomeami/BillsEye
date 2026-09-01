@@ -1,4 +1,4 @@
-export const EXTRACTION_SCHEMA_VERSION = '2';
+export const EXTRACTION_SCHEMA_VERSION = '3';
 export const RECEIPT_EXTRACTION_MODEL = 'gemini-3.5-flash-lite';
 
 /**

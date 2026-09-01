@@ -14,6 +14,31 @@ import { RawGeminiReceiptV2 } from '../domain/schema.js';
 import { parseMajorToMinor } from '../domain/money.js';
 import { calculateReceiptTotals } from '../domain/reconciliation.js';
 
+export const RECEIPT_EXTRACTION_INSTRUCTION = `Act as a high-precision, layout-aware receipt transcription engine for Pakistani retail receipts, including English, Urdu, and Roman Urdu.
+Extract only visible information. Never invent unreadable or absent values. Return null plus a warning for missing or unreadable fields; never substitute zero.
+
+Read the receipt spatially before extracting:
+- Associate each value with its column header by horizontal position, even when headers are abbreviated, punctuated, merged, wrapped, or repeated in an unlabeled summary row.
+- Keep wrapped or multi-line descriptions with their item. Do not turn subtotal/summary rows, tender, change, loyalty, tax-registration, or receipt metadata into sale items.
+- Treat repeated values beneath the item table as receipt totals, not duplicate items.
+
+Handle unconventional money columns carefully:
+- Recognize tax labels including Sales Tax, S.Tax, ST, GST, VAT, FED, Tax Amt, and compound headers such as S.Tax@%.
+- A compound tax header may contain two adjacent values: the monetary tax amount followed by the percentage rate. For example, under S.Tax@%, "581 17" means taxAmount 581 and taxRatePercent 17; never swap the amount and rate.
+- For each item, normally use its printed Amount/Total as lineTotal. If a separate tax amount is printed on that row and the final Total includes it, use the visible pre-tax, post-discount amount as lineTotal so receipt-level printedTax is not added twice. If no defensible pre-tax amount is visible, return null and warn instead of calculating one.
+- Extract an explicit receipt-level or column-summary tax amount as printedTax. Also populate every visible per-item taxAmount and taxRatePercent; the server, not the model, may total a complete tax column when no aggregate is printed.
+- Distinguish discount amounts from percentages, and preserve refunds, negative adjustments, parentheses, and minus signs.
+- Recognize service charges, delivery charges, levies, tips, rounding, and other explicit adjustments under their correct totals fields.
+- Cash/tendered/card-paid amounts and change due are payment metadata, not the printedGrandTotal. A balance due or net payable is a grand total only when the receipt layout identifies it that way.
+
+Return monetary values as decimal strings in major currency units without currency symbols or thousands separators. A visibly printed zero is 0; an absent value is null.
+Use arithmetic only to check column interpretation and detect likely swaps or double counting. Do not alter visible values merely to force agreement. Preserve conflicts and add a warning.
+Preserve raw text separately from normalized suggestions. Recognize PKR, Rs/Rs., comma separators, decimals, weights, quantities, and patterns such as "2 x 150".
+Use YYYY-MM-DD only when defensible; flag ambiguous day/month ordering.
+Category suggestions are limited to the following or null: Groceries, Meat, Fruit & Vegetables, Household, Medicine, Eating Out, Miscellaneous.
+Confidence reflects legibility and extraction certainty, not arithmetic agreement.
+Return only the requested structured JSON result.`.trim();
+
 // Store only in memory, limit to ~4MB to be safe for Vercel
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -255,17 +280,6 @@ router.post('/extract', authenticateAndAcquire, multipartParser, async (req, res
     });
 
     // 4. Instruction & Schema
-    const systemInstruction = `Act as a high-precision receipt transcription engine for Pakistani retail receipts, including English, Urdu, and Roman Urdu.
-Extract only visible information. Never invent unreadable or absent values.
-Return null plus a warning for missing/unreadable fields; never substitute zero.
-Preserve raw text separately from normalized suggestions.
-Recognize PKR, Rs/Rs., comma separators, decimals, weights, quantities, "2 x 150" patterns, and discounts.
-Do not force item sums to match printed totals.
-Use YYYY-MM-DD only when defensible; flag ambiguous day/month ordering.
-Category suggestions are limited to the following or null: Groceries, Meat, Fruit & Vegetables, Household, Medicine, Eating Out, Miscellaneous.
-Confidence reflects legibility/extraction certainty, not arithmetic agreement.
-Return only the requested structured JSON result.`.trim();
-
     // 5. Call Gemini
     logSafe(reqId, 'Calling Gemini generateContent');
     let result;
@@ -287,10 +301,10 @@ Return only the requested structured JSON result.`.trim();
           }
         ],
         config: {
-          systemInstruction,
+          systemInstruction: RECEIPT_EXTRACTION_INSTRUCTION,
           responseMimeType: 'application/json',
           thinkingConfig: {
-            thinkingLevel: ThinkingLevel.MINIMAL,
+            thinkingLevel: ThinkingLevel.LOW,
           },
           // Ensure it's not stored
           // @ts-expect-error - GenAI SDK missing store typings
@@ -320,21 +334,23 @@ Return only the requested structured JSON result.`.trim();
                     brand: { type: 'string', nullable: true },
                     quantity: { type: 'number', nullable: true },
                     unit: { type: 'string', nullable: true },
-                    unitPrice: { type: 'string', nullable: true, description: 'Decimal string major units' },
-                    discount: { type: 'string', nullable: true, description: 'Decimal string major units' },
-                    lineTotal: { type: 'string', nullable: true, description: 'Decimal string major units' },
+                    unitPrice: { type: 'string', nullable: true, description: 'Visible per-unit price as a decimal string in major currency units' },
+                    discount: { type: 'string', nullable: true, description: 'Visible per-line discount amount, not percentage, as a decimal string in major units' },
+                    taxAmount: { type: 'string', nullable: true, description: 'Visible monetary tax for this row as a decimal string in major units; never the tax percentage' },
+                    taxRatePercent: { type: 'string', nullable: true, description: 'Visible tax percentage for this row without the percent sign; never the monetary tax amount' },
+                    lineTotal: { type: 'string', nullable: true, description: 'Amount contributing to the receipt subtotal before separately extracted receipt tax/fees; see system instructions for tax-inclusive Total columns' },
                     categorySuggestion: { type: 'string', nullable: true, description: 'Groceries, Meat, Fruit & Vegetables, Household, Medicine, Eating Out, Miscellaneous' },
                     confidence: { type: 'number' },
                     warnings: { type: 'array', items: { type: 'string' } }
                   }
                 }
               },
-              printedSubtotal: { type: 'string', nullable: true, description: 'Decimal string major units' },
-              printedDiscount: { type: 'string', nullable: true, description: 'Decimal string major units' },
-              printedTax: { type: 'string', nullable: true, description: 'Decimal string major units' },
-              printedFees: { type: 'string', nullable: true, description: 'Decimal string major units' },
-              printedRounding: { type: 'string', nullable: true, description: 'Decimal string major units' },
-              printedGrandTotal: { type: 'string', nullable: true, description: 'Decimal string major units' },
+              printedSubtotal: { type: 'string', nullable: true, description: 'Explicit or column-aligned pre-tax subtotal, including an unlabeled table-summary value, as a decimal string in major units' },
+              printedDiscount: { type: 'string', nullable: true, description: 'Receipt-level discount amount, not percentage, as a decimal string in major units' },
+              printedTax: { type: 'string', nullable: true, description: 'Receipt-level or complete column-summary monetary tax amount, never a tax rate or registration number, as a decimal string in major units' },
+              printedFees: { type: 'string', nullable: true, description: 'Explicit receipt-level service, delivery, levy, tip, or other fee total as a decimal string in major units' },
+              printedRounding: { type: 'string', nullable: true, description: 'Explicit signed rounding adjustment as a decimal string in major units' },
+              printedGrandTotal: { type: 'string', nullable: true, description: 'Final payable/net total as a decimal string in major units; never cash tendered or change due' },
               rawOcrText: { type: 'string' },
               overallConfidence: { type: 'number' },
               ambiguousFields: { type: 'array', items: { type: 'string' } }
@@ -403,6 +419,7 @@ Return only the requested structured JSON result.`.trim();
     }
 
     // Convert decimal strings to minor units deterministically with graceful error degradation
+    const parsedItemTaxes: Array<number | null> = [];
     const parsedItems = rawGeminiResult.items.map(item => {
       const itemWarnings = [...(item.warnings || [])];
 
@@ -417,6 +434,8 @@ Return only the requested structured JSON result.`.trim();
           return null;
         }
       };
+
+      parsedItemTaxes.push(safeParseItemAmount(item.taxAmount));
 
       return {
         // The browser persists receipt items using ReceiptItemSchema, which
@@ -450,10 +469,23 @@ Return only the requested structured JSON result.`.trim();
       }
     };
 
+    const printedSubtotal = safeParseTotalAmount(rawGeminiResult.printedSubtotal);
+    const explicitPrintedTax = safeParseTotalAmount(rawGeminiResult.printedTax);
+    const completeItemTaxTotal = parsedItemTaxes.length > 0 && parsedItemTaxes.every((tax): tax is number => tax != null)
+      ? parsedItemTaxes.reduce((sum, tax) => sum + tax, 0)
+      : null;
+    const derivedPrintedTax = explicitPrintedTax == null && printedSubtotal != null
+      ? completeItemTaxTotal
+      : null;
+
+    if (derivedPrintedTax != null) {
+      docWarnings.push('Tax total calculated from the complete visible item-tax column.');
+    }
+
     const parsedTotals = {
-      printedSubtotal: safeParseTotalAmount(rawGeminiResult.printedSubtotal),
+      printedSubtotal,
       printedDiscount: safeParseTotalAmount(rawGeminiResult.printedDiscount),
-      printedTax: safeParseTotalAmount(rawGeminiResult.printedTax),
+      printedTax: explicitPrintedTax ?? derivedPrintedTax,
       printedFees: safeParseTotalAmount(rawGeminiResult.printedFees),
       printedRounding: safeParseTotalAmount(rawGeminiResult.printedRounding),
       printedGrandTotal: safeParseTotalAmount(rawGeminiResult.printedGrandTotal)

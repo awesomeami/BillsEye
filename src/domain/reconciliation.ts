@@ -137,6 +137,31 @@ export function calculateReceiptTotals(
   const normalizedDiscount = normalizeDiscount(totals.printedDiscount)
   const tax = totals.printedTax ?? 0
   const fees = totals.printedFees ?? 0
+  const explicitRounding = totals.printedRounding ?? 0
+  const tolerance = Math.max(0, discrepancyTolerance)
+
+  // Some receipts print tax-inclusive values in each item row while also
+  // printing a pre-tax subtotal and tax summary. Adding tax to that item sum
+  // would count it twice. Prefer the printed subtotal only when its complete
+  // arithmetic matches the printed grand total and the item-based arithmetic
+  // does not; otherwise retain the independently calculated item subtotal.
+  if (
+    computedLineTotal != null
+    && totals.printedSubtotal != null
+    && totals.printedGrandTotal != null
+  ) {
+    const itemBasedTotal = computedLineTotal + normalizedDiscount + tax + fees + explicitRounding
+    const printedSubtotalBasedTotal = totals.printedSubtotal + normalizedDiscount + tax + fees + explicitRounding
+    const itemMatches = Math.abs(totals.printedGrandTotal - itemBasedTotal) <= tolerance
+    const printedSubtotalMatches = Math.abs(totals.printedGrandTotal - printedSubtotalBasedTotal) <= tolerance
+
+    if (!itemMatches && printedSubtotalMatches) {
+      baseSubtotal = totals.printedSubtotal
+      subtotalSource = 'printed_subtotal'
+      warnings.push('Line totals use a different basis than the printed subtotal; reconciliation used the printed subtotal because it matches the printed grand total.')
+    }
+  }
+
   const totalBeforeRounding = baseSubtotal == null
     ? null
     : baseSubtotal + normalizedDiscount + tax + fees
@@ -195,7 +220,6 @@ export function calculateReceiptTotals(
   }
 
   const discrepancy = printedGrandTotal - computedExpectedTotal
-  const tolerance = Math.max(0, discrepancyTolerance)
   const reconciliationStatus: ReconciliationStatus = Math.abs(discrepancy) <= tolerance
     ? 'matched'
     : 'mismatched'
