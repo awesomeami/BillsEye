@@ -9,11 +9,12 @@ import { ReceiptDocument } from '../../domain/schema';
 import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 import { useReceiptQueue } from '../receipts/queue/ReceiptQueueContext';
+import { RouteLoadingState } from '../../components/ui/LoadingState';
 
 export function InboxScreen() {
   const sessionActions = useClientSessionActionGuard();
   const { showToast } = useToast();
-  const { pendingReceipts, updateReceipt, deleteReceipt } = useReceiptsLibrary();
+  const { pendingReceipts, updateReceipt, deleteReceipt, loading } = useReceiptsLibrary();
   const { finalizeReceipt } = useReceiptQueue();
   
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -55,15 +56,16 @@ export function InboxScreen() {
     }
   };
 
+  if (loading) return <RouteLoadingState />;
+
   return (
     <div className="space-y-6">
-      <header className="pb-4 border-b border-gray-200">
-        <h1 className="text-2xl font-bold text-gray-900">AI Inbox</h1>
-        <p className="text-sm text-gray-500 mt-1">Review and confirm receipts extracted by Gemini.</p>
+      <header className="page-header">
+        <div><h1 className="page-title">AI Inbox</h1><p className="page-subtitle">Review and confirm receipts extracted by Gemini.</p></div>
       </header>
 
       {pendingReceipts.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 shadow-sm">
+        <div className="app-card py-16 text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-50 mb-4">
             <CheckCircle size={32} className="text-green-500" />
           </div>
@@ -75,7 +77,7 @@ export function InboxScreen() {
           {pendingReceipts.map((receipt) => {
             const categories = Array.from(new Set(receipt.items.map(i => i.category).filter(Boolean)));
             return (
-            <div key={receipt.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
+            <article key={receipt.id} className="app-card flex flex-col justify-between p-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">{receipt.merchantNormalized || receipt.merchantRaw || 'Unknown Merchant'}</h3>
@@ -91,33 +93,33 @@ export function InboxScreen() {
                     )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <ReceiptTotalValue receipt={receipt} className="text-xl font-bold text-gray-900" />
+                <div className="text-left sm:text-right">
+                  <ReceiptTotalValue receipt={receipt} className="tabular-nums text-xl font-bold text-gray-950" />
                   <div className="text-sm text-gray-500 mt-1">{receipt.items.length} items found</div>
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-gray-100 flex gap-3 flex-wrap sm:flex-nowrap">
+              <div className="mt-5 grid grid-cols-2 gap-2 border-t border-gray-100 pt-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.75rem]">
                 <button 
                   onClick={() => handleConfirm(receipt)}
-                  className="flex-1 min-w-[140px] bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors">
+                  className="btn-primary min-w-0 px-3">
                   <CheckCircle size={18} />
                   Confirm & Save
                 </button>
                 <Link 
                   to={`/receipts/${receipt.id}/review`}
-                  className="flex-1 min-w-[140px] bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors">
+                  className="btn-outline min-w-0 px-3">
                   <Search size={18} />
                   Review Details
                 </Link>
                 <button 
                   onClick={() => setDeleteId(receipt.id)}
                   aria-label="Delete receipt"
-                  className="w-full sm:w-auto bg-white border border-gray-300 hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-gray-400 p-2.5 rounded-xl flex items-center justify-center transition-colors">
+                  className="touch-target col-span-2 flex items-center justify-center rounded-xl border border-gray-300 bg-white text-gray-500 hover:border-red-200 hover:bg-red-50 hover:text-red-700 sm:col-span-1">
                   <Trash2 size={20} />
                 </button>
               </div>
-            </div>
+            </article>
           )})}
         </div>
       )}

@@ -3,6 +3,7 @@ import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, Check, Plus, Trash2, Upload } from 'lucide-react';
 import { useToast } from '../../components/ui/Toast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { RouteLoadingState } from '../../components/ui/LoadingState';
 import { APP_CONFIG } from '../../utilities/config';
 import { useAuth } from '../auth/AuthContext';
 import { MAX_RECEIPT_ITEMS, ReceiptDocument } from '../../domain/schema';
@@ -59,7 +60,7 @@ function MoneyInput({ id, label, value, error, className = '', onChange, onBlur 
       <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <input id={id} type="text" inputMode="decimal" value={value} onChange={(event) => onChange(event.target.value)}
         onBlur={onBlur} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
-        className={'w-full border rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ' + (error ? 'border-red-500 ' : 'border-gray-300 ') + className} />
+        className={'form-control tabular-nums ' + className} />
       {error && <p id={errorId} className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );
@@ -69,7 +70,7 @@ function TextInput({ id, label, value, onChange, type = 'text' }: {
   id: string; label: string; value: string; type?: 'text' | 'date' | 'time';
   onChange: (value: string) => void;
 }) {
-  return <div><label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label><input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} className="w-full border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm" /></div>;
+  return <div><label htmlFor={id} className="mb-1 block text-sm font-medium text-gray-700">{label}</label><input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} className="form-control" /></div>;
 }
 
 export function ReviewReceiptScreen() {
@@ -387,21 +388,21 @@ export function ReviewReceiptScreen() {
     setConflict(null);
   };
 
-  if (loading) return <div className="p-8 text-center text-gray-500">Loading...</div>;
-  if (loadError || !receipt) return <div className="p-8 text-center text-red-600">{loadError}</div>;
+  if (loading) return <RouteLoadingState />;
+  if (loadError || !receipt) return <div className="app-card p-8 text-center text-red-700">{loadError}</div>;
 
   const receiptValue = (field: ReceiptMoneyField) => moneyText[receiptMoneyKey(field)] ?? minorToText(formData[field] as number | null | undefined);
   const itemValue = (item: ReceiptItem, field: 'unitPrice' | 'lineTotal') => moneyText[itemMoneyKey(item.id, field)] ?? minorToText(item[field]);
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 pb-40 md:pb-28">
-      <aside className="flex-1 md:max-w-[40%] space-y-4">
-        <header className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} aria-label="Go back" className="touch-target p-2 hover:bg-gray-100 rounded-full"><ArrowLeft size={20} /></button>
-          <h1 className="text-xl font-bold text-gray-900">Review Receipt</h1>
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-36 md:pb-24 xl:flex-row">
+      <aside className="min-w-0 space-y-4 xl:w-[38%] xl:max-w-md xl:shrink-0">
+        <header className="flex min-h-12 items-center gap-3">
+          <button onClick={() => navigate(-1)} aria-label="Go back" className="touch-target flex items-center justify-center rounded-full text-gray-600 hover:bg-gray-100"><ArrowLeft size={20} /></button>
+          <h1 className="text-xl font-bold tracking-tight text-gray-950">Review Receipt</h1>
           {isDirty && <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded">Unsaved changes</span>}
         </header>
-        {imageUrl ? <div className="bg-gray-100 border border-gray-200 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center md:sticky md:top-24" style={{ height: 'calc(100vh - 120px)' }}><img src={imageUrl} alt="Receipt Preview" className="max-w-full max-h-full object-contain" /></div> : (
+        {imageUrl ? <div className="app-surface flex aspect-[4/3] max-h-[42dvh] items-center justify-center overflow-hidden bg-gray-100 shadow-inner xl:sticky xl:top-8 xl:h-[calc(100dvh-4rem)] xl:max-h-none xl:aspect-auto"><img src={imageUrl} alt="Receipt Preview" decoding="async" className="max-h-full max-w-full object-contain" /></div> : (
           <div className="bg-orange-50 border border-orange-200 p-6 rounded-2xl text-center">
             <AlertTriangle size={32} className="text-orange-400 mx-auto mb-3" /><h2 className="font-bold text-orange-900">Image missing</h2>
             <p className="text-orange-700 mt-2 text-sm">Original image not stored. Reattach temporarily if needed.</p>
@@ -412,19 +413,19 @@ export function ReviewReceiptScreen() {
         )}
       </aside>
 
-      <main className="flex-1 bg-white border border-gray-200 rounded-2xl p-4 sm:p-6 shadow-sm min-w-0">
+      <main className="app-card min-w-0 flex-1 p-4 sm:p-6">
         {duplicates.length > 0 && <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm text-orange-800"><p className="font-bold">Possible Duplicate</p><p>Found {duplicates.length} other receipt(s) with the same merchant, date, and total.</p></div>}
         <div className="space-y-8 pb-36">
           <section>
-            <h2 className="text-lg font-bold text-gray-900 border-b pb-2 mb-4">Header Info</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <h2 className="mb-4 border-b border-gray-200 pb-2 text-lg font-bold text-gray-950">Header Info</h2>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <TextInput id="merchant-normalized" label="Merchant (Normalized)" value={formData.merchantNormalized ?? ''} onChange={(value) => updateField('merchantNormalized', value)} />
               <TextInput id="merchant-raw" label="Merchant (Raw)" value={formData.merchantRaw ?? ''} onChange={(value) => updateField('merchantRaw', value)} />
               <TextInput id="branch-address" label="Branch/Address" value={formData.branchAddress ?? ''} onChange={(value) => updateField('branchAddress', value)} />
               <TextInput id="receipt-number" label="Receipt Number" value={formData.receiptNumber ?? ''} onChange={(value) => updateField('receiptNumber', value)} />
               <TextInput id="transaction-date" label="Date" type="date" value={formData.transactionDate ?? ''} onChange={(value) => updateField('transactionDate', value || null)} />
               <TextInput id="transaction-time" label="Time" type="time" value={formData.transactionTime ?? ''} onChange={(value) => updateField('transactionTime', value || null)} />
-              <div className="sm:col-span-2 flex items-center gap-2"><input id="date-ambiguous" type="checkbox" checked={formData.dateAmbiguous ?? false} onChange={(event) => updateField('dateAmbiguous', event.target.checked)} /><label htmlFor="date-ambiguous" className="text-sm text-gray-700">Date was ambiguous</label></div>
+              <div className="flex min-h-11 items-center gap-3 lg:col-span-2"><input id="date-ambiguous" type="checkbox" className="h-5 w-5 rounded border-gray-300 text-blue-600" checked={formData.dateAmbiguous ?? false} onChange={(event) => updateField('dateAmbiguous', event.target.checked)} /><label htmlFor="date-ambiguous" className="text-sm text-gray-700">Date was ambiguous</label></div>
               <TextInput id="currency" label="Currency" value={formData.currency ?? ''} onChange={(value) => updateField('currency', value)} />
               <TextInput id="payment-method" label="Payment Method" value={formData.paymentMethod ?? ''} onChange={(value) => updateField('paymentMethod', value)} />
             </div>
@@ -437,15 +438,15 @@ export function ReviewReceiptScreen() {
                 const prefix = 'item-' + item.id;
                 const unitKey = itemMoneyKey(item.id, 'unitPrice');
                 const totalKey = itemMoneyKey(item.id, 'lineTotal');
-                return <div key={item.id} className="render-lazy bg-gray-50 border border-gray-200 rounded-xl p-4 relative">
-                  <button onClick={() => removeItem(index)} aria-label={'Remove item ' + (index + 1)} className="touch-target absolute top-1 right-1 p-1 text-gray-500 hover:text-red-700"><Trash2 size={16} /></button>
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pr-8">
-                    <div className="sm:col-span-5"><TextInput id={prefix + '-name'} label="Name" value={item.name ?? ''} onChange={(value) => updateItem(index, 'name', value)} /></div>
-                    <div className="sm:col-span-2"><TextInput id={prefix + '-quantity'} label="Qty" value={item.quantity == null ? '' : String(item.quantity)} onChange={(value) => updateItem(index, 'quantity', value === '' ? null : Number(value))} /></div>
-                    <div className="sm:col-span-2"><MoneyInput id={prefix + '-price'} label="Price" value={itemValue(item, 'unitPrice')} error={moneyErrors[unitKey]} onChange={(value) => editMoney(unitKey, value)} onBlur={() => commitMoney(unitKey, (value) => updateItem(index, 'unitPrice', value))} /></div>
-                    <div className="sm:col-span-3"><MoneyInput id={prefix + '-line-total'} label="Line Total" value={itemValue(item, 'lineTotal')} error={moneyErrors[totalKey]} onChange={(value) => editMoney(totalKey, value)} onBlur={() => commitMoney(totalKey, (value) => updateItem(index, 'lineTotal', value))} /></div>
-                    <div className="sm:col-span-6"><TextInput id={prefix + '-raw'} label="Raw Line Text (OCR)" value={item.rawLineText ?? ''} onChange={(value) => updateItem(index, 'rawLineText', value)} /></div>
-                    <div className="sm:col-span-6"><label htmlFor={prefix + '-category'} className="block text-sm font-medium text-gray-700 mb-1">Category</label><select id={prefix + '-category'} value={resolveReceiptItemCategoryId(item, categories) ?? ''} onChange={(event) => updateItem(index, 'categoryId', event.target.value)} className="w-full border border-gray-300 rounded text-sm px-2 py-1.5"><option value="">Uncategorized</option>{categories.filter((category) => category.isActive || category.id === item.categoryId).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
+                return <div key={item.id} className="render-lazy relative rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                  <button onClick={() => removeItem(index)} aria-label={'Remove item ' + (index + 1)} className="touch-target absolute top-1 right-1 flex items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-700"><Trash2 size={16} /></button>
+                  <div className="grid grid-cols-1 gap-3 pr-8 lg:grid-cols-12">
+                    <div className="lg:col-span-5"><TextInput id={prefix + '-name'} label="Name" value={item.name ?? ''} onChange={(value) => updateItem(index, 'name', value)} /></div>
+                    <div className="lg:col-span-2"><TextInput id={prefix + '-quantity'} label="Qty" value={item.quantity == null ? '' : String(item.quantity)} onChange={(value) => updateItem(index, 'quantity', value === '' ? null : Number(value))} /></div>
+                    <div className="lg:col-span-2"><MoneyInput id={prefix + '-price'} label="Price" value={itemValue(item, 'unitPrice')} error={moneyErrors[unitKey]} onChange={(value) => editMoney(unitKey, value)} onBlur={() => commitMoney(unitKey, (value) => updateItem(index, 'unitPrice', value))} /></div>
+                    <div className="lg:col-span-3"><MoneyInput id={prefix + '-line-total'} label="Line Total" value={itemValue(item, 'lineTotal')} error={moneyErrors[totalKey]} onChange={(value) => editMoney(totalKey, value)} onBlur={() => commitMoney(totalKey, (value) => updateItem(index, 'lineTotal', value))} /></div>
+                    <div className="lg:col-span-6"><TextInput id={prefix + '-raw'} label="Raw Line Text (OCR)" value={item.rawLineText ?? ''} onChange={(value) => updateItem(index, 'rawLineText', value)} /></div>
+                    <div className="lg:col-span-6"><label htmlFor={prefix + '-category'} className="mb-1 block text-sm font-medium text-gray-700">Category</label><select id={prefix + '-category'} value={resolveReceiptItemCategoryId(item, categories) ?? ''} onChange={(event) => updateItem(index, 'categoryId', event.target.value)} className="form-control"><option value="">Uncategorized</option>{categories.filter((category) => category.isActive || category.id === item.categoryId).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
                   </div>
                 </div>;
               })}
@@ -456,7 +457,7 @@ export function ReviewReceiptScreen() {
           <section>
             <h2 className="text-lg font-bold text-gray-900 border-b pb-2 mb-4">Totals & Reconciliation</h2>
             {reconciliation.reconciliationStatus === 'mismatched' && <div className="mb-4 bg-red-50 border border-red-200 text-red-800 p-3 rounded-lg text-sm"><p className="font-bold">Totals Mismatch</p><p className="mt-2">Calculated line subtotal: {displayMinor(reconciliation.computedLineTotal)}<br />Calculated grand total: {displayMinor(reconciliation.computedExpectedTotal)}<br />Printed total − calculated total: {displayMinor(reconciliation.discrepancy)}</p></div>}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
               {([['printedSubtotal', 'Printed Subtotal'], ['printedDiscount', 'Printed Discount'], ['printedTax', 'Printed Tax'], ['printedFees', 'Printed Fees'], ['printedRounding', 'Printed Rounding'], ['printedGrandTotal', 'Printed Grand Total']] as const).map(([field, label]) => {
                 const key = receiptMoneyKey(field);
                 return <MoneyInput key={field} id={field} label={label} value={receiptValue(field)} error={moneyErrors[key]} className={field === 'printedGrandTotal' ? 'font-bold bg-blue-50' : ''} onChange={(value) => editMoney(key, value)} onBlur={() => commitMoney(key, (value) => updateField(field, value))} />;
@@ -466,14 +467,14 @@ export function ReviewReceiptScreen() {
 
           <section>
             <h2 className="text-lg font-bold text-gray-900 border-b pb-2 mb-4">Notes & Raw Data</h2>
-            <div className="space-y-4"><div><label htmlFor="user-note" className="block text-sm font-medium text-gray-700 mb-1">User Notes</label><textarea id="user-note" value={formData.userNote ?? ''} onChange={(event) => updateField('userNote', event.target.value)} rows={3} className="w-full border border-gray-300 rounded-md shadow-sm" /></div><div><label htmlFor="raw-ocr-text" className="block text-sm font-medium text-gray-700 mb-1">Raw OCR Text</label><textarea id="raw-ocr-text" value={formData.rawOcrText ?? ''} readOnly rows={6} className="w-full border border-gray-300 rounded-md bg-gray-50 text-xs font-mono text-gray-600" /></div></div>
+            <div className="space-y-4"><div><label htmlFor="user-note" className="mb-1 block text-sm font-medium text-gray-700">User Notes</label><textarea id="user-note" value={formData.userNote ?? ''} onChange={(event) => updateField('userNote', event.target.value)} rows={3} className="form-control resize-y" /></div><div><label htmlFor="raw-ocr-text" className="mb-1 block text-sm font-medium text-gray-700">Raw OCR Text</label><textarea id="raw-ocr-text" value={formData.rawOcrText ?? ''} readOnly rows={6} className="form-control resize-y font-mono text-xs" /></div></div>
           </section>
         </div>
 
-        <div aria-label="Receipt actions" className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-8px_20px_rgba(0,0,0,0.06)] flex flex-col sm:flex-row gap-3">
-          <button onClick={() => void save('confirmed')} disabled={isSaving} className="touch-target flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl disabled:opacity-50"><Check size={20} /> {isSaving ? 'Saving...' : 'Confirm & Save'}</button>
-          <button onClick={() => void save('pendingReview')} disabled={isSaving} className="touch-target px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-xl disabled:opacity-50">Save Draft</button>
-          <button onClick={() => setDeleteDialogOpen(true)} disabled={isSaving || isDeleting} aria-label="Delete receipt" className="touch-target px-6 py-3 bg-white border border-gray-300 text-red-700 font-medium rounded-xl disabled:opacity-50"><Trash2 size={20} /></button>
+        <div aria-label="Receipt actions" className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 flex gap-2 border-t border-gray-200 bg-white/95 px-3 py-3 shadow-[0_-8px_20px_rgba(0,0,0,0.06)] backdrop-blur md:sticky md:bottom-0 md:z-20 md:-mx-6 md:px-6">
+          <button onClick={() => void save('confirmed')} disabled={isSaving} className="btn-primary min-w-0 flex-1 px-3"><Check size={18} /> <span>{isSaving ? 'Saving…' : 'Confirm & Save'}</span></button>
+          <button onClick={() => void save('pendingReview')} disabled={isSaving} aria-label="Save Draft" className="btn-outline shrink-0 px-3">Save Draft</button>
+          <button onClick={() => setDeleteDialogOpen(true)} disabled={isSaving || isDeleting} aria-label="Delete receipt" className="btn-outline shrink-0 px-3 text-red-700 hover:border-red-200 hover:bg-red-50"><Trash2 size={18} /></button>
         </div>
       </main>
 

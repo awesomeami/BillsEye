@@ -115,41 +115,51 @@ export const getCroppedImg = async (
   image.src = imageSrc;
   await loadPromise;
 
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
+  const rotationRadians = (rotation * Math.PI) / 180;
+  const rotatedWidth = Math.ceil(Math.abs(Math.cos(rotationRadians) * image.width) + Math.abs(Math.sin(rotationRadians) * image.height));
+  const rotatedHeight = Math.ceil(Math.abs(Math.sin(rotationRadians) * image.width) + Math.abs(Math.cos(rotationRadians) * image.height));
+  const rotatedCanvas = document.createElement('canvas');
+  rotatedCanvas.width = rotatedWidth;
+  rotatedCanvas.height = rotatedHeight;
+  const rotatedContext = rotatedCanvas.getContext('2d');
+  if (!rotatedContext) {
     throw new Error('No 2d context');
   }
 
-  const maxSize = Math.max(image.width, image.height);
-  const safeArea = 2 * ((maxSize / 2) * Math.sqrt(2));
+  rotatedContext.translate(rotatedWidth / 2, rotatedHeight / 2);
+  rotatedContext.rotate(rotationRadians);
+  rotatedContext.drawImage(image, -image.width / 2, -image.height / 2);
 
-  canvas.width = safeArea;
-  canvas.height = safeArea;
-
-  ctx.translate(safeArea / 2, safeArea / 2);
-  ctx.rotate((rotation * Math.PI) / 180);
-  ctx.translate(-safeArea / 2, -safeArea / 2);
-
-  ctx.drawImage(
-    image,
-    safeArea / 2 - image.width / 2,
-    safeArea / 2 - image.height / 2
-  );
-
-  const data = ctx.getImageData(0, 0, safeArea, safeArea);
-  
+  // Draw only the requested crop into the final canvas. This avoids allocating
+  // a full-image pixel buffer for high-resolution phone photos.
+  const canvas = document.createElement('canvas');
   canvas.width = pixelCrop.width;
   canvas.height = pixelCrop.height;
-  
-  ctx.putImageData(
-    data,
-    Math.round(0 - safeArea / 2 + image.width / 2 - pixelCrop.x),
-    Math.round(0 - safeArea / 2 + image.height / 2 - pixelCrop.y)
+  const context = canvas.getContext('2d');
+  if (!context) {
+    rotatedCanvas.width = 0;
+    rotatedCanvas.height = 0;
+    throw new Error('No crop context');
+  }
+  context.drawImage(
+    rotatedCanvas,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height,
   );
+
+  rotatedCanvas.width = 0;
+  rotatedCanvas.height = 0;
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((file) => {
+      canvas.width = 0;
+      canvas.height = 0;
       if (file) resolve(file);
       else reject(new Error('Canvas is empty'));
     }, 'image/jpeg');

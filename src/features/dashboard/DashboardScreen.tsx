@@ -1,22 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, ArrowDownRight, Wallet, ReceiptText, Inbox, ChevronRight, AlertTriangle, TrendingUp, Tag } from 'lucide-react';
-import { APP_CONFIG, formatCurrency } from '../../utilities/config';
+import { formatCurrency } from '../../utilities/config';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
 import { calculateDashboardSummary, DashboardPeriod, generateSummaryInsights } from '../../domain/analytics';
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
-import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
-
-const formatTrendDate = (date: string) => new Intl.DateTimeFormat(APP_CONFIG.locale, {
-  timeZone: APP_CONFIG.timeZone,
-  month: 'short',
-  day: 'numeric',
-}).format(new Date(`${date}T00:00:00+05:00`));
+import { RouteLoadingState } from '../../components/ui/LoadingState';
+const DashboardCharts = lazy(() => import('./DashboardCharts').then(module => ({ default: module.DashboardCharts })));
 
 export function DashboardScreen() {
-  const { receipts, pendingReceipts, categories } = useReceiptsLibrary();
+  const { receipts, pendingReceipts, categories, loading } = useReceiptsLibrary();
   const [selectedPeriod, setSelectedPeriod] = useState<DashboardPeriod | null>(null);
   const monthSummary = useMemo(() => calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories), [receipts, pendingReceipts, categories]);
   const period = selectedPeriod ?? (monthSummary.receiptCount === 0 && receipts.some(receipt => receipt.transactionDate) ? 'all_time' : 'this_month');
@@ -42,16 +35,18 @@ export function DashboardScreen() {
 
   const isUp = changeAbs > 0;
 
+  if (loading) return <RouteLoadingState />;
+
   return (
     <div className="space-y-5">
-      <header className="flex flex-wrap gap-4 justify-between items-end pb-4 border-b border-gray-200">
+      <header className="page-header flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Overview</h1>
-          <p className="text-sm text-gray-500 mt-1">{isAllTime ? 'All-time snapshot' : "This month's snapshot"}</p>
+          <h1 className="page-title">Overview</h1>
+          <p className="page-subtitle">{isAllTime ? 'All-time snapshot' : "This month's snapshot"}</p>
         </div>
         <div>
           <label htmlFor="dashboard-date-range" className="sr-only">Dashboard date range</label>
-          <select id="dashboard-date-range" value={period} onChange={event => setSelectedPeriod(event.target.value as DashboardPeriod)} className="touch-target bg-white border border-gray-200 text-gray-700 text-sm rounded-lg p-2.5 shadow-sm">
+          <select id="dashboard-date-range" value={period} onChange={event => setSelectedPeriod(event.target.value as DashboardPeriod)} className="form-control w-auto min-w-36">
             <option value="this_month">This Month</option>
             <option value="all_time">All Time</option>
           </select>
@@ -84,14 +79,27 @@ export function DashboardScreen() {
         </div>
       )}
 
+      {receipts.length === 0 && pendingReceipts.length === 0 ? (
+        <section className="app-card overflow-hidden">
+          <div className="grid min-h-80 place-items-center px-6 py-12 text-center sm:px-10">
+            <div className="max-w-md">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><ReceiptText size={30} /></div>
+              <h2 className="mt-5 text-xl font-bold tracking-tight text-gray-950">Your spending picture starts here</h2>
+              <p className="mt-2 text-sm leading-6 text-gray-600">Add your first receipt to build a private overview of totals, categories, merchants and daily spending.</p>
+              <Link to="/add" className="btn-primary mt-6"><ReceiptText size={18} /> Add your first receipt</Link>
+            </div>
+          </div>
+        </section>
+      ) : <>
+
       {/* Hero Metric */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="app-card bg-gradient-to-br from-white to-blue-50/60 p-5 sm:p-6">
           <div className="flex items-center gap-2 text-gray-500 mb-2">
             <Wallet size={18} />
             <span className="font-medium">Total Spent ({isAllTime ? 'All Time' : 'This Month'})</span>
           </div>
-          <div className="text-4xl font-bold tracking-tight text-gray-900 mb-3">
+          <div className="tabular-nums mb-3 text-4xl font-bold tracking-tight text-gray-950">
             {currentTotalAvailable || summary.receiptCount === 0 ? formatCurrency(currentTotal / 100) : 'Unavailable'}
           </div>
           <div className="flex items-center gap-2 text-sm">
@@ -118,12 +126,12 @@ export function DashboardScreen() {
         </div>
 
         {/* Quick actions or secondary metric */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+        <div className="app-card flex flex-col justify-between p-5 sm:p-6">
           <div>
             <h3 className="font-medium text-gray-900 mb-1">Recent Activity</h3>
             <p className="text-sm text-gray-500">{summary.receiptCount} confirmed receipt{summary.receiptCount !== 1 ? 's' : ''} {isAllTime ? 'across all dates' : 'dated this month'}.</p>
           </div>
-          <Link to="/add" className="touch-target mt-4 flex items-center justify-between bg-blue-600 p-4 rounded-xl text-white hover:bg-blue-700 transition-colors">
+          <Link to="/add" className="btn-primary mt-4 justify-between p-4">
             <div className="flex items-center gap-3">
               <ReceiptText size={20} />
               <span className="font-medium">Add a new receipt</span>
@@ -140,7 +148,7 @@ export function DashboardScreen() {
             <Tag size={20} className="text-blue-600" />
             <h3 className="text-lg font-semibold text-blue-900">Monthly Insights</h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             
             {insights.largestIncreases.length > 0 && (
               <div>
@@ -196,82 +204,12 @@ export function DashboardScreen() {
         </div>
       )}
 
-      {/* Categories & Trends */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
-        {/* ... category composition and daily trend ... */}
-        <div className={`bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col ${categoryComposition.length > 0 ? 'h-80' : ''}`}>
-          <h3 className="font-medium text-gray-900 mb-4">Category Composition</h3>
-          {categoryComposition.length > 0 ? (
-            <div className="flex-1 min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={categoryComposition}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="total"
-                    nameKey="name"
-                  >
-                    {categoryComposition.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    formatter={(value: number) => formatCurrency(value / 100)}
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-             <div className="rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
-               Add a receipt with categories to see your spending mix.
-             </div>
-          )}
-        </div>
-        
-        <div className={`bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col ${dailyTrend.length > 1 ? 'h-80' : ''}`}>
-          <h3 className="font-medium text-gray-900 mb-4">Daily Spending Trend</h3>
-          {dailyTrend.length > 1 ? (
-            <div className="flex-1 min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dailyTrend}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                  <XAxis 
-                    dataKey="date" 
-                    tickFormatter={formatTrendDate}
-                    stroke="#9ca3af"
-                    fontSize={12}
-                    tickMargin={10}
-                  />
-                  <YAxis 
-                    tickFormatter={(val: number) => formatCurrency(val / 100)}
-                    stroke="#9ca3af"
-                    fontSize={12}
-                    width={50}
-                  />
-                  <Tooltip 
-                    formatter={(value: number) => formatCurrency(value / 100)}
-                    labelFormatter={(label) => `Date: ${formatTrendDate(String(label))}`}
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Line type="monotone" dataKey="total" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
-               {dailyTrend.length === 1 ? `You've recorded ${formatCurrency(dailyTrend[0].total / 100)} on ${formatTrendDate(dailyTrend[0].date)}.` : 'Your daily spending trend will appear after your first dated receipt.'}
-             </div>
-          )}
-        </div>
-      </div>
+      <Suspense fallback={<div className="grid grid-cols-1 gap-5 lg:grid-cols-2"><div className="skeleton h-80 rounded-2xl" /><div className="skeleton h-80 rounded-2xl" /></div>}>
+        <DashboardCharts categoryComposition={categoryComposition} dailyTrend={dailyTrend} />
+      </Suspense>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-2">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+        <div className="app-card flex flex-col p-5 sm:p-6">
           <h3 className="font-medium text-gray-900 mb-4">Top Merchants</h3>
           <div className="space-y-4">
             {summary.topMerchants.length > 0 ? summary.topMerchants.map(m => (
@@ -285,7 +223,7 @@ export function DashboardScreen() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+        <div className="app-card flex flex-col p-5 sm:p-6">
           <h3 className="font-medium text-gray-900 mb-4">Top Items</h3>
           <div className="space-y-4">
             {summary.topItems.length > 0 ? summary.topItems.map(item => (
@@ -299,7 +237,7 @@ export function DashboardScreen() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+        <div className="app-card flex flex-col p-5 sm:p-6">
           <h3 className="font-medium text-gray-900 mb-4">Recent Receipts</h3>
           <div className="space-y-4">
             {summary.recentReceipts.length > 0 ? summary.recentReceipts.map(r => (
@@ -316,6 +254,7 @@ export function DashboardScreen() {
           </div>
         </div>
       </div>
+      </>}
     </div>
   );
 }

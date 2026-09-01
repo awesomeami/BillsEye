@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { formatDate } from '../../utilities/config';
 const safeParseMajorToMinor = (val: string) => {
     try {
@@ -22,6 +22,7 @@ import { useToast } from '../../components/ui/Toast';
 import { getReceiptItemCategoryLabel } from '../../domain/categories';
 import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
+import { RouteLoadingState } from '../../components/ui/LoadingState';
 
 const RECEIPTS_PAGE_SIZE = 50;
 
@@ -117,11 +118,7 @@ export function ReceiptsListScreen() {
   };
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <RouteLoadingState />;
   }
 
   if (error) {
@@ -141,12 +138,12 @@ export function ReceiptsListScreen() {
 
   return (
     <div className="space-y-6">
-      <header className="pb-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <header className="page-header flex-col items-start sm:flex-row sm:items-end">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Receipts</h1>
-          <div className="flex items-center gap-2 mt-1">
-            <p className="text-sm text-gray-500">Manage and search your confirmed expenses.</p>
-            <span className={cn("text-xs flex items-center gap-1", 
+          <h1 className="page-title">Receipts</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="page-subtitle mt-0">Manage and search your confirmed expenses.</p>
+            <span className={cn("flex items-center gap-1 text-xs font-medium",
               syncState === 'synced' ? 'text-green-600' :
               syncState === 'offline' ? 'text-yellow-600' :
               syncState === 'pending-writes' ? 'text-amber-600' :
@@ -158,7 +155,7 @@ export function ReceiptsListScreen() {
               {syncState === 'error' && <AlertTriangle size={12} />}
               {syncState === 'syncing' && <Clock size={12} className="animate-spin" />}
               {syncState === 'synced' && lastSyncedAt
-                ? `Synced ${lastSyncedAt.toLocaleTimeString()}`
+                ? `Synced ${lastSyncedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
                 : syncState === 'pending-writes'
                   ? 'Changes pending sync'
                   : syncState}
@@ -177,7 +174,7 @@ export function ReceiptsListScreen() {
             <input
               id="receipt-search"
               type="text"
-              className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              className="form-control block pl-10"
               placeholder="Search merchant, items, notes..."
               value={filters.searchQuery}
               aria-describedby="receipt-search-status"
@@ -202,36 +199,36 @@ export function ReceiptsListScreen() {
         </div>
 
         {showFilters && (
-          <div id="receipt-filters" aria-label="Receipt filters" className="p-4 bg-gray-50 border border-gray-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div id="receipt-filters" aria-label="Receipt filters" className="grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:grid-cols-2 xl:grid-cols-4">
             <div>
               <label htmlFor="filter-date-start" className="block text-xs font-medium text-gray-700 mb-1">Date Range Start</label>
-              <input id="filter-date-start" type="date" className="w-full border-gray-300 rounded-md text-sm p-1.5"
+              <input id="filter-date-start" type="date" className="form-control"
                 value={filters.dateStart || ''} onChange={e => setFilters(prev => ({...prev, dateStart: e.target.value || null}))} />
             </div>
             <div>
               <label htmlFor="filter-date-end" className="block text-xs font-medium text-gray-700 mb-1">Date Range End</label>
-              <input id="filter-date-end" type="date" className="w-full border-gray-300 rounded-md text-sm p-1.5"
+              <input id="filter-date-end" type="date" className="form-control"
                 value={filters.dateEnd || ''} onChange={e => setFilters(prev => ({...prev, dateEnd: e.target.value || null}))} />
             </div>
             <div>
               <label htmlFor="filter-amount-min" className="block text-xs font-medium text-gray-700 mb-1">Amount Min</label>
-              <input id="filter-amount-min" type="text" className="w-full border-gray-300 rounded-md text-sm p-1.5" placeholder="0.00"
+              <input id="filter-amount-min" type="text" inputMode="decimal" className="form-control tabular-nums" placeholder="0.00"
                 value={filters.amountMin !== null ? (filters.amountMin / 100).toString() : ''} onChange={e => setFilters(prev => ({...prev, amountMin: safeParseMajorToMinor(e.target.value)}))} />
             </div>
             <div>
               <label htmlFor="filter-amount-max" className="block text-xs font-medium text-gray-700 mb-1">Amount Max</label>
-              <input id="filter-amount-max" type="text" className="w-full border-gray-300 rounded-md text-sm p-1.5" placeholder="0.00"
+              <input id="filter-amount-max" type="text" inputMode="decimal" className="form-control tabular-nums" placeholder="0.00"
                 value={filters.amountMax !== null ? (filters.amountMax / 100).toString() : ''} onChange={e => setFilters(prev => ({...prev, amountMax: safeParseMajorToMinor(e.target.value)}))} />
             </div>
-            <div className="col-span-1 sm:col-span-2 lg:col-span-4 flex gap-4">
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={filters.hasWarning === true} 
+            <div className="col-span-1 flex flex-wrap items-center gap-3 sm:col-span-2 xl:col-span-4">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" className="h-5 w-5 rounded border-gray-300 text-blue-600" checked={filters.hasWarning === true}
                   onChange={e => setFilters(prev => ({...prev, hasWarning: e.target.checked ? true : null}))} />
                 Has Warnings/Discrepancy
               </label>
               <button 
                 onClick={() => setFilters({searchQuery: '', dateStart: null, dateEnd: null, merchant: null, category: null, item: null, paymentMethod: null, amountMin: null, amountMax: null, hasWarning: null})}
-                className="touch-target text-sm text-blue-700 hover:underline"
+                className="btn-ghost px-3 text-blue-700"
               >
                 Clear Filters
               </button>
@@ -240,9 +237,9 @@ export function ReceiptsListScreen() {
         )}
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="app-card overflow-hidden">
         {/* Desktop Table Header */}
-        <div role="row" className="hidden sm:grid grid-cols-12 gap-4 p-4 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+        <div role="row" className="hidden grid-cols-12 gap-4 border-b border-gray-200 bg-gray-50 p-4 text-xs font-semibold uppercase tracking-wider text-gray-500 lg:grid">
           <div role="columnheader" aria-sort={sort.field === 'date' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-3">
             <button type="button" onClick={() => handleSortChange('date')} className="touch-target flex items-center gap-1 hover:text-gray-700" aria-label={`Sort by date, currently ${sort.field === 'date' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
               Date {sort.field === 'date' && (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>)}
@@ -262,9 +259,11 @@ export function ReceiptsListScreen() {
         </div>
 
         {filteredReceipts.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            <ReceiptText size={48} className="mx-auto text-gray-300 mb-3" />
-            <p>No receipts found.</p>
+          <div className="p-10 text-center text-gray-500">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><ReceiptText size={28} /></div>
+            <p className="mt-4 font-semibold text-gray-900">No receipts found</p>
+            <p className="mt-1 text-sm">Try adjusting your filters or add a receipt.</p>
+            <Link to="/add" className="btn-primary mt-5">Add Receipt</Link>
           </div>
         ) : (
           <ul className="divide-y divide-gray-200">
@@ -281,7 +280,7 @@ export function ReceiptsListScreen() {
     <button onClick={() => setSelectedReceipt(receipt)} aria-label={`View details for ${receipt.merchantNormalized || receipt.merchantRaw || 'Unknown Merchant'}`} className="w-full text-left p-4 sm:px-4 focus:outline-none focus:bg-gray-50 focus:ring-2 focus:ring-inset focus:ring-blue-500">
       
                   {/* Mobile View */}
-                  <div className="sm:hidden flex flex-col gap-2">
+                  <div className="flex flex-col gap-2 lg:hidden">
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="text-sm font-bold text-gray-900 flex items-center gap-1">
@@ -297,13 +296,13 @@ export function ReceiptsListScreen() {
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {categories.slice(0, 3).map(cat => (
-                        <span key={cat} className="text-[10px] font-medium text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{cat}</span>
+                        <span key={cat} className="rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">{cat}</span>
                       ))}
                     </div>
                   </div>
 
                   {/* Desktop View */}
-                  <div className="hidden sm:grid grid-cols-12 gap-4 items-center">
+                  <div className="hidden grid-cols-12 items-center gap-4 lg:grid">
                     <div className="col-span-3 flex flex-col">
                       <span className="text-sm text-gray-900">{formatDate(receipt.transactionDate || '')}</span>
                       <span className="text-xs text-gray-500">{receipt.paymentMethod}</span>

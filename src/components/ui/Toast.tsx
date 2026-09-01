@@ -42,7 +42,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={toast.id}
             role={toast.type === 'error' ? 'alert' : 'status'}
-            className="flex items-center gap-3 p-4 bg-white rounded-xl shadow-lg border border-gray-100 animate-in slide-in-from-top-2 fade-in duration-300"
+            className="toast-enter flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
           >
             {toast.type === 'success' && <CheckCircle2 className="text-green-500" size={20} />}
             {toast.type === 'error' && <XCircle className="text-red-500" size={20} />}

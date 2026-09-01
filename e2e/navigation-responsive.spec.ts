@@ -56,3 +56,46 @@ test('mobile reports summarize sparse data and keep tab navigation discoverable'
   await expect(page.getByText('First month in this period')).toBeVisible();
   await expect(page.getByRole('article')).toHaveCount(1);
 });
+
+test('tablet review uses a compact rail and keeps every editor control readable', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.route('**/api/extract', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(extractionResponse) }));
+  await signIn(page);
+
+  await page.getByRole('link', { name: 'Add Receipt' }).click();
+  await page.locator('input[type="file"][accept="image/jpeg,image/png,image/webp"]').first().setInputFiles(receiptImagePath);
+  await page.getByRole('link', { name: 'Review' }).click();
+  await expect(page.getByRole('heading', { name: 'Review Receipt' })).toBeVisible();
+
+  const navigationRail = page.locator('aside').first();
+  const railBox = await navigationRail.boundingBox();
+  expect(railBox).not.toBeNull();
+  expect(railBox!.width).toBeLessThanOrEqual(96);
+
+  const previewColumn = page.locator('main aside').first();
+  const editor = page.locator('main main').first();
+  const previewBox = await previewColumn.boundingBox();
+  const editorBox = await editor.boundingBox();
+  expect(previewBox).not.toBeNull();
+  expect(editorBox).not.toBeNull();
+  expect(editorBox!.y).toBeGreaterThanOrEqual(previewBox!.y + previewBox!.height - 1);
+
+  const clippedControls = await page.locator('input, select, textarea, button, a').evaluateAll((elements) => elements.filter(element => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+      && (rect.left < -0.5 || rect.right > window.innerWidth + 0.5);
+  }).length);
+  expect(clippedControls).toBe(0);
+
+  for (const field of await page.locator('main main input:not([type="checkbox"]), main main select, main main textarea').all()) {
+    const box = await field.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+  const dateAmbiguousTarget = await page.getByText('Date was ambiguous').locator('..').boundingBox();
+  expect(dateAmbiguousTarget).not.toBeNull();
+  expect(dateAmbiguousTarget!.height).toBeGreaterThanOrEqual(44);
+
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

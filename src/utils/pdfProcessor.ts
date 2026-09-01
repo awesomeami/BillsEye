@@ -4,15 +4,30 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 // Use local bundled worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+type PdfDocumentPromise = ReturnType<typeof pdfjsLib.getDocument>['promise'];
+const documentCache = new WeakMap<File, PdfDocumentPromise>();
+
+const getPdfDocument = (file: File): PdfDocumentPromise => {
+  const cached = documentCache.get(file);
+  if (cached) return cached;
+
+  const loading = file.arrayBuffer()
+    .then(arrayBuffer => pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise)
+    .catch(error => {
+      documentCache.delete(file);
+      throw error;
+    });
+  documentCache.set(file, loading);
+  return loading;
+};
+
 export const getPdfPageCount = async (file: File): Promise<number> => {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const pdf = await getPdfDocument(file);
   return pdf.numPages;
 };
 
 export const renderPdfPageToImage = async (file: File, pageNumber: number): Promise<Blob> => {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const pdf = await getPdfDocument(file);
   
   if (pageNumber < 1 || pageNumber > pdf.numPages) {
     throw new Error(`Invalid page number ${pageNumber} for PDF with ${pdf.numPages} pages.`);
@@ -30,19 +45,26 @@ export const renderPdfPageToImage = async (file: File, pageNumber: number): Prom
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   
-  await page.render({
-    canvas,
-    canvasContext: context,
-    viewport: viewport,
-  }).promise;
-  
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/jpeg', 0.95);
-  });
+  let blob: Blob | null = null;
+  try {
+    await page.render({
+      canvas,
+      canvasContext: context,
+      viewport,
+    }).promise;
+
+    blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.95);
+    });
+  } finally {
+    page.cleanup();
+    canvas.width = 0;
+    canvas.height = 0;
+  }
   
   if (!blob) {
     throw new Error('Failed to convert canvas to blob');
   }
-  
+
   return blob;
 };

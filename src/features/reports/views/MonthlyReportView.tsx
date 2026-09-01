@@ -49,11 +49,11 @@ export function MonthlyReportView({ receipts, range }: Props) {
       </div>
       </>}
 
-      <div className="space-y-3 md:hidden">
+      <div className="space-y-3 xl:hidden">
         {data.map((row) => <article key={row.month} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-gray-900">{row.month}</p><p className="mt-1 text-xs text-gray-500">{row.count} receipt{row.count === 1 ? '' : 's'} · Average {formatCurrency(row.average / 100)}</p></div><p className="text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div>{row.changePct !== null && <p className={`mt-3 text-sm font-medium ${row.changePct > 0 ? 'text-red-700' : 'text-green-700'}`}>{row.changePct > 0 ? '+' : ''}{row.changePct.toFixed(1)}% from the previous month</p>}</article>)}
       </div>
 
-      <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="app-card hidden overflow-hidden xl:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <caption className="sr-only">Monthly spending summary</caption>

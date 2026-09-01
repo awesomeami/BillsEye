@@ -56,19 +56,21 @@ export default defineConfig(({ command, mode }) => {
           name: 'KharchaLens',
           short_name: 'KharchaLens',
           description: 'Receipt Analytics and Expense Tracking',
-          theme_color: '#ffffff',
-          background_color: '#ffffff',
+          theme_color: '#2458d6',
+          background_color: '#f7f8fb',
           display: 'standalone',
           icons: [
             {
               src: 'pwa-192x192.png',
               sizes: '192x192',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any maskable'
             },
             {
               src: 'pwa-512x512.png',
               sizes: '512x512',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any maskable'
             }
           ]
         },
@@ -85,6 +87,15 @@ export default defineConfig(({ command, mode }) => {
             '**/html2canvas*',
             '**/purify*',
             '**/index.es-*',
+            '**/CategoricalChart-*',
+            '**/CartesianChart-*',
+            '**/PieChart-*',
+            '**/LineChart-*',
+            '**/DashboardCharts-*',
+            '**/MonthlyReportView-*',
+            '**/CategoryReportView-*',
+            '**/MerchantReportView-*',
+            '**/ItemReportView-*',
           ],
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           // API routes must never be answered with cached SPA HTML.

@@ -8,6 +8,16 @@ const distDirectory = resolve(process.env.PERFORMANCE_DIST_DIRECTORY ?? 'dist');
 const reportOnly = process.env.PERFORMANCE_REPORT_ONLY === 'true';
 const manifest = JSON.parse(readFileSync(resolve(distDirectory, '.vite/manifest.json'), 'utf8'));
 
+function manifestKey(sourceKey) {
+  if (manifest[sourceKey]) return sourceKey;
+  const expectedName = sourceKey.split('/').at(-1)?.replace(/\.[^.]+$/, '');
+  const match = Object.entries(manifest).find(([, entryValue]) => (
+    entryValue.src === sourceKey
+    || (entryValue.isDynamicEntry && entryValue.name === expectedName)
+  ));
+  return match?.[0] ?? sourceKey;
+}
+
 function staticClosure(keys) {
   const closure = new Set();
   const visit = key => {
@@ -17,7 +27,7 @@ function staticClosure(keys) {
     closure.add(key);
     for (const imported of entry.imports ?? []) visit(imported);
   };
-  keys.forEach(visit);
+  keys.map(manifestKey).forEach(visit);
   return closure;
 }
 
@@ -98,7 +108,7 @@ const requiredDynamicEntries = [
 ];
 if (!reportOnly) {
   for (const key of requiredDynamicEntries) {
-    if (!manifest[key]?.isDynamicEntry) failures.push(`${key} is no longer a dynamic entry`);
+    if (!manifest[manifestKey(key)]?.isDynamicEntry) failures.push(`${key} is no longer a dynamic entry`);
   }
   if (!Object.values(manifest).some(entryValue => entryValue.isDynamicEntry && entryValue.name === 'pdf')) {
     failures.push('the PDF export module is no longer a dynamic entry');

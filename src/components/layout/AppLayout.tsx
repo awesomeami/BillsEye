@@ -5,11 +5,13 @@ import { NetworkStatus } from '../ui/NetworkStatus';
 
 export function AppLayout() {
   return (
-    <div className="flex min-h-screen bg-gray-50 md:flex-row flex-col relative">
+    <div className="relative flex min-h-dvh min-w-0 flex-col bg-transparent md:flex-row">
       <NetworkStatus />
       <Navigation />
-      <main className="flex-1 w-full max-w-5xl mx-auto md:p-8 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-8 relative">
-        <Outlet />
+      <main className="relative min-w-0 flex-1 px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-5 sm:pt-5 md:px-6 md:py-6 lg:px-8 lg:py-8">
+        <div className="mx-auto w-full max-w-6xl">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

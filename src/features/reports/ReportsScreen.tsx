@@ -3,6 +3,7 @@ import { Calendar, Tags, Store, ShoppingBag, Loader2 } from 'lucide-react';
 import { cn } from '../../utilities/cn';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
 import { DateRangeFilter, getDateRange, getFilteredReceipts } from '../../domain/analytics';
+import { RouteLoadingState } from '../../components/ui/LoadingState';
 
 const MonthlyReportView = lazy(() => import('./views/MonthlyReportView').then(m => ({ default: m.MonthlyReportView })));
 const CategoryReportView = lazy(() => import('./views/CategoryReportView').then(m => ({ default: m.CategoryReportView })));
@@ -11,9 +12,16 @@ const ItemReportView = lazy(() => import('./views/ItemReportView').then(m => ({ 
 
 type Tab = 'monthly' | 'categories' | 'merchants' | 'items';
 
+const tabs = [
+  { id: 'monthly', label: 'Monthly', icon: Calendar },
+  { id: 'categories', label: 'Categories', icon: Tags },
+  { id: 'merchants', label: 'Merchants', icon: Store },
+  { id: 'items', label: 'Items', icon: ShoppingBag },
+] as const;
+
 export function ReportsScreen() {
   const tabsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
-  const { receipts, categories } = useReceiptsLibrary();
+  const { receipts, categories, loading } = useReceiptsLibrary();
   const [activeTab, setActiveTab] = useState<Tab>('monthly');
   const [selectedDateFilter, setDateFilter] = useState<DateRangeFilter | null>(null);
   const defaultDateFilter = useMemo(() => receipts.some(receipt => receipt.transactionDate)
@@ -21,6 +29,11 @@ export function ReportsScreen() {
   const dateFilter = selectedDateFilter ?? defaultDateFilter;
 
   const range = useMemo(() => getDateRange(dateFilter), [dateFilter]);
+
+  React.useEffect(() => {
+    const activeIndex = tabs.findIndex(tab => tab.id === activeTab);
+    tabsRef.current[activeIndex]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeTab]);
 
   const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
     let nextIndex = index;
@@ -35,13 +48,6 @@ export function ReportsScreen() {
     tabsRef.current[nextIndex]?.focus();
     setActiveTab(tabs[nextIndex].id as Tab);
   };
-  const tabs = [
-    { id: 'monthly', label: 'Monthly', icon: Calendar },
-    { id: 'categories', label: 'Categories', icon: Tags },
-    { id: 'merchants', label: 'Merchants', icon: Store },
-    { id: 'items', label: 'Items', icon: ShoppingBag },
-  ] as const;
-
   const renderContent = () => {
     switch (activeTab) {
       case 'monthly':
@@ -57,19 +63,21 @@ export function ReportsScreen() {
     }
   };
 
+  if (loading) return <RouteLoadingState />;
+
   return (
     <div className="space-y-5">
-      <header className="pb-4 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+      <header className="page-header flex-col items-start sm:flex-row sm:items-end">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Reports</h1>
-          <p className="text-sm text-gray-500 mt-1">Detailed breakdown and insights of your spending.</p>
+          <h1 className="page-title">Reports</h1>
+          <p className="page-subtitle">Detailed breakdown and insights of your spending.</p>
         </div>
         <label htmlFor="report-date-range" className="sr-only">Report date range</label>
         <select
           id="report-date-range"
           value={dateFilter}
           onChange={(e) => setDateFilter(e.target.value as DateRangeFilter)}
-          className="touch-target bg-white border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm"
+          className="form-control w-full sm:!w-48"
         >
           <option value="this_month">This Month</option>
           <option value="last_month">Last Month</option>
@@ -85,7 +93,7 @@ export function ReportsScreen() {
 
       {/* Tabs */}
       <div className="relative">
-        <div role="tablist" aria-label="Report Views" className="flex space-x-2 overflow-x-auto pb-2 pr-10 scrollbar-hide">
+        <div role="tablist" aria-label="Report Views" className="no-scrollbar flex snap-x space-x-2 overflow-x-auto pb-2 pr-10">
           {tabs.map((tab, index) => {
           
           const Icon = tab.icon;
@@ -103,7 +111,7 @@ export function ReportsScreen() {
               onKeyDown={(e) => handleKeyDown(e, index)}
               onClick={() => setActiveTab(tab.id as Tab)}
               className={cn(
-                "touch-target flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
+                "touch-target snap-start flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium",
                 isActive
                   ? "bg-gray-900 text-white"
                   : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
@@ -115,9 +123,9 @@ export function ReportsScreen() {
           );
           })}
         </div>
-        <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-end bg-gradient-to-l from-gray-50 via-gray-50/90 to-transparent text-lg text-gray-400 md:hidden">›</div>
+        <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-end bg-gradient-to-l from-[#f7f8fb] via-[#f7f8fb]/90 to-transparent text-lg text-gray-500 lg:hidden">›</div>
       </div>
-      <p className="-mt-3 text-xs text-gray-500 md:hidden">Swipe to see all report views</p>
+      <p className="-mt-3 text-xs text-gray-500 lg:hidden">Swipe to see all report views</p>
 
       <div className="pt-2" role="tabpanel" id={`tabpanel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} tabIndex={0}>
         <Suspense fallback={<div className="flex justify-center p-12"><Loader2 className="animate-spin text-blue-600" /></div>}>

@@ -91,10 +91,12 @@ export function AddReceiptScreen() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-24">
-      <header className="pb-4 border-b border-gray-200">
-        <h1 className="text-2xl font-bold text-gray-900">Add Receipts</h1>
-        <p className="text-sm text-gray-500 mt-1">Upload images or PDFs to extract data automatically.</p>
+    <div className="mx-auto max-w-3xl space-y-6 pb-24">
+      <header className="page-header">
+        <div>
+          <h1 className="page-title">Add Receipts</h1>
+          <p className="page-subtitle">Upload images or PDFs to extract data automatically.</p>
+        </div>
       </header>
 
       <input 
@@ -176,31 +178,29 @@ export function AddReceiptScreen() {
           onDragOver={handleDrag}
           onDrop={handleDrop}
         >
-          <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex gap-3 text-blue-800 text-sm">
+          <div className="flex gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
             <div className="mt-0.5 shrink-0"><Upload size={18} /></div>
             <div>
               <p className="font-medium">Privacy & Memory Notice</p>
-              <p className="text-blue-700/80 mt-1">
-                Images are processed in memory only to protect your privacy. Original files are never saved permanently. Refreshing or closing the browser permanently drops queued uploads and temporary review images; a receipt already saved for review remains in your Inbox, but its image may need to be reattached. We do not support HEIC formats natively—please convert to JPG/PNG first.
-              </p>
+              <ul className="mt-1 space-y-1 text-blue-800">
+                <li>Images are processed temporarily and are never saved permanently.</li>
+                <li>Refreshing or closing the browser clears queued files and temporary previews.</li>
+              </ul>
             </div>
           </div>
           
-          <button 
-            onClick={() => cameraInputRef.current?.click()}
-            className="flex flex-col items-center justify-center p-8 bg-white border-2 border-dashed border-gray-300 rounded-2xl hover:bg-gray-50 hover:border-blue-500 transition-colors group h-64 shadow-sm"
-          >
-            <div className="bg-blue-100 p-4 rounded-full group-hover:bg-blue-200 transition-colors mb-4">
-              <Camera size={40} className="text-blue-700" />
-            </div>
-            <span className="text-lg font-medium text-gray-900">Take a Photo</span>
-            <span className="text-sm text-gray-500 mt-1">Use your device's rear camera</span>
-          </button>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <button 
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <button onClick={() => cameraInputRef.current?.click()} className="app-card group col-span-2 flex h-52 flex-col items-center justify-center border-2 border-dashed p-6 hover:-translate-y-0.5 hover:border-blue-400 hover:bg-blue-50/40 sm:col-span-1 sm:h-44">
+              <div className="bg-blue-100 p-4 rounded-full group-hover:bg-blue-200 transition-colors mb-4">
+                <Camera size={40} className="text-blue-700" />
+              </div>
+              <span className="text-lg font-medium text-gray-900">Take a Photo</span>
+              <span className="mt-1 text-center text-sm text-gray-500">Use your device's rear camera</span>
+            </button>
+
+            <button
               onClick={() => imageInputRef.current?.click()}
-              className="flex flex-col items-center justify-center p-6 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
+              className="app-card flex h-52 cursor-pointer flex-col items-center justify-center p-5 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/30 sm:h-44"
             >
               <div className="bg-gray-100 p-3 rounded-full mb-3">
                 <ImageIcon size={24} className="text-gray-700" />
@@ -209,59 +209,59 @@ export function AddReceiptScreen() {
               <span className="text-xs text-gray-500 mt-1 text-center">JPG, PNG, WebP or Multiple</span>
             </button>
             
-            <button 
+            <button
               onClick={() => pdfInputRef.current?.click()}
-              className="flex flex-col items-center justify-center p-6 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
+              className="app-card flex h-52 cursor-pointer flex-col items-center justify-center p-5 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/30 sm:h-44"
             >
               <div className="bg-gray-100 p-3 rounded-full mb-3">
                 <FileText size={24} className="text-gray-700" />
               </div>
               <span className="font-medium text-gray-900">Upload PDF</span>
-              <span className="text-xs text-gray-500 mt-1 text-center">Renders locally</span>
+              <span className="mt-1 text-center text-xs text-gray-500">PDF pages render locally</span>
             </button>
           </div>
-          <div className="text-center text-sm text-gray-400 mt-2">
-             Or drag and drop files anywhere here
+          <div className="mt-2 text-center text-sm text-gray-500">
+             JPG, PNG and WebP supported. You can also drag and drop files here. HEIC files must be converted first.
           </div>
         </div>
       ) : (
         <div className="space-y-4">
-           <div className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-200">
-             <div>
-               <h3 className="font-bold text-gray-900">Processing Queue ({items.length})</h3>
-               <p className="text-sm text-gray-500">You can navigate elsewhere while processing continues. Refreshing or closing the browser loses queued files and temporary review images.</p>
-             </div>
-             <div className="flex gap-2">
-                <button 
+          <div className="flex flex-col justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center">
+            <div>
+              <h3 className="font-bold text-gray-900">Processing Queue ({items.length})</h3>
+              <p className="text-sm text-gray-500">You can navigate elsewhere while processing continues. Refreshing or closing the browser loses queued files and temporary review images.</p>
+            </div>
+            <div className="flex gap-2">
+                <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer"
+                  className="btn-outline cursor-pointer"
                 >
                   Add More
                 </button>
                 {items.some(i => isRetryableQueueStatus(i.status)) && (
-                  <button 
+                  <button
                     onClick={retryScheduled}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 cursor-pointer"
+                    className="btn-primary cursor-pointer"
                   >
                     Retry Now
                   </button>
                 )}
-             </div>
-           </div>
+            </div>
+          </div>
 
-           <div className="space-y-3">
-             {items.map(item => (
-               <QueueItemCard 
-                 key={item.id} 
-               item={item}
-               onRemove={() => removeItem(item.id)}
-               onReview={() => releaseForReview(item.id)}
-               onRetry={() => retryItem(item.id)}
-               onCrop={() => setCropItem(item)}
-                 onCancel={() => cancelItem(item.id)}
-               />
-             ))}
-           </div>
+          <div className="space-y-3">
+            {items.map(item => (
+              <QueueItemCard
+                key={item.id}
+                item={item}
+                onRemove={() => removeItem(item.id)}
+                onReview={() => releaseForReview(item.id)}
+                onRetry={() => retryItem(item.id)}
+                onCrop={() => setCropItem(item)}
+                onCancel={() => cancelItem(item.id)}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -288,7 +288,7 @@ function QueueItemCard({ item, onRemove, onReview, onRetry, onCrop, onCancel }: 
   const Icon = statusInfo.icon;
 
   return (
-    <div className="flex bg-white rounded-xl border border-gray-200 p-3 shadow-sm items-center gap-4 group">
+    <div className="app-card render-lazy grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-3 p-3 sm:grid-cols-[4rem_minmax(0,1fr)_auto]">
       <div aria-live="polite" className="sr-only">
         {item.originalName} is {statusInfo.text}
       </div>
@@ -301,9 +301,10 @@ function QueueItemCard({ item, onRemove, onReview, onRetry, onCrop, onCancel }: 
            </div>
          )}
          {item.status === 'queued' && item.objectUrl && (
-           <button 
-             onClick={onCrop}
-             className="absolute bottom-1 right-1 p-1 bg-black/60 text-white rounded hover:bg-black/80 transition-colors"
+            <button
+              onClick={onCrop}
+              aria-label={`Crop ${item.originalName}`}
+              className="touch-target absolute right-0 bottom-0 flex items-center justify-center rounded-tl-lg bg-black/65 text-white hover:bg-black/80"
            >
              <Crop size={14} />
            </button>
@@ -323,21 +324,21 @@ function QueueItemCard({ item, onRemove, onReview, onRetry, onCrop, onCancel }: 
          </div>
          {item.error && <p className="text-xs text-red-600 mt-1 truncate">{item.error}</p>}
       </div>
-      <div className="shrink-0 flex items-center gap-2">
+       <div className="col-span-2 flex flex-wrap items-center justify-end gap-1 border-t border-gray-100 pt-2 sm:col-span-1 sm:border-0 sm:pt-0">
         {item.status === 'needs-review' && item.receiptId && (
-          <Link to={`/receipts/${item.receiptId}/review`} onClick={onReview} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 text-sm font-medium">
+          <Link to={`/receipts/${item.receiptId}/review`} onClick={onReview} className="btn-ghost text-blue-700 hover:bg-blue-50">
             Review <ChevronRight size={16} />
           </Link>
         )}
 
         {item.status === 'needs-review' && (
-          <button onClick={onRemove} aria-label={`Dismiss ${item.originalName} from the queue`} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium">
+          <button onClick={onRemove} aria-label={`Dismiss ${item.originalName} from the queue`} className="btn-ghost hover:bg-red-50 hover:text-red-700">
             Dismiss
           </button>
         )}
         
         {item.status === 'duplicate' && item.receiptId && (
-          <Link to={`/receipts?id=${item.receiptId}`} className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg flex items-center gap-1 text-sm font-medium">
+          <Link to={`/receipts?id=${item.receiptId}`} className="btn-ghost text-orange-700 hover:bg-orange-50">
             View Original <ChevronRight size={16} />
           </Link>
         )}
@@ -346,14 +347,14 @@ function QueueItemCard({ item, onRemove, onReview, onRetry, onCrop, onCancel }: 
           <button 
             onClick={onCancel}
             aria-label={`Cancel processing ${item.originalName}`}
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors text-sm font-medium"
+            className="btn-ghost"
           >
             Cancel
           </button>
         )}
 
         {item.status === 'retry-wait' && (
-          <button onClick={onRetry} aria-label={`Retry ${item.originalName} now`} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium">
+          <button onClick={onRetry} aria-label={`Retry ${item.originalName} now`} className="btn-ghost text-blue-700 hover:bg-blue-50">
             Retry now
           </button>
         )}
@@ -362,7 +363,7 @@ function QueueItemCard({ item, onRemove, onReview, onRetry, onCrop, onCancel }: 
           <button 
             onClick={onRemove}
             aria-label={`Remove ${item.originalName} from the queue`}
-            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+            className="touch-target flex items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-700"
           >
             <X size={20} />
           </button>

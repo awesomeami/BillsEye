@@ -6,7 +6,7 @@ import { CategoryDocument, ReceiptDocument } from '../../../domain/schema';
 import { formatCurrency } from '../../../utilities/config';
 import { DateRange } from '../../../domain/analytics';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
+const COLORS = ['#3269e8', '#12b76a', '#f79009', '#7f56d9', '#06aed4', '#ee46bc', '#6172f3', '#15b79e'];
 
 interface Props {
   receipts: ReceiptDocument[];
@@ -36,12 +36,11 @@ export function CategoryReportView({ receipts, categories, range }: Props) {
               data={data}
               cx="50%"
               cy="50%"
-              innerRadius={80}
-              outerRadius={120}
+              innerRadius="48%"
+              outerRadius="72%"
               paddingAngle={2}
               dataKey="total"
               nameKey="category"
-              label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
             >
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -59,11 +58,11 @@ export function CategoryReportView({ receipts, categories, range }: Props) {
         </div>
       </div>
 
-      <div className="space-y-3 md:hidden">
+      <div className="space-y-3 xl:hidden">
         {data.map((row) => <article key={row.category} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold text-gray-900">{row.filterValue ? <Link to={`/receipts?category=${encodeURIComponent(row.filterValue)}`} className="text-blue-700 hover:underline">{row.category}</Link> : row.category}</p><p className="mt-1 text-xs text-gray-500">{row.receiptCount} receipt{row.receiptCount === 1 ? '' : 's'} · {row.proportion.toFixed(1)}% of spending</p></div><p className="shrink-0 text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div></article>)}
       </div>
 
-      <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="app-card hidden overflow-hidden xl:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <caption className="sr-only">Category spending summary</caption>
