@@ -136,6 +136,14 @@ describe('libraryUtils', () => {
     assert.strictEqual(result[2].id, 'r2');
   });
 
+  it('sorts receipts by their first displayed category', () => {
+    const ascending = filterAndSortReceipts(mockReceipts, defaultFilters, { field: 'category', order: 'asc' });
+    const descending = filterAndSortReceipts(mockReceipts, defaultFilters, { field: 'category', order: 'desc' });
+
+    assert.deepStrictEqual(ascending.map(receipt => receipt.id), ['r3', 'r2', 'r1']);
+    assert.deepStrictEqual(descending.map(receipt => receipt.id), ['r1', 'r2', 'r3']);
+  });
+
   it('should filter by amount range', () => {
     const result = filterAndSortReceipts(mockReceipts, { ...defaultFilters, amountMin: 1000, amountMax: 10000 }, defaultSort);
     assert.strictEqual(result.length, 1);

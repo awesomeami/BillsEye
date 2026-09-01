@@ -1,17 +1,26 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { generateMerchantReport } from '../../../domain/analytics';
 import { ReceiptDocument } from '../../../domain/schema';
 import { formatCurrency } from '../../../utilities/config';
 import { DateRange } from '../../../domain/analytics';
+import { SortableTableHeader } from '../../../components/ui/SortableTableHeader';
+import { getNextReportSort, ReportSortState, sortReportRows } from '../reportSorting';
 
 interface Props {
   receipts: ReceiptDocument[];
   range: DateRange;
 }
 
+type MerchantSortField = 'merchant' | 'total' | 'visits' | 'averageBasket' | 'firstPurchase' | 'lastPurchase';
+
 export function MerchantReportView({ receipts, range }: Props) {
   const data = useMemo(() => generateMerchantReport(receipts, range), [receipts, range]);
+  const [sort, setSort] = useState<ReportSortState<MerchantSortField> | null>(null);
+  const sortedData = useMemo(() => sortReportRows(data, sort, (row, field) => row[field]), [data, sort]);
+  const handleSort = (field: MerchantSortField, initialDirection: 'asc' | 'desc') => {
+    setSort(current => getNextReportSort(current, field, initialDirection));
+  };
 
   if (data.length === 0) {
     return (
@@ -24,7 +33,7 @@ export function MerchantReportView({ receipts, range }: Props) {
   return (
     <div className="space-y-6">
       <div className="space-y-3 xl:hidden">
-        {data.map((row) => <article key={row.merchant} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link to={`/receipts?search=${encodeURIComponent(row.merchant)}`} className="font-semibold text-blue-700 hover:underline">{row.merchant}</Link><p className="mt-1 text-xs text-gray-500">{row.visits} visit{row.visits === 1 ? '' : 's'} · Average {formatCurrency(row.averageBasket / 100)}</p></div><p className="shrink-0 text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div><p className="mt-3 text-xs text-gray-500">First purchase: {row.firstPurchase || '—'} · Last: {row.lastPurchase || '—'}</p></article>)}
+        {sortedData.map((row) => <article key={row.merchant} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link to={`/receipts?search=${encodeURIComponent(row.merchant)}`} className="font-semibold text-blue-700 hover:underline">{row.merchant}</Link><p className="mt-1 text-xs text-gray-500">{row.visits} visit{row.visits === 1 ? '' : 's'} · Average {formatCurrency(row.averageBasket / 100)}</p></div><p className="shrink-0 text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div><p className="mt-3 text-xs text-gray-500">First purchase: {row.firstPurchase || '—'} · Last: {row.lastPurchase || '—'}</p></article>)}
       </div>
       <div className="app-card hidden overflow-hidden xl:block">
         <div className="overflow-x-auto">
@@ -32,16 +41,16 @@ export function MerchantReportView({ receipts, range }: Props) {
             <caption className="sr-only">Merchant spending summary</caption>
             <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b border-gray-100">
               <tr>
-                <th className="px-6 py-4 font-medium">Merchant</th>
-                <th className="px-6 py-4 font-medium text-right">Total Spent</th>
-                <th className="px-6 py-4 font-medium text-right">Visits</th>
-                <th className="px-6 py-4 font-medium text-right">Average Basket</th>
-                <th className="px-6 py-4 font-medium">First Purchase</th>
-                <th className="px-6 py-4 font-medium">Last Purchase</th>
+                <SortableTableHeader label="Merchant" active={sort?.field === 'merchant'} direction={sort?.direction ?? 'asc'} initialDirection="asc" onSort={() => handleSort('merchant', 'asc')} />
+                <SortableTableHeader label="Total Spent" active={sort?.field === 'total'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('total', 'desc')} align="right" />
+                <SortableTableHeader label="Visits" active={sort?.field === 'visits'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('visits', 'desc')} align="right" />
+                <SortableTableHeader label="Average Basket" active={sort?.field === 'averageBasket'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('averageBasket', 'desc')} align="right" />
+                <SortableTableHeader label="First Purchase" active={sort?.field === 'firstPurchase'} direction={sort?.direction ?? 'asc'} initialDirection="asc" onSort={() => handleSort('firstPurchase', 'asc')} />
+                <SortableTableHeader label="Last Purchase" active={sort?.field === 'lastPurchase'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('lastPurchase', 'desc')} />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {data.map((row) => (
+              {sortedData.map((row) => (
                 <tr key={row.merchant} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 font-medium text-blue-600">
                     <Link to={`/receipts?search=${encodeURIComponent(row.merchant)}`} className="hover:underline">

@@ -3,20 +3,30 @@ import { Link } from 'react-router-dom';
 import { ArrowUpRight, ArrowDownRight, Wallet, ReceiptText, Inbox, ChevronRight, AlertTriangle, TrendingUp, Tag } from 'lucide-react';
 import { formatCurrency } from '../../utilities/config';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
-import { calculateDashboardSummary, DashboardPeriod, generateSummaryInsights } from '../../domain/analytics';
+import { calculateDashboardSummary, DashboardPeriod, DateRange, getDefaultCustomDateRange, generateSummaryInsights } from '../../domain/analytics';
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 import { RouteLoadingState } from '../../components/ui/LoadingState';
+import { DateRangeControl, DateRangeOption } from '../../components/ui/DateRangeControl';
 const DashboardCharts = lazy(() => import('./DashboardCharts').then(module => ({ default: module.DashboardCharts })));
+
+const dashboardDateOptions: readonly DateRangeOption[] = [
+  { value: 'this_month', label: 'This Month' },
+  { value: 'all_time', label: 'All Time' },
+];
 
 export function DashboardScreen() {
   const { receipts, pendingReceipts, categories, loading } = useReceiptsLibrary();
   const [selectedPeriod, setSelectedPeriod] = useState<DashboardPeriod | null>(null);
+  const [customRange, setCustomRange] = useState<DateRange>(() => getDefaultCustomDateRange());
   const monthSummary = useMemo(() => calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories), [receipts, pendingReceipts, categories]);
   const period = selectedPeriod ?? (monthSummary.receiptCount === 0 && receipts.some(receipt => receipt.transactionDate) ? 'all_time' : 'this_month');
   const isAllTime = period === 'all_time';
-  const summary = useMemo(() => isAllTime
-    ? calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories, 'all_time')
-    : monthSummary, [isAllTime, receipts, pendingReceipts, categories, monthSummary]);
+  const isCustom = period === 'custom';
+  const periodLabel = isAllTime ? 'All Time' : isCustom ? 'Custom Range' : 'This Month';
+  const summary = useMemo(() => period === 'this_month'
+    ? monthSummary
+    : calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories, period, customRange),
+  [categories, customRange, monthSummary, pendingReceipts, period, receipts]);
   const insights = useMemo(() => generateSummaryInsights(receipts, new Date(), categories), [receipts, categories]);
 
   const {
@@ -42,15 +52,19 @@ export function DashboardScreen() {
       <header className="page-header flex-wrap">
         <div>
           <h1 className="page-title">Overview</h1>
-          <p className="page-subtitle">{isAllTime ? 'All-time snapshot' : "This month's snapshot"}</p>
+          <p className="page-subtitle">{isAllTime ? 'All-time snapshot' : isCustom ? 'Snapshot for your selected dates' : "This month's snapshot"}</p>
         </div>
-        <div>
-          <label htmlFor="dashboard-date-range" className="sr-only">Dashboard date range</label>
-          <select id="dashboard-date-range" value={period} onChange={event => setSelectedPeriod(event.target.value as DashboardPeriod)} className="form-control w-auto min-w-36">
-            <option value="this_month">This Month</option>
-            <option value="all_time">All Time</option>
-          </select>
-        </div>
+        <DateRangeControl
+          id="dashboard-date-range"
+          label="Dashboard date range"
+          value={period}
+          options={dashboardDateOptions}
+          customRange={customRange}
+          onChange={value => setSelectedPeriod(value as DashboardPeriod)}
+          onCustomRangeChange={setCustomRange}
+          className="w-full sm:w-auto"
+          selectClassName="sm:!w-auto sm:min-w-36"
+        />
         {pendingCount > 0 && (
           <Link to="/inbox" className="flex items-center gap-2 bg-red-50 text-red-700 px-3 py-1.5 rounded-full text-sm font-medium hover:bg-red-100 transition-colors">
             <Inbox size={16} />
@@ -97,14 +111,14 @@ export function DashboardScreen() {
         <div className="app-card bg-gradient-to-br from-white to-blue-50/60 p-5 sm:p-6">
           <div className="flex items-center gap-2 text-gray-500 mb-2">
             <Wallet size={18} />
-            <span className="font-medium">Total Spent ({isAllTime ? 'All Time' : 'This Month'})</span>
+            <span className="font-medium">Total Spent ({periodLabel})</span>
           </div>
           <div className="tabular-nums mb-3 text-4xl font-bold tracking-tight text-gray-950">
             {currentTotalAvailable || summary.receiptCount === 0 ? formatCurrency(currentTotal / 100) : 'Unavailable'}
           </div>
           <div className="flex items-center gap-2 text-sm">
-            {isAllTime ? (
-              <span className="text-gray-500">All confirmed receipts with a transaction date</span>
+            {period !== 'this_month' ? (
+              <span className="text-gray-500">{isAllTime ? 'All confirmed receipts with a transaction date' : 'Confirmed receipts within the selected dates'}</span>
             ) : summary.receiptCount === 0 ? (
               <span className="text-gray-500">No confirmed receipts dated this month</span>
             ) : changePct !== null ? (
@@ -129,7 +143,7 @@ export function DashboardScreen() {
         <div className="app-card flex flex-col justify-between p-5 sm:p-6">
           <div>
             <h3 className="font-medium text-gray-900 mb-1">Recent Activity</h3>
-            <p className="text-sm text-gray-500">{summary.receiptCount} confirmed receipt{summary.receiptCount !== 1 ? 's' : ''} {isAllTime ? 'across all dates' : 'dated this month'}.</p>
+            <p className="text-sm text-gray-500">{summary.receiptCount} confirmed receipt{summary.receiptCount !== 1 ? 's' : ''} {isAllTime ? 'across all dates' : isCustom ? 'within the selected dates' : 'dated this month'}.</p>
           </div>
           <Link to="/add" className="btn-primary mt-4 justify-between p-4">
             <div className="flex items-center gap-3">
@@ -142,7 +156,7 @@ export function DashboardScreen() {
       </div>
 
       {/* AI Insights Section */}
-      {!isAllTime && (insights.largestIncreases.length > 0 || insights.categoryChanges.length > 0) && (
+      {period === 'this_month' && (insights.largestIncreases.length > 0 || insights.categoryChanges.length > 0) && (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <Tag size={20} className="text-blue-600" />

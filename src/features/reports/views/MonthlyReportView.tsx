@@ -1,17 +1,26 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { generateMonthlyReport } from '../../../domain/analytics';
 import { ReceiptDocument } from '../../../domain/schema';
 import { formatCurrency } from '../../../utilities/config';
 import { DateRange } from '../../../domain/analytics';
+import { SortableTableHeader } from '../../../components/ui/SortableTableHeader';
+import { getNextReportSort, ReportSortState, sortReportRows } from '../reportSorting';
 
 interface Props {
   receipts: ReceiptDocument[];
   range: DateRange;
 }
 
+type MonthlySortField = 'month' | 'total' | 'count' | 'average' | 'changePct';
+
 export function MonthlyReportView({ receipts, range }: Props) {
   const data = useMemo(() => generateMonthlyReport(receipts, range), [receipts, range]);
+  const [sort, setSort] = useState<ReportSortState<MonthlySortField> | null>(null);
+  const sortedData = useMemo(() => sortReportRows(data, sort, (row, field) => row[field]), [data, sort]);
+  const handleSort = (field: MonthlySortField, initialDirection: 'asc' | 'desc') => {
+    setSort(current => getNextReportSort(current, field, initialDirection));
+  };
 
   if (data.length === 0) {
     return (
@@ -50,7 +59,7 @@ export function MonthlyReportView({ receipts, range }: Props) {
       </>}
 
       <div className="space-y-3 xl:hidden">
-        {data.map((row) => <article key={row.month} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-gray-900">{row.month}</p><p className="mt-1 text-xs text-gray-500">{row.count} receipt{row.count === 1 ? '' : 's'} · Average {formatCurrency(row.average / 100)}</p></div><p className="text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div>{row.changePct !== null && <p className={`mt-3 text-sm font-medium ${row.changePct > 0 ? 'text-red-700' : 'text-green-700'}`}>{row.changePct > 0 ? '+' : ''}{row.changePct.toFixed(1)}% from the previous month</p>}</article>)}
+        {sortedData.map((row) => <article key={row.month} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-gray-900">{row.month}</p><p className="mt-1 text-xs text-gray-500">{row.count} receipt{row.count === 1 ? '' : 's'} · Average {formatCurrency(row.average / 100)}</p></div><p className="text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div>{row.changePct !== null && <p className={`mt-3 text-sm font-medium ${row.changePct > 0 ? 'text-red-700' : 'text-green-700'}`}>{row.changePct > 0 ? '+' : ''}{row.changePct.toFixed(1)}% from the previous month</p>}</article>)}
       </div>
 
       <div className="app-card hidden overflow-hidden xl:block">
@@ -59,15 +68,15 @@ export function MonthlyReportView({ receipts, range }: Props) {
             <caption className="sr-only">Monthly spending summary</caption>
             <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b border-gray-100">
               <tr>
-                <th className="px-6 py-4 font-medium">Month</th>
-                <th className="px-6 py-4 font-medium text-right">Total</th>
-                <th className="px-6 py-4 font-medium text-right">Receipts</th>
-                <th className="px-6 py-4 font-medium text-right">Average</th>
-                <th className="px-6 py-4 font-medium text-right">Change</th>
+                <SortableTableHeader label="Month" active={sort?.field === 'month'} direction={sort?.direction ?? 'asc'} initialDirection="asc" onSort={() => handleSort('month', 'asc')} />
+                <SortableTableHeader label="Total" active={sort?.field === 'total'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('total', 'desc')} align="right" />
+                <SortableTableHeader label="Receipts" active={sort?.field === 'count'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('count', 'desc')} align="right" />
+                <SortableTableHeader label="Average" active={sort?.field === 'average'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('average', 'desc')} align="right" />
+                <SortableTableHeader label="Change" active={sort?.field === 'changePct'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('changePct', 'desc')} align="right" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {data.map((row) => (
+              {sortedData.map((row) => (
                 <tr key={row.month} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-medium text-gray-900">{row.month}</td>
                   <td className="px-6 py-4 text-right">{formatCurrency(row.total / 100)}</td>

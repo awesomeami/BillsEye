@@ -1,5 +1,6 @@
-import { ReceiptDocument } from '../../../domain/schema';
+import { CategoryDocument, ReceiptDocument } from '../../../domain/schema';
 import { getReceiptTotal } from '../../../domain/reconciliation';
+import { getReceiptItemCategoryLabel } from '../../../domain/categories';
 
 export interface FilterState {
   searchQuery: string;
@@ -14,7 +15,7 @@ export interface FilterState {
   hasWarning: boolean | null;
 }
 
-export type SortField = 'date' | 'total' | 'merchant';
+export type SortField = 'date' | 'total' | 'merchant' | 'category';
 export type SortOrder = 'asc' | 'desc';
 
 export interface SortState {
@@ -22,7 +23,19 @@ export interface SortState {
   order: SortOrder;
 }
 
-export function filterAndSortReceipts(receipts: ReceiptDocument[], filters: FilterState, sort: SortState): ReceiptDocument[] {
+function getCategorySortValue(receipt: ReceiptDocument, categories: CategoryDocument[]): string {
+  return receipt.items
+    .filter(item => item.categoryId || item.category)
+    .map(item => getReceiptItemCategoryLabel(item, categories))
+    .sort((left, right) => left.localeCompare(right, 'en-PK', { sensitivity: 'base' }))[0] ?? '';
+}
+
+export function filterAndSortReceipts(
+  receipts: ReceiptDocument[],
+  filters: FilterState,
+  sort: SortState,
+  categories: CategoryDocument[] = [],
+): ReceiptDocument[] {
   let result = receipts;
 
   if (filters.searchQuery) {
@@ -76,6 +89,10 @@ export function filterAndSortReceipts(receipts: ReceiptDocument[], filters: Filt
     });
   }
 
+  const categorySortValues = sort.field === 'category'
+    ? new Map(result.map(receipt => [receipt, getCategorySortValue(receipt, categories)]))
+    : null;
+
   result = [...result].sort((a, b) => {
     let comparison = 0;
     switch (sort.field) {
@@ -95,6 +112,13 @@ export function filterAndSortReceipts(receipts: ReceiptDocument[], filters: Filt
         break;
       case 'merchant':
         comparison = (a.merchantNormalized || '').localeCompare(b.merchantNormalized || '');
+        break;
+      case 'category':
+        comparison = (categorySortValues?.get(a) ?? '').localeCompare(
+          categorySortValues?.get(b) ?? '',
+          'en-PK',
+          { sensitivity: 'base' },
+        );
         break;
     }
     return sort.order === 'asc' ? comparison : -comparison;

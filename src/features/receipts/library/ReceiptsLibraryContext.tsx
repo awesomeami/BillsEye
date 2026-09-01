@@ -225,8 +225,8 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
     filters.paymentMethod,
   ]);
   const filteredReceipts = useMemo(() => {
-    return filterAndSortReceipts(receipts, deferredFilters, sort);
-  }, [receipts, deferredFilters, sort]);
+    return filterAndSortReceipts(receipts, deferredFilters, sort, categories);
+  }, [categories, receipts, deferredFilters, sort]);
   const isFiltering = filters.searchQuery !== deferredSearchQuery;
 
   const deleteReceipt = useCallback(async (id: string) => {

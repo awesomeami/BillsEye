@@ -11,7 +11,7 @@ const safeParseMajorToMinor = (val: string) => {
 import { parseMajorToMinor } from '../../domain/money';
 import { 
   Search, Filter, ReceiptText, AlertTriangle,
-  ChevronDown, ChevronUp, Edit2, CheckCircle2, Clock
+  ChevronDown, ChevronUp, Edit2, CheckCircle2, Clock, ArrowUpDown
 } from 'lucide-react';
 import { cn } from '../../utilities/cn';
 import { useReceiptsLibrary } from './library/ReceiptsLibraryContext';
@@ -129,10 +129,12 @@ export function ReceiptsListScreen() {
     );
   }
 
-  const handleSortChange = (field: 'date' | 'total' | 'merchant') => {
+  const handleSortChange = (field: 'date' | 'total' | 'merchant' | 'category') => {
     setSort(prev => ({
       field,
-      order: prev.field === field ? (prev.order === 'asc' ? 'desc' : 'asc') : 'desc'
+      order: prev.field === field
+        ? (prev.order === 'asc' ? 'desc' : 'asc')
+        : field === 'merchant' || field === 'category' ? 'asc' : 'desc'
     }));
   };
 
@@ -174,7 +176,7 @@ export function ReceiptsListScreen() {
             <input
               id="receipt-search"
               type="text"
-              className="form-control block pl-10"
+              className="form-control form-control-with-leading-icon block"
               placeholder="Search merchant, items, notes..."
               value={filters.searchQuery}
               aria-describedby="receipt-search-status"
@@ -242,18 +244,22 @@ export function ReceiptsListScreen() {
         <div role="row" className="hidden grid-cols-12 gap-4 border-b border-gray-200 bg-gray-50 p-4 text-xs font-semibold uppercase tracking-wider text-gray-500 lg:grid">
           <div role="columnheader" aria-sort={sort.field === 'date' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-3">
             <button type="button" onClick={() => handleSortChange('date')} className="touch-target flex items-center gap-1 hover:text-gray-700" aria-label={`Sort by date, currently ${sort.field === 'date' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
-              Date {sort.field === 'date' && (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>)}
+              Date {sort.field === 'date' ? (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>) : <ArrowUpDown aria-hidden="true" size={14} className="text-gray-400" />}
             </button>
           </div>
           <div role="columnheader" aria-sort={sort.field === 'merchant' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-4">
             <button type="button" onClick={() => handleSortChange('merchant')} className="touch-target flex items-center gap-1 hover:text-gray-700" aria-label={`Sort by merchant, currently ${sort.field === 'merchant' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
-              Merchant {sort.field === 'merchant' && (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>)}
+              Merchant {sort.field === 'merchant' ? (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>) : <ArrowUpDown aria-hidden="true" size={14} className="text-gray-400" />}
             </button>
           </div>
-          <div role="columnheader" className="col-span-2 self-center">Categories</div>
+          <div role="columnheader" aria-sort={sort.field === 'category' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-2">
+            <button type="button" onClick={() => handleSortChange('category')} className="touch-target flex items-center gap-1 hover:text-gray-700" aria-label={`Sort by categories, currently ${sort.field === 'category' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
+              Categories {sort.field === 'category' ? (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>) : <ArrowUpDown aria-hidden="true" size={14} className="text-gray-400" />}
+            </button>
+          </div>
           <div role="columnheader" aria-sort={sort.field === 'total' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-3 flex justify-end">
             <button type="button" onClick={() => handleSortChange('total')} className="touch-target flex items-center justify-end gap-1 hover:text-gray-700" aria-label={`Sort by total, currently ${sort.field === 'total' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
-              Total {sort.field === 'total' && (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>)}
+              Total {sort.field === 'total' ? (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>) : <ArrowUpDown aria-hidden="true" size={14} className="text-gray-400" />}
             </button>
           </div>
         </div>

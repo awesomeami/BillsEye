@@ -7,15 +7,24 @@ import { formatCurrency } from '../../../utilities/config';
 import { DateRange } from '../../../domain/analytics';
 import { ItemObservation } from '../../../domain/items';
 import { TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp } from 'lucide-react';
+import { SortableTableHeader } from '../../../components/ui/SortableTableHeader';
+import { getNextReportSort, ReportSortState, sortReportRows } from '../reportSorting';
 
 interface Props {
   receipts: ReceiptDocument[];
   range: DateRange;
 }
 
+type ItemSortField = 'canonicalName' | 'totalSpent' | 'latestPrice' | 'priceChangePct' | 'occasions';
+
 export function ItemReportView({ receipts, range }: Props) {
   const data = useMemo(() => generateItemReport(receipts, range), [receipts, range]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sort, setSort] = useState<ReportSortState<ItemSortField> | null>(null);
+  const sortedData = useMemo(() => sortReportRows(data, sort, (row, field) => row[field]), [data, sort]);
+  const handleSort = (field: ItemSortField, initialDirection: 'asc' | 'desc') => {
+    setSort(current => getNextReportSort(current, field, initialDirection));
+  };
 
   if (data.length === 0) {
     return (
@@ -33,8 +42,8 @@ export function ItemReportView({ receipts, range }: Props) {
   return (
     <div className="space-y-6">
       <div className="space-y-3 xl:hidden">
-        {data.map((row, idx) => {
-          const rowId = `${row.canonicalName}-${row.unitCategory}-${idx}`;
+        {sortedData.map((row) => {
+          const rowId = `${row.canonicalName}-${row.unitCategory}`;
           const isExpanded = expandedId === rowId;
           const hasChange = row.priceChangePct !== null;
           const isUp = hasChange && row.priceChangePct! > 0;
@@ -86,17 +95,17 @@ export function ItemReportView({ receipts, range }: Props) {
             <caption className="sr-only">Item price and spending summary. Activate an item row to show its details.</caption>
             <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b border-gray-100">
               <tr>
-                <th className="px-6 py-4 font-medium">Canonical Item</th>
-                <th className="px-6 py-4 font-medium text-right">Total Spent</th>
-                <th className="px-6 py-4 font-medium text-right">Unit Price (Latest)</th>
-                <th className="px-6 py-4 font-medium text-right">Change</th>
-                <th className="px-6 py-4 font-medium text-right">Occasions</th>
-                <th className="px-4 py-4"></th>
+                <SortableTableHeader label="Canonical Item" active={sort?.field === 'canonicalName'} direction={sort?.direction ?? 'asc'} initialDirection="asc" onSort={() => handleSort('canonicalName', 'asc')} />
+                <SortableTableHeader label="Total Spent" active={sort?.field === 'totalSpent'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('totalSpent', 'desc')} align="right" />
+                <SortableTableHeader label="Unit Price (Latest)" active={sort?.field === 'latestPrice'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('latestPrice', 'desc')} align="right" />
+                <SortableTableHeader label="Change" active={sort?.field === 'priceChangePct'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('priceChangePct', 'desc')} align="right" />
+                <SortableTableHeader label="Occasions" active={sort?.field === 'occasions'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('occasions', 'desc')} align="right" />
+                <th scope="col" className="px-4 py-4"><span className="sr-only">Item details</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {data.map((row, idx) => {
-                const rowId = `${row.canonicalName}-${row.unitCategory}-${idx}`;
+              {sortedData.map((row) => {
+                const rowId = `${row.canonicalName}-${row.unitCategory}`;
                 const isExpanded = expandedId === rowId;
                 const hasChange = row.priceChangePct !== null;
                 const isUp = hasChange && row.priceChangePct! > 0;

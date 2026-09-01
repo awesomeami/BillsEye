@@ -3,7 +3,9 @@ import assert from 'node:assert';
 import { 
   calculateDashboardSummary, 
   getDateRange,
+  getDefaultCustomDateRange,
   getElapsedMonthComparisonRanges,
+  getFilteredReceipts,
   generateMonthlyReport,
   generateItemReport,
   generateMerchantReport
@@ -134,6 +136,43 @@ for (const tz of testTimezones) {
       assert.strictEqual(summary.categoryComposition.find(category => category.name === 'Meat')?.total, 50893);
       assert.ok(summary.recentReceipts.some(recent => recent.id === receipt.id));
       assert.strictEqual(generateMonthlyReport(receipts, getDateRange('all_time'))[0].total, 50900);
+    });
+
+    test('builds and applies custom ranges using Karachi calendar dates', () => {
+      const refDate = new Date('2026-09-01T20:00:00Z');
+      assert.deepStrictEqual(getDefaultCustomDateRange(refDate), {
+        start: '2026-09-01',
+        end: '2026-09-02',
+      });
+
+      const receipts = [
+        { ...baseReceipt, id: 'before', transactionDate: '2026-08-31', printedGrandTotal: 100 },
+        { ...baseReceipt, id: 'inside', transactionDate: '2026-09-01', printedGrandTotal: 200 },
+        { ...baseReceipt, id: 'after', transactionDate: '2026-09-03', printedGrandTotal: 300 },
+      ];
+      const customRange = { start: '2026-09-01', end: '2026-09-02' };
+
+      assert.deepStrictEqual(getFilteredReceipts(receipts, customRange).map(receipt => receipt.id), ['inside']);
+      const summary = calculateDashboardSummary(receipts, refDate, [], 'custom', customRange);
+      assert.strictEqual(summary.currentTotal, 200);
+      assert.strictEqual(summary.receiptCount, 1);
+      assert.strictEqual(summary.changePct, null);
+    });
+
+    test('supports an open start or end while a custom range is being edited', () => {
+      const receipts = [
+        { ...baseReceipt, id: 'early', transactionDate: '2026-08-01' },
+        { ...baseReceipt, id: 'late', transactionDate: '2026-09-01' },
+      ];
+
+      assert.deepStrictEqual(
+        getFilteredReceipts(receipts, { start: '2026-08-15', end: null }).map(receipt => receipt.id),
+        ['late'],
+      );
+      assert.deepStrictEqual(
+        getFilteredReceipts(receipts, { start: null, end: '2026-08-15' }).map(receipt => receipt.id),
+        ['early'],
+      );
     });
 
     test('clamps equivalent elapsed ranges at month boundaries, including leap years', () => {

@@ -2,8 +2,9 @@ import React, { useState, useMemo, Suspense, lazy } from 'react';
 import { Calendar, Tags, Store, ShoppingBag, Loader2 } from 'lucide-react';
 import { cn } from '../../utilities/cn';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
-import { DateRangeFilter, getDateRange, getFilteredReceipts } from '../../domain/analytics';
+import { DateRange, DateRangeFilter, getDateRange, getDefaultCustomDateRange, getFilteredReceipts } from '../../domain/analytics';
 import { RouteLoadingState } from '../../components/ui/LoadingState';
+import { DateRangeControl, DateRangeOption } from '../../components/ui/DateRangeControl';
 
 const MonthlyReportView = lazy(() => import('./views/MonthlyReportView').then(m => ({ default: m.MonthlyReportView })));
 const CategoryReportView = lazy(() => import('./views/CategoryReportView').then(m => ({ default: m.CategoryReportView })));
@@ -19,16 +20,25 @@ const tabs = [
   { id: 'items', label: 'Items', icon: ShoppingBag },
 ] as const;
 
+const reportDateOptions: readonly DateRangeOption[] = [
+  { value: 'this_month', label: 'This Month' },
+  { value: 'last_month', label: 'Last Month' },
+  { value: 'current_and_previous_2_months', label: 'Last 3 Months' },
+  { value: 'this_year', label: 'This Year' },
+  { value: 'all_time', label: 'All Time' },
+];
+
 export function ReportsScreen() {
   const tabsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
   const { receipts, categories, loading } = useReceiptsLibrary();
   const [activeTab, setActiveTab] = useState<Tab>('monthly');
   const [selectedDateFilter, setDateFilter] = useState<DateRangeFilter | null>(null);
+  const [customRange, setCustomRange] = useState<DateRange>(() => getDefaultCustomDateRange());
   const defaultDateFilter = useMemo(() => receipts.some(receipt => receipt.transactionDate)
     && getFilteredReceipts(receipts, getDateRange('this_year')).length === 0 ? 'all_time' : 'this_year', [receipts]);
   const dateFilter = selectedDateFilter ?? defaultDateFilter;
 
-  const range = useMemo(() => getDateRange(dateFilter), [dateFilter]);
+  const range = useMemo(() => dateFilter === 'custom' ? customRange : getDateRange(dateFilter), [customRange, dateFilter]);
 
   React.useEffect(() => {
     const activeIndex = tabs.findIndex(tab => tab.id === activeTab);
@@ -72,19 +82,17 @@ export function ReportsScreen() {
           <h1 className="page-title">Reports</h1>
           <p className="page-subtitle">Detailed breakdown and insights of your spending.</p>
         </div>
-        <label htmlFor="report-date-range" className="sr-only">Report date range</label>
-        <select
+        <DateRangeControl
           id="report-date-range"
+          label="Report date range"
           value={dateFilter}
-          onChange={(e) => setDateFilter(e.target.value as DateRangeFilter)}
-          className="form-control w-full sm:!w-48"
-        >
-          <option value="this_month">This Month</option>
-          <option value="last_month">Last Month</option>
-          <option value="current_and_previous_2_months">Last 3 Months</option>
-          <option value="this_year">This Year</option>
-          <option value="all_time">All Time</option>
-        </select>
+          options={reportDateOptions}
+          customRange={customRange}
+          onChange={setDateFilter}
+          onCustomRangeChange={setCustomRange}
+          className="w-full sm:w-auto"
+          selectClassName="sm:!w-48"
+        />
       </header>
 
       {selectedDateFilter === null && dateFilter === 'all_time' && (

@@ -1,10 +1,12 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { generateCategoryReport } from '../../../domain/analytics';
 import { CategoryDocument, ReceiptDocument } from '../../../domain/schema';
 import { formatCurrency } from '../../../utilities/config';
 import { DateRange } from '../../../domain/analytics';
+import { SortableTableHeader } from '../../../components/ui/SortableTableHeader';
+import { getNextReportSort, ReportSortState, sortReportRows } from '../reportSorting';
 
 const COLORS = ['#3269e8', '#12b76a', '#f79009', '#7f56d9', '#06aed4', '#ee46bc', '#6172f3', '#15b79e'];
 
@@ -14,8 +16,15 @@ interface Props {
   range: DateRange;
 }
 
+type CategorySortField = 'category' | 'total' | 'proportion' | 'receiptCount';
+
 export function CategoryReportView({ receipts, categories, range }: Props) {
   const data = useMemo(() => generateCategoryReport(receipts, range, categories), [receipts, categories, range]);
+  const [sort, setSort] = useState<ReportSortState<CategorySortField> | null>(null);
+  const sortedData = useMemo(() => sortReportRows(data, sort, (row, field) => row[field]), [data, sort]);
+  const handleSort = (field: CategorySortField, initialDirection: 'asc' | 'desc') => {
+    setSort(current => getNextReportSort(current, field, initialDirection));
+  };
 
   if (data.length === 0) {
     return (
@@ -59,7 +68,7 @@ export function CategoryReportView({ receipts, categories, range }: Props) {
       </div>
 
       <div className="space-y-3 xl:hidden">
-        {data.map((row) => <article key={row.category} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold text-gray-900">{row.filterValue ? <Link to={`/receipts?category=${encodeURIComponent(row.filterValue)}`} className="text-blue-700 hover:underline">{row.category}</Link> : row.category}</p><p className="mt-1 text-xs text-gray-500">{row.receiptCount} receipt{row.receiptCount === 1 ? '' : 's'} · {row.proportion.toFixed(1)}% of spending</p></div><p className="shrink-0 text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div></article>)}
+        {sortedData.map((row) => <article key={row.category} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold text-gray-900">{row.filterValue ? <Link to={`/receipts?category=${encodeURIComponent(row.filterValue)}`} className="text-blue-700 hover:underline">{row.category}</Link> : row.category}</p><p className="mt-1 text-xs text-gray-500">{row.receiptCount} receipt{row.receiptCount === 1 ? '' : 's'} · {row.proportion.toFixed(1)}% of spending</p></div><p className="shrink-0 text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div></article>)}
       </div>
 
       <div className="app-card hidden overflow-hidden xl:block">
@@ -68,14 +77,14 @@ export function CategoryReportView({ receipts, categories, range }: Props) {
             <caption className="sr-only">Category spending summary</caption>
             <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b border-gray-100">
               <tr>
-                <th className="px-6 py-4 font-medium">Category</th>
-                <th className="px-6 py-4 font-medium text-right">Total</th>
-                <th className="px-6 py-4 font-medium text-right">% of Total</th>
-                <th className="px-6 py-4 font-medium text-right">Contained in Receipts</th>
+                <SortableTableHeader label="Category" active={sort?.field === 'category'} direction={sort?.direction ?? 'asc'} initialDirection="asc" onSort={() => handleSort('category', 'asc')} />
+                <SortableTableHeader label="Total" active={sort?.field === 'total'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('total', 'desc')} align="right" />
+                <SortableTableHeader label="% of Total" active={sort?.field === 'proportion'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('proportion', 'desc')} align="right" />
+                <SortableTableHeader label="Contained in Receipts" active={sort?.field === 'receiptCount'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('receiptCount', 'desc')} align="right" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {data.map((row) => (
+              {sortedData.map((row) => (
                 <tr key={row.category} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 font-medium text-blue-600">
                     {row.filterValue ? (

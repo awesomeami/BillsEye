@@ -13,6 +13,11 @@ export interface DateRange {
   end: string | null;   
 }
 
+export function getDefaultCustomDateRange(referenceDate: Date = new Date()): DateRange {
+  const today = getKarachiYYYYMMDD(referenceDate);
+  return { start: `${today.substring(0, 7)}-01`, end: today };
+}
+
 export function getKarachiYYYYMMDD(date: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: APP_CONFIG.timeZone,
@@ -74,8 +79,9 @@ export function getDateRange(filter: DateRangeFilter, referenceDate: Date = new 
 
 export function isDateInRange(dateStr: string | null, range: DateRange): boolean {
   if (!dateStr) return false;
-  if (!range.start || !range.end) return true;
-  return dateStr >= range.start && dateStr <= range.end;
+  if (range.start && dateStr < range.start) return false;
+  if (range.end && dateStr > range.end) return false;
+  return true;
 }
 
 export function getConfirmedReceipts(receipts: ReceiptDocument[]): ReceiptDocument[] {
@@ -101,7 +107,7 @@ export interface DashboardSummary {
   recentReceipts: ReceiptDocument[];
 }
 
-export type DashboardPeriod = 'this_month' | 'all_time';
+export type DashboardPeriod = 'this_month' | 'all_time' | 'custom';
 
 /**
  * Compares this month through the reference date with the same elapsed days of
@@ -134,12 +140,15 @@ export function calculateDashboardSummary(
   referenceDate: Date = new Date(),
   categories: CategoryDocument[] = [],
   period: DashboardPeriod = 'this_month',
+  customRange: DateRange = getDefaultCustomDateRange(referenceDate),
 ): DashboardSummary {
   const pendingCount = allReceipts.filter(r => r.status === 'pendingReview').length;
   const confirmed = getConfirmedReceipts(allReceipts);
   
   const comparisonRanges = getElapsedMonthComparisonRanges(referenceDate);
-  const currentRange = period === 'all_time' ? getDateRange('all_time') : comparisonRanges.current;
+  const currentRange = period === 'all_time'
+    ? getDateRange('all_time')
+    : period === 'custom' ? customRange : comparisonRanges.current;
   const lastMonthRange = comparisonRanges.previous;
   
   let currentTotal = 0;

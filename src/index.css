@@ -126,6 +126,10 @@ textarea:focus-visible,
   color: #98a2b3;
 }
 
+.form-control.form-control-with-leading-icon {
+  padding-left: 2.75rem;
+}
+
 .form-control:disabled,
 .form-control[readonly] {
   background: #f8fafc;
