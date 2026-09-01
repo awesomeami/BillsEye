@@ -11,6 +11,17 @@ import {
 type ReceiptListener = (receipts: ReceiptDocument[]) => void;
 type CategoryListener = (categories: CategoryDocument[]) => void;
 type SettingsListener = (settings: AppSettingsDocument) => void;
+type ReceiptMetadata = { fromCache: boolean; hasPendingWrites: boolean };
+
+function subscribeToReceiptMetadata(source: 'confirmed' | 'pending', onMetadata?: (metadata: ReceiptMetadata) => void) {
+  onMetadata?.({ fromCache: false, hasPendingWrites: false });
+  const handleMetadata = (event: Event) => {
+    const detail = (event as CustomEvent<ReceiptMetadata & { source: string }>).detail;
+    if (detail.source === source) onMetadata?.({ fromCache: detail.fromCache, hasPendingWrites: detail.hasPendingWrites });
+  };
+  window.addEventListener('kharchalens:e2e-receipt-metadata', handleMetadata);
+  return () => window.removeEventListener('kharchalens:e2e-receipt-metadata', handleMetadata);
+}
 
 export class ReceiptRevisionConflictError extends Error {
   readonly code = 'receipt-revision-conflict';
@@ -142,8 +153,9 @@ export const receiptRepository = {
     _onError: (error: Error) => void,
     onMetadata?: (metadata: { fromCache: boolean; hasPendingWrites: boolean }) => void,
   ) {
-    onMetadata?.({ fromCache: false, hasPendingWrites: false });
-    return subscribe(receiptListeners, uid, onUpdate, currentReceipts(uid, 'confirmed'));
+    const unsubscribeMetadata = subscribeToReceiptMetadata('confirmed', onMetadata);
+    const unsubscribe = subscribe(receiptListeners, uid, onUpdate, currentReceipts(uid, 'confirmed'));
+    return () => { unsubscribeMetadata(); unsubscribe(); };
   },
   subscribeToPendingReceipts(
     uid: string,
@@ -151,8 +163,9 @@ export const receiptRepository = {
     _onError: (error: Error) => void,
     onMetadata?: (metadata: { fromCache: boolean; hasPendingWrites: boolean }) => void,
   ) {
-    onMetadata?.({ fromCache: false, hasPendingWrites: false });
-    return subscribe(pendingReceiptListeners, uid, onUpdate, currentReceipts(uid, 'pendingReview'));
+    const unsubscribeMetadata = subscribeToReceiptMetadata('pending', onMetadata);
+    const unsubscribe = subscribe(pendingReceiptListeners, uid, onUpdate, currentReceipts(uid, 'pendingReview'));
+    return () => { unsubscribeMetadata(); unsubscribe(); };
   },
   async getReceipts(uid: string): Promise<ReceiptDocument[]> {
     return [...userMap(receiptsByUser, uid).values()];

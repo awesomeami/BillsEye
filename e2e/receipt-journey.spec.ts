@@ -60,6 +60,7 @@ async function mockExtraction(page: import('@playwright/test').Page) {
 }
 
 test('mocked sign-in, upload, review, confirmation, dashboard and reports journey', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-28T12:00:00Z'));
   const getAuthorization = await mockExtraction(page);
   await page.goto('/login');
 
@@ -101,6 +102,7 @@ test('mocked sign-in, upload, review, confirmation, dashboard and reports journe
   await page.getByRole('link', { name: 'Home' }).click();
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   await expect(page.getByRole('link', { name: /Example Market 2026-08-28/ })).toBeVisible();
+  await expect(page.getByLabel('Dashboard date range')).toHaveValue('this_month');
   await page.getByRole('link', { name: 'Reports' }).click();
   await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
   await expect(page.getByRole('cell', { name: '2026-08', exact: true })).toBeVisible();
@@ -226,7 +228,78 @@ test('shared-device cache settings require confirmation and reflect real connect
   await page.context().setOffline(true);
   await expect(page.getByRole('status')).toContainText('Offline');
   await page.context().setOffline(false);
+  await expect(page.getByRole('status')).toHaveCount(0);
+});
+
+test('a historical receipt populates the overview and every report without changing its date', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-01T12:00:00Z'));
+  const historicalReceipt = {
+    ...extractionResponse,
+    transactionDate: '2022-01-30',
+    merchantNormalized: 'Al-Shaheer Corporation Ltd.',
+    printedSubtotal: null,
+    printedGrandTotal: 50900,
+    computedLineTotal: 50893,
+    computedExpectedTotal: 50900,
+    items: [{ ...extractionResponse.items[0], name: 'Chicken', rawLineText: 'Chicken', quantity: 0.994, unit: 'kg', unitPrice: 51200, lineTotal: 50893, category: 'Meat' }],
+  };
+  await page.route('**/api/extract', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(historicalReceipt) }));
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await page.getByRole('link', { name: 'Add Receipt' }).first().click();
+  await page.locator('input[type="file"][accept="image/jpeg,image/png,image/webp"]').first().setInputFiles(receiptImagePath);
+  await page.getByRole('link', { name: 'Review' }).click();
+  await page.getByRole('button', { name: 'Confirm & Save' }).click();
+  await page.getByRole('link', { name: 'Home' }).click();
+
+  await expect(page.getByLabel('Dashboard date range')).toHaveValue('all_time');
+  await expect(page.getByText('Total Spent (All Time)').locator('..').locator('..')).toContainText('Rs 509');
+  await expect(page.getByText('1 confirmed receipt across all dates.')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Al-Shaheer Corporation Ltd. 2022-01-30/ })).toBeVisible();
+  await expect(page.getByText('Chicken', { exact: true })).toBeVisible();
+  await expect(page.getByText(/You've recorded Rs\s+509/)).toBeVisible();
+  await expect(page.getByText('Add a receipt with categories to see your spending mix.')).toHaveCount(0);
+
+  await page.getByLabel('Dashboard date range').selectOption('this_month');
+  await expect(page.getByText('Total Spent (This Month)').locator('..').locator('..')).toContainText('Rs 0');
+  await expect(page.getByText('No confirmed receipts dated this month')).toBeVisible();
+  await page.getByLabel('Dashboard date range').selectOption('all_time');
+  await expect(page.getByText('1 confirmed receipt across all dates.')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Reports' }).click();
+  await expect(page.getByLabel('Report date range')).toHaveValue('all_time');
+  await expect(page.getByRole('row').filter({ has: page.getByRole('cell', { name: '2022-01', exact: true }) })).toContainText('Rs 509');
+  await page.getByLabel('Report date range').selectOption('this_year');
+  await expect(page.getByRole('cell', { name: '2022-01', exact: true })).toHaveCount(0);
+  await page.getByLabel('Report date range').selectOption('all_time');
+  await page.getByRole('tab', { name: 'Categories' }).click();
+  await expect(page.getByRole('cell', { name: 'Meat', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Merchants' }).click();
+  await expect(page.getByRole('cell', { name: 'Al-Shaheer Corporation Ltd.', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Items', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Expand details for chicken/i })).toBeVisible();
+  await expect(page.getByRole('status')).toHaveCount(0);
+});
+
+test('cloud synchronization clears on metadata-only acknowledgements for both receipt streams', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  await expect(page.getByRole('status')).toHaveCount(0);
+  const metadata = async (source: 'confirmed' | 'pending', fromCache: boolean, hasPendingWrites = false) => {
+    await page.evaluate(detail => window.dispatchEvent(new CustomEvent('kharchalens:e2e-receipt-metadata', { detail })), { source, fromCache, hasPendingWrites });
+  };
+  await metadata('confirmed', true);
+  await metadata('pending', true);
   await expect(page.getByRole('status')).toContainText('Synchronizing with the cloud');
+  await metadata('confirmed', false);
+  await expect(page.getByRole('status')).toContainText('Synchronizing with the cloud');
+  await metadata('pending', false);
+  await expect(page.getByRole('status')).toHaveCount(0);
+  await metadata('confirmed', false, true);
+  await expect(page.getByRole('status')).toContainText('waiting to sync');
+  await metadata('confirmed', false);
+  await expect(page.getByRole('status')).toHaveCount(0);
 });
 
 test('an available PWA update waits for memory-only queue work and dirty receipt edits', async ({ page }) => {

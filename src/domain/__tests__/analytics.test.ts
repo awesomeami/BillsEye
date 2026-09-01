@@ -100,6 +100,42 @@ for (const tz of testTimezones) {
       assert.deepStrictEqual(summary.dailyTrend.map(day => day.date), ['2026-08-01', '2026-08-05']);
     });
 
+    test('all-time summaries include historical spending without counting it as this month', () => {
+      const referenceDate = new Date('2026-09-01T12:00:00Z');
+      const receipt: ReceiptDocument = {
+        ...baseReceipt,
+        transactionDate: '2022-01-30',
+        currency: 'PKR',
+        printedGrandTotal: 50900,
+        items: [{ id: 'chicken', userEdited: false, name: 'Chicken', lineTotal: 50893, category: 'Meat' }],
+      };
+      const receipts = [
+        receipt,
+        { ...receipt, id: 'pending', status: 'pendingReview' as const },
+        { ...baseReceipt, id: 'undated', transactionDate: null },
+        { ...baseReceipt, id: 'unknown', transactionDate: '2022-01-31', printedGrandTotal: null },
+      ];
+      const monthly = calculateDashboardSummary(receipts, referenceDate);
+      assert.strictEqual(monthly.currentTotal, 0);
+      assert.strictEqual(monthly.receiptCount, 0);
+
+      const summary = calculateDashboardSummary(receipts, referenceDate, [], 'all_time');
+      assert.strictEqual(summary.currentTotal, 50900);
+      assert.strictEqual(summary.currentTotalAvailable, true);
+      assert.strictEqual(summary.receiptCount, 2);
+      assert.strictEqual(summary.pendingCount, 1);
+      assert.strictEqual(summary.needsDateCount, 1);
+      assert.strictEqual(summary.excludedNullCount, 1);
+      assert.strictEqual(summary.changePct, null);
+      assert.strictEqual(summary.previousTotalAvailable, false);
+      assert.deepStrictEqual(summary.dailyTrend, [{ date: '2022-01-30', total: 50900 }]);
+      assert.deepStrictEqual(summary.topMerchants, [{ name: 'Test Merchant', total: 50900 }]);
+      assert.deepStrictEqual(summary.topItems, [{ name: 'Chicken', total: 50893 }]);
+      assert.strictEqual(summary.categoryComposition.find(category => category.name === 'Meat')?.total, 50893);
+      assert.ok(summary.recentReceipts.some(recent => recent.id === receipt.id));
+      assert.strictEqual(generateMonthlyReport(receipts, getDateRange('all_time'))[0].total, 50900);
+    });
+
     test('clamps equivalent elapsed ranges at month boundaries, including leap years', () => {
       const cases = [
         ['2026-08-10T12:00:00Z', '2026-08-01', '2026-08-10', '2026-07-01', '2026-07-10'],

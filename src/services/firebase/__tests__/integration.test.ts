@@ -2,6 +2,12 @@ import { describe, test, afterEach, before, after } from 'node:test';
 import assert from 'node:assert';
 import { initializeTestEnvironment, RulesTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import * as fs from 'fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
+import { build, stop } from 'esbuild';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { ReceiptSchema, ReceiptDocument } from '../../../domain/schema';
 import { getValidatedClientFirebaseConfig } from '../clientConfig';
 
 const firebaseConfig = getValidatedClientFirebaseConfig({}, { mode: 'test' });
@@ -32,6 +38,79 @@ after(async () => {
 });
 
 describe('Firestore Named Database Integration & Multi-User Isolation', () => {
+
+  test('production receipt subscriptions receive cache transitions and write acknowledgements without data changes', async () => {
+    const uid = 'receipt-sync-user';
+    const testDb = testEnv.authenticatedContext(uid).firestore();
+    const authApp = initializeApp({ projectId: firebaseConfig.projectId, apiKey: 'emulator-only' });
+    // Bundle the real repository, replacing only its Vite-specific database
+    // bootstrap with this isolated emulator connection. Firebase itself is real.
+    const temporaryDirectory = fs.mkdtempSync(path.join(process.cwd(), 'node_modules', '.receipt-sync-test-'));
+    const modulePath = path.join(temporaryDirectory, 'repository.mjs');
+    const testGlobal = globalThis as typeof globalThis & { __RECEIPT_SYNC_TEST_DB__?: unknown };
+    testGlobal.__RECEIPT_SYNC_TEST_DB__ = testDb;
+    const unsubscribers: (() => void)[] = [];
+    type Metadata = { fromCache: boolean; hasPendingWrites: boolean };
+    const metadata: Partial<Record<'confirmed' | 'pending', Metadata>> = {};
+    const received: Partial<Record<'confirmed' | 'pending', ReceiptDocument[]>> = {};
+    const errors: Error[] = [];
+    const waitUntil = async (condition: () => boolean, message: string) => {
+      const deadline = Date.now() + 8000;
+      while (!condition() && errors.length === 0 && Date.now() < deadline) await delay(20);
+      assert.deepStrictEqual(errors, []);
+      assert.ok(condition(), message);
+    };
+
+    try {
+      await build({
+        entryPoints: ['src/services/firebase/db.ts'],
+        outfile: modulePath,
+        bundle: true,
+        platform: 'node',
+        format: 'esm',
+        packages: 'external',
+        plugins: [{
+          name: 'emulator-database',
+          setup(builder) {
+            builder.onResolve({ filter: /^\.\/config$/ }, () => ({ path: 'emulator-db', namespace: 'receipt-sync-test' }));
+            builder.onLoad({ filter: /.*/, namespace: 'receipt-sync-test' }, () => ({ contents: 'export const db = globalThis.__RECEIPT_SYNC_TEST_DB__;' }));
+          },
+        }],
+      });
+      const { receiptRepository } = await import(pathToFileURL(modulePath).href) as typeof import('../db');
+      await testDb.disableNetwork();
+      unsubscribers.push(receiptRepository.subscribeToReceipts(uid, data => { received.confirmed = data; }, error => errors.push(error), value => { metadata.confirmed = value; }));
+      unsubscribers.push(receiptRepository.subscribeToPendingReceipts(uid, data => { received.pending = data; }, error => errors.push(error), value => { metadata.pending = value; }));
+      await waitUntil(() => metadata.confirmed?.fromCache === true && metadata.pending?.fromCache === true, 'Both empty queries should report cached snapshots while offline');
+
+      await testDb.enableNetwork();
+      await waitUntil(() => metadata.confirmed?.fromCache === false && metadata.pending?.fromCache === false, 'Both empty queries must receive metadata-only server confirmation');
+      assert.deepStrictEqual(received.confirmed, []);
+      assert.deepStrictEqual(received.pending, []);
+
+      await receiptRepository.createReceipt(uid, ReceiptSchema.parse({
+        id: 'receipt-sync',
+        status: 'confirmed',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        transactionDate: '2022-01-30',
+        printedGrandTotal: 50900,
+      }));
+      await waitUntil(() => received.confirmed?.length === 1 && metadata.confirmed?.hasPendingWrites === false, 'The created receipt should be acknowledged and hydrated');
+
+      // Updating only literal values makes the acknowledgement metadata-only.
+      await testDb.doc(`users/${uid}/receipts/receipt-sync`).update({ merchantRaw: 'Updated merchant', revision: 2 });
+      await waitUntil(() => received.confirmed?.[0]?.merchantRaw === 'Updated merchant' && metadata.confirmed?.hasPendingWrites === false, 'Acknowledgement must clear pending writes even when receipt fields do not change at the server');
+      assert.strictEqual(metadata.pending?.hasPendingWrites, false);
+    } finally {
+      unsubscribers.forEach(unsubscribe => unsubscribe());
+      await testDb.terminate();
+      delete testGlobal.__RECEIPT_SYNC_TEST_DB__;
+      await deleteApp(authApp);
+      stop();
+      fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
   
   test('Two-user isolation: Alice cannot read or write Bob data', async () => {
     const aliceDb = testEnv.authenticatedContext('alice').firestore();

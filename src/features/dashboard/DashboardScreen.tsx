@@ -1,9 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, ArrowDownRight, Wallet, ReceiptText, Inbox, ChevronRight, AlertTriangle, TrendingUp, Tag } from 'lucide-react';
 import { APP_CONFIG, formatCurrency } from '../../utilities/config';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
-import { calculateDashboardSummary, generateSummaryInsights } from '../../domain/analytics';
+import { calculateDashboardSummary, DashboardPeriod, generateSummaryInsights } from '../../domain/analytics';
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
@@ -17,8 +17,13 @@ const formatTrendDate = (date: string) => new Intl.DateTimeFormat(APP_CONFIG.loc
 
 export function DashboardScreen() {
   const { receipts, pendingReceipts, categories } = useReceiptsLibrary();
-  
-  const summary = useMemo(() => calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories), [receipts, pendingReceipts, categories]);
+  const [selectedPeriod, setSelectedPeriod] = useState<DashboardPeriod | null>(null);
+  const monthSummary = useMemo(() => calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories), [receipts, pendingReceipts, categories]);
+  const period = selectedPeriod ?? (monthSummary.receiptCount === 0 && receipts.some(receipt => receipt.transactionDate) ? 'all_time' : 'this_month');
+  const isAllTime = period === 'all_time';
+  const summary = useMemo(() => isAllTime
+    ? calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories, 'all_time')
+    : monthSummary, [isAllTime, receipts, pendingReceipts, categories, monthSummary]);
   const insights = useMemo(() => generateSummaryInsights(receipts, new Date(), categories), [receipts, categories]);
 
   const {
@@ -39,10 +44,17 @@ export function DashboardScreen() {
 
   return (
     <div className="space-y-5">
-      <header className="flex justify-between items-end pb-4 border-b border-gray-200">
+      <header className="flex flex-wrap gap-4 justify-between items-end pb-4 border-b border-gray-200">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Overview</h1>
-          <p className="text-sm text-gray-500 mt-1">This month's snapshot</p>
+          <p className="text-sm text-gray-500 mt-1">{isAllTime ? 'All-time snapshot' : "This month's snapshot"}</p>
+        </div>
+        <div>
+          <label htmlFor="dashboard-date-range" className="sr-only">Dashboard date range</label>
+          <select id="dashboard-date-range" value={period} onChange={event => setSelectedPeriod(event.target.value as DashboardPeriod)} className="touch-target bg-white border border-gray-200 text-gray-700 text-sm rounded-lg p-2.5 shadow-sm">
+            <option value="this_month">This Month</option>
+            <option value="all_time">All Time</option>
+          </select>
         </div>
         {pendingCount > 0 && (
           <Link to="/inbox" className="flex items-center gap-2 bg-red-50 text-red-700 px-3 py-1.5 rounded-full text-sm font-medium hover:bg-red-100 transition-colors">
@@ -52,11 +64,15 @@ export function DashboardScreen() {
         )}
       </header>
 
+      {selectedPeriod === null && isAllTime && (
+        <p className="text-sm text-gray-500">Your saved receipts are dated outside this month, so all-time statistics are shown. Spending uses the receipt date, not the upload date.</p>
+      )}
+
       {needsDateCount > 0 && (
         <div className="bg-amber-50 text-amber-800 p-4 rounded-xl flex items-center gap-3">
           <AlertTriangle size={20} className="text-amber-500 shrink-0" />
           <p className="text-sm">
-            <strong>{needsDateCount} receipt{needsDateCount !== 1 ? 's' : ''}</strong> {needsDateCount !== 1 ? 'are' : 'is'} missing a date. They are excluded from the current month totals. Update them in the library.
+            <strong>{needsDateCount} receipt{needsDateCount !== 1 ? 's' : ''}</strong> {needsDateCount !== 1 ? 'are' : 'is'} missing a date. They are excluded from date-based summaries. Update them in the library.
           </p>
         </div>
       )}{excludedNullCount > 0 && (
@@ -73,13 +89,17 @@ export function DashboardScreen() {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <div className="flex items-center gap-2 text-gray-500 mb-2">
             <Wallet size={18} />
-            <span className="font-medium">Total Spent (This Month)</span>
+            <span className="font-medium">Total Spent ({isAllTime ? 'All Time' : 'This Month'})</span>
           </div>
           <div className="text-4xl font-bold tracking-tight text-gray-900 mb-3">
-            {currentTotalAvailable ? formatCurrency(currentTotal / 100) : 'Unavailable'}
+            {currentTotalAvailable || summary.receiptCount === 0 ? formatCurrency(currentTotal / 100) : 'Unavailable'}
           </div>
           <div className="flex items-center gap-2 text-sm">
-            {changePct !== null ? (
+            {isAllTime ? (
+              <span className="text-gray-500">All confirmed receipts with a transaction date</span>
+            ) : summary.receiptCount === 0 ? (
+              <span className="text-gray-500">No confirmed receipts dated this month</span>
+            ) : changePct !== null ? (
               <>
                 <div className={`flex items-center gap-1 font-medium ${isUp ? 'text-red-600' : 'text-green-600'}`}>
                   {isUp ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
@@ -101,7 +121,7 @@ export function DashboardScreen() {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
           <div>
             <h3 className="font-medium text-gray-900 mb-1">Recent Activity</h3>
-            <p className="text-sm text-gray-500">You have added {summary.receiptCount} receipts this month.</p>
+            <p className="text-sm text-gray-500">{summary.receiptCount} confirmed receipt{summary.receiptCount !== 1 ? 's' : ''} {isAllTime ? 'across all dates' : 'dated this month'}.</p>
           </div>
           <Link to="/add" className="touch-target mt-4 flex items-center justify-between bg-blue-600 p-4 rounded-xl text-white hover:bg-blue-700 transition-colors">
             <div className="flex items-center gap-3">
@@ -114,7 +134,7 @@ export function DashboardScreen() {
       </div>
 
       {/* AI Insights Section */}
-      {(insights.largestIncreases.length > 0 || insights.categoryChanges.length > 0) && (
+      {!isAllTime && (insights.largestIncreases.length > 0 || insights.categoryChanges.length > 0) && (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <Tag size={20} className="text-blue-600" />

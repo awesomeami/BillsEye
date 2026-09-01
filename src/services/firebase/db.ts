@@ -320,7 +320,8 @@ export const receiptRepository = {
       onUpdate,
       onError: error => onError(error instanceof Error ? error : new Error('Could not load receipts.')),
     });
-    const unsubscribe = onSnapshot(q, snapshot => {
+    // Server acknowledgements and cache-to-server transitions can change only metadata.
+    const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, snapshot => {
       onMetadata?.({
         fromCache: snapshot.metadata.fromCache,
         hasPendingWrites: snapshot.metadata.hasPendingWrites,
@@ -366,7 +367,7 @@ export const receiptRepository = {
       onUpdate,
       onError: error => onError(error instanceof Error ? error : new Error('Could not load pending receipts.')),
     });
-    const unsubscribe = onSnapshot(q, snapshot => {
+    const unsubscribe = onSnapshot(q, { includeMetadataChanges: true }, snapshot => {
       onMetadata?.({
         fromCache: snapshot.metadata.fromCache,
         hasPendingWrites: snapshot.metadata.hasPendingWrites,

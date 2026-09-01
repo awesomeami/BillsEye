@@ -101,6 +101,8 @@ export interface DashboardSummary {
   recentReceipts: ReceiptDocument[];
 }
 
+export type DashboardPeriod = 'this_month' | 'all_time';
+
 /**
  * Compares this month through the reference date with the same elapsed days of
  * the previous calendar month. The previous end is clamped for short months.
@@ -131,12 +133,13 @@ export function calculateDashboardSummary(
   allReceipts: ReceiptDocument[], 
   referenceDate: Date = new Date(),
   categories: CategoryDocument[] = [],
+  period: DashboardPeriod = 'this_month',
 ): DashboardSummary {
   const pendingCount = allReceipts.filter(r => r.status === 'pendingReview').length;
   const confirmed = getConfirmedReceipts(allReceipts);
   
   const comparisonRanges = getElapsedMonthComparisonRanges(referenceDate);
-  const thisMonthRange = comparisonRanges.current;
+  const currentRange = period === 'all_time' ? getDateRange('all_time') : comparisonRanges.current;
   const lastMonthRange = comparisonRanges.previous;
   
   let currentTotal = 0;
@@ -146,7 +149,7 @@ export function calculateDashboardSummary(
   let needsDateCount = 0;
   let excludedNullCount = 0;
   
-  const thisMonthReceipts: ReceiptDocument[] = [];
+  const periodReceipts: ReceiptDocument[] = [];
   
   for (const r of confirmed) {
     if (!r.transactionDate) {
@@ -155,15 +158,15 @@ export function calculateDashboardSummary(
     }
     const val = getReceiptTotal(r);
     
-    if (isDateInRange(r.transactionDate, thisMonthRange)) {
+    if (isDateInRange(r.transactionDate, currentRange)) {
       if (val === null) {
         excludedNullCount++;
       } else {
         currentTotal += val;
         currentKnownCount++;
       }
-      thisMonthReceipts.push(r);
-    } else if (isDateInRange(r.transactionDate, lastMonthRange)) {
+      periodReceipts.push(r);
+    } else if (period === 'this_month' && isDateInRange(r.transactionDate, lastMonthRange)) {
       if (val !== null) {
         prevTotal += val;
         previousKnownCount++;
@@ -171,8 +174,8 @@ export function calculateDashboardSummary(
     }
   }
 
-  const validReceiptsThisMonth = thisMonthReceipts.filter(r => getReceiptTotal(r) !== null);
-  const averageReceiptValue = validReceiptsThisMonth.length > 0 ? Math.round(currentTotal / validReceiptsThisMonth.length) : 0;
+  const validPeriodReceipts = periodReceipts.filter(r => getReceiptTotal(r) !== null);
+  const averageReceiptValue = validPeriodReceipts.length > 0 ? Math.round(currentTotal / validPeriodReceipts.length) : 0;
   const currentTotalAvailable = currentKnownCount > 0;
   const previousTotalAvailable = previousKnownCount > 0;
   const changeAbs = currentTotalAvailable && previousTotalAvailable ? currentTotal - prevTotal : 0;
@@ -184,7 +187,7 @@ export function calculateDashboardSummary(
   const itemMap = new Map<string, number>();
   const dailyMap = new Map<string, number>();
 
-  for (const r of validReceiptsThisMonth) {
+  for (const r of validPeriodReceipts) {
     const rTotal = getReceiptTotal(r)!;
     const mName = applyMerchantAlias(r.merchantNormalized || r.merchantRaw || 'Unknown');
     merchantMap.set(mName, (merchantMap.get(mName) || 0) + rTotal);
@@ -198,7 +201,7 @@ export function calculateDashboardSummary(
     }
   }
 
-  const categoryComposition = generateCategoryReport(thisMonthReceipts, thisMonthRange, categories);
+  const categoryComposition = generateCategoryReport(periodReceipts, currentRange, categories);
 
   return {
     currentTotal,
@@ -209,14 +212,14 @@ export function calculateDashboardSummary(
     changePct,
     needsDateCount,
     excludedNullCount,
-    receiptCount: thisMonthReceipts.length,
+    receiptCount: periodReceipts.length,
     averageReceiptValue,
     pendingCount,
     topMerchants: Array.from(merchantMap.entries()).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 5),
     topItems: Array.from(itemMap.entries()).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 5),
     categoryComposition: categoryComposition.map(c => ({ name: c.category, total: c.total })),
     dailyTrend: Array.from(dailyMap.entries()).map(([date, total]) => ({ date, total })).sort((a, b) => a.date.localeCompare(b.date)),
-    recentReceipts: [...thisMonthReceipts].sort((a,b) => ((b.transactionDate || "") > (a.transactionDate || "") ? 1 : -1)).slice(0, 5)
+    recentReceipts: [...periodReceipts].sort((a,b) => ((b.transactionDate || "") > (a.transactionDate || "") ? 1 : -1)).slice(0, 5)
   };
 }
 

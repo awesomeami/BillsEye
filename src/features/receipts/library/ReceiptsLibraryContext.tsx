@@ -178,11 +178,10 @@ export function ReceiptsLibraryProvider({ children }: { children: React.ReactNod
 
   useEffect(() => {
     const handleOnline = () => {
-      // A browser online event is only a connectivity hint. Wait for fresh
-      // Firestore snapshots before claiming the session is synchronized.
+      // Connectivity is only a hint. Keep the last Firestore metadata: a brief
+      // browser interruption need not produce a new snapshot. Metadata events
+      // will update cache/pending-write state when Firestore actually reconnects.
       setOnline(true);
-      setConfirmedSnapshotSync(null);
-      setPendingSnapshotSync(null);
     };
     const handleOffline = () => setOnline(false);
     window.addEventListener('online', handleOnline);

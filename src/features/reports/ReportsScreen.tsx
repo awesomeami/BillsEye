@@ -2,7 +2,7 @@ import React, { useState, useMemo, Suspense, lazy } from 'react';
 import { Calendar, Tags, Store, ShoppingBag, Loader2 } from 'lucide-react';
 import { cn } from '../../utilities/cn';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
-import { DateRangeFilter, getDateRange } from '../../domain/analytics';
+import { DateRangeFilter, getDateRange, getFilteredReceipts } from '../../domain/analytics';
 
 const MonthlyReportView = lazy(() => import('./views/MonthlyReportView').then(m => ({ default: m.MonthlyReportView })));
 const CategoryReportView = lazy(() => import('./views/CategoryReportView').then(m => ({ default: m.CategoryReportView })));
@@ -15,7 +15,10 @@ export function ReportsScreen() {
   const tabsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
   const { receipts, categories } = useReceiptsLibrary();
   const [activeTab, setActiveTab] = useState<Tab>('monthly');
-  const [dateFilter, setDateFilter] = useState<DateRangeFilter>('this_year');
+  const [selectedDateFilter, setDateFilter] = useState<DateRangeFilter | null>(null);
+  const defaultDateFilter = useMemo(() => receipts.some(receipt => receipt.transactionDate)
+    && getFilteredReceipts(receipts, getDateRange('this_year')).length === 0 ? 'all_time' : 'this_year', [receipts]);
+  const dateFilter = selectedDateFilter ?? defaultDateFilter;
 
   const range = useMemo(() => getDateRange(dateFilter), [dateFilter]);
 
@@ -75,6 +78,10 @@ export function ReportsScreen() {
           <option value="all_time">All Time</option>
         </select>
       </header>
+
+      {selectedDateFilter === null && dateFilter === 'all_time' && (
+        <p className="text-sm text-gray-500">Your saved receipts are dated outside this year, so all-time reports are shown.</p>
+      )}
 
       {/* Tabs */}
       <div className="relative">
