@@ -101,9 +101,37 @@ function seedPerformanceReceipts(uid: string, count: number) {
   emitReceipts(uid);
 }
 
+function seedTrendReceipts(uid: string, points: Array<{ date: string; total: number }>) {
+  const receipts = userMap(receiptsByUser, uid);
+  receipts.clear();
+  points.forEach((point, index) => {
+    const id = `trend-receipt-${index}`;
+    receipts.set(id, ReceiptSchema.parse({
+      id,
+      revision: 1,
+      status: 'confirmed',
+      createdAt: `${point.date}T00:00:00.000Z`,
+      updatedAt: `${point.date}T00:00:00.000Z`,
+      confirmedAt: `${point.date}T00:00:00.000Z`,
+      merchantRaw: `Trend Merchant ${index}`,
+      merchantNormalized: `Trend Merchant ${index}`,
+      transactionDate: point.date,
+      currency: 'PKR',
+      items: [],
+      printedGrandTotal: point.total,
+      rawOcrText: `Trend fixture ${index}`,
+    }));
+  });
+  emitReceipts(uid);
+}
+
 if (typeof window !== 'undefined') {
-  const target = window as typeof window & { __KHARCHALENS_E2E_SEED_RECEIPTS__?: (count: number) => void };
+  const target = window as typeof window & {
+    __KHARCHALENS_E2E_SEED_RECEIPTS__?: (count: number) => void;
+    __KHARCHALENS_E2E_SEED_TREND__?: (points: Array<{ date: string; total: number }>) => void;
+  };
   target.__KHARCHALENS_E2E_SEED_RECEIPTS__ = count => seedPerformanceReceipts('e2e-user', count);
+  target.__KHARCHALENS_E2E_SEED_TREND__ = points => seedTrendReceipts('e2e-user', points);
 }
 
 function subscribe<T>(listeners: Map<string, Set<(value: T) => void>>, uid: string, listener: (value: T) => void, value: T) {

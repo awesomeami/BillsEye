@@ -1,7 +1,13 @@
-import React from 'react';
-import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import React, { useMemo, useState } from 'react';
+import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Brush } from 'recharts';
 import { DashboardSummary } from '../../domain/analytics';
-import { APP_CONFIG, formatCurrency } from '../../utilities/config';
+import { formatCurrency } from '../../utilities/config';
+import {
+  buildDailyTrendChartData,
+  DailyTrendChartPoint,
+  formatFullTrendDate,
+  formatTrendMonthYear,
+} from './dashboardTrend';
 
 const COLORS = [
   'var(--chart-1)',
@@ -20,18 +26,17 @@ const tooltipStyle = {
   color: 'var(--ink)',
 };
 
-const formatTrendDate = (date: string) => new Intl.DateTimeFormat(APP_CONFIG.locale, {
-  timeZone: APP_CONFIG.timeZone,
-  month: 'short',
-  day: 'numeric',
-}).format(new Date(`${date}T00:00:00+05:00`));
-
 interface DashboardChartsProps {
   categoryComposition: DashboardSummary['categoryComposition'];
   dailyTrend: DashboardSummary['dailyTrend'];
 }
 
 export function DashboardCharts({ categoryComposition, dailyTrend }: DashboardChartsProps) {
+  const trendData = useMemo(() => buildDailyTrendChartData(dailyTrend), [dailyTrend]);
+  const trendVersion = trendData.length === 0
+    ? 'empty'
+    : `${trendData.length}-${trendData[0].timestamp}-${trendData[trendData.length - 1].timestamp}`;
+
   return (
     <div className="grid grid-cols-1 gap-5 pt-1 lg:grid-cols-2">
       <section className="app-card flex min-h-72 flex-col p-5 sm:p-6">
@@ -65,27 +70,77 @@ export function DashboardCharts({ categoryComposition, dailyTrend }: DashboardCh
 
       <section className="app-card flex min-h-72 flex-col p-5 sm:p-6">
         <h3 className="mb-4 font-semibold text-gray-950">Daily Spending Trend</h3>
-        {dailyTrend.length > 1 ? (
-          <>
-            <p id="dashboard-trend-summary" className="sr-only">Daily spending trend with exact values available in chart tooltips.</p>
-            <div aria-hidden="true" aria-describedby="dashboard-trend-summary" className="h-64 min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-rule)" />
-                  <XAxis dataKey="date" tickFormatter={formatTrendDate} stroke="var(--chart-muted)" fontSize={12} tickMargin={10} />
-                  <YAxis tickFormatter={(value: number) => formatCurrency(value / 100)} stroke="var(--chart-muted)" fontSize={12} width={58} />
-                  <Tooltip formatter={(value: number) => formatCurrency(value / 100)} labelFormatter={(label) => `Date: ${formatTrendDate(String(label))}`} contentStyle={tooltipStyle} />
-                  <Line type="monotone" dataKey="total" stroke="var(--chart-1)" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 5 }} isAnimationActive={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </>
+        {trendData.length > 1 ? (
+          <DailySpendingTrend key={trendVersion} data={trendData} />
         ) : (
           <div className="flex flex-1 items-center justify-center rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
-            {dailyTrend.length === 1 ? `You've recorded ${formatCurrency(dailyTrend[0].total / 100)} on ${formatTrendDate(dailyTrend[0].date)}.` : 'Your daily spending trend will appear after your first dated receipt.'}
+            {trendData.length === 1 ? `You've recorded ${formatCurrency(trendData[0].total / 100)} on ${formatFullTrendDate(trendData[0].timestamp)}.` : 'Your daily spending trend will appear after your first dated receipt.'}
           </div>
         )}
       </section>
     </div>
+  );
+}
+
+interface BrushRange {
+  startIndex: number;
+  endIndex: number;
+}
+
+function DailySpendingTrend({ data }: { data: DailyTrendChartPoint[] }) {
+  const [range, setRange] = useState<BrushRange>({ startIndex: 0, endIndex: data.length - 1 });
+  const rangeStart = data[range.startIndex];
+  const rangeEnd = data[range.endIndex];
+  const selectedDomain = rangeStart.timestamp === rangeEnd.timestamp
+    ? [rangeStart.timestamp - 43_200_000, rangeEnd.timestamp + 43_200_000]
+    : [rangeStart.timestamp, rangeEnd.timestamp];
+
+  const handleBrushChange = (nextRange: { startIndex?: number; endIndex?: number }) => {
+    const startIndex = Math.max(0, Math.min(nextRange.startIndex ?? 0, data.length - 1));
+    const endIndex = Math.max(startIndex, Math.min(nextRange.endIndex ?? data.length - 1, data.length - 1));
+    setRange({ startIndex, endIndex });
+  };
+
+  return (
+    <>
+      <p id="dashboard-trend-summary" className="sr-only">Daily spending uses complete calendar dates and proportional elapsed-time spacing. Exact values are available in chart tooltips.</p>
+      <div aria-hidden="true" aria-describedby="dashboard-trend-summary" className="h-80 min-h-0 sm:h-[22rem]">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-rule)" />
+            <XAxis
+              dataKey="timestamp"
+              type="number"
+              scale="time"
+              domain={selectedDomain}
+              allowDataOverflow
+              tickFormatter={formatFullTrendDate}
+              stroke="var(--chart-muted)"
+              fontSize={12}
+              minTickGap={28}
+              tickMargin={10}
+            />
+            <YAxis tickFormatter={(value: number) => formatCurrency(value / 100)} stroke="var(--chart-muted)" fontSize={12} width={58} />
+            <Tooltip formatter={(value: number) => formatCurrency(value / 100)} labelFormatter={(label) => `Date: ${formatFullTrendDate(Number(label))}`} contentStyle={tooltipStyle} />
+            <Line type="monotone" dataKey="total" stroke="var(--chart-1)" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+            <Brush
+              dataKey="timestamp"
+              startIndex={range.startIndex}
+              endIndex={range.endIndex}
+              onChange={handleBrushChange}
+              height={44}
+              travellerWidth={22}
+              gap={1}
+              stroke="var(--chart-1)"
+              fill="var(--surface-muted)"
+              tickFormatter={formatTrendMonthYear}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="tabular-nums mt-2 text-center text-xs font-medium text-gray-600" aria-label="Selected trend date range" aria-live="polite">
+        {formatTrendMonthYear(rangeStart.timestamp)} – {formatTrendMonthYear(rangeEnd.timestamp)}
+      </p>
+    </>
   );
 }
