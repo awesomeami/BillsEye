@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isValidCalendarDate } from './calendarDate';
+import { DEFAULT_CATEGORIES } from './categoryCatalog';
 
 const CalendarDateSchema = z.string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -126,6 +127,7 @@ export const AppSettingsSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).default('system'),
   lowConfidenceThreshold: z.number().min(0).max(1).default(0.7),
   discrepancyTolerance: z.number().default(0), // in minor units
+  categoryCatalogVersion: z.number().int().min(1).default(1),
 });
 
 export type AppSettingsDocument = z.infer<typeof AppSettingsSchema>;
@@ -166,7 +168,7 @@ export const RawGeminiItemV2 = z.object({
   taxAmount: z.string().max(100).nullable().default(null), // Decimal string; extraction-only per-line tax
   taxRatePercent: z.string().max(100).nullable().default(null), // Decimal percentage; never a money amount
   lineTotal: z.string().max(100).nullable().default(null), // Decimal string
-  categorySuggestion: z.enum(['Groceries', 'Meat', 'Fruit & Vegetables', 'Household', 'Medicine', 'Eating Out', 'Miscellaneous']).nullable().default(null),
+  categorySuggestion: z.enum(DEFAULT_CATEGORIES).nullable().default(null),
   confidence: z.number().min(0).max(1).default(1),
   warnings: z.array(z.string().max(200)).max(10).default([])
 });

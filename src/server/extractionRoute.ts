@@ -11,6 +11,7 @@ import {
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { getReceiptExtractionModel, EXTRACTION_SCHEMA_VERSION } from './geminiConfig.js';
 import { ExtractionResultSchema, RawGeminiReceiptV2 } from '../domain/schema.js';
+import { DEFAULT_CATEGORIES } from '../domain/categoryCatalog.js';
 import { parseMajorToMinor } from '../domain/money.js';
 import { calculateReceiptTotals } from '../domain/reconciliation.js';
 
@@ -35,7 +36,7 @@ Return monetary values as decimal strings in major currency units without curren
 Use arithmetic only to check column interpretation and detect likely swaps or double counting. Do not alter visible values merely to force agreement. Preserve conflicts and add a warning.
 Preserve raw text separately from normalized suggestions. Recognize PKR, Rs/Rs., comma separators, decimals, weights, quantities, and patterns such as "2 x 150".
 Use YYYY-MM-DD only when defensible; flag ambiguous day/month ordering.
-Category suggestions are limited to the following or null: Groceries, Meat, Fruit & Vegetables, Household, Medicine, Eating Out, Miscellaneous.
+Category suggestions are limited to the following or null: ${DEFAULT_CATEGORIES.join(', ')}.
 Confidence reflects legibility and extraction certainty, not arithmetic agreement.
 Return only the requested structured JSON result.`.trim();
 
@@ -339,7 +340,7 @@ router.post('/extract', authenticateAndAcquire, multipartParser, async (req, res
                     taxAmount: { type: 'string', nullable: true, description: 'Visible monetary tax for this row as a decimal string in major units; never the tax percentage' },
                     taxRatePercent: { type: 'string', nullable: true, description: 'Visible tax percentage for this row without the percent sign; never the monetary tax amount' },
                     lineTotal: { type: 'string', nullable: true, description: 'Amount contributing to the receipt subtotal before separately extracted receipt tax/fees; see system instructions for tax-inclusive Total columns' },
-                    categorySuggestion: { type: 'string', nullable: true, description: 'Groceries, Meat, Fruit & Vegetables, Household, Medicine, Eating Out, Miscellaneous' },
+                    categorySuggestion: { type: 'string', nullable: true, description: `One of: ${DEFAULT_CATEGORIES.join(', ')}` },
                     confidence: { type: 'number' },
                     warnings: { type: 'array', items: { type: 'string' } }
                   }

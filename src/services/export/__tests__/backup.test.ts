@@ -75,6 +75,7 @@ describe('Backup Service', () => {
     theme: 'dark',
     lowConfidenceThreshold: 0.7,
     discrepancyTolerance: 0,
+    categoryCatalogVersion: 1,
   };
   const contents = { profile, receipts: mockReceipts, categories: [category], aliases: [alias], settings };
 

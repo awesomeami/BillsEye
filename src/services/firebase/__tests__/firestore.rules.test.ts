@@ -318,7 +318,8 @@ describe('Firestore Security Rules', () => {
       timeZone: 'Asia/Karachi',
       theme: 'light',
       lowConfidenceThreshold: 0.7,
-      discrepancyTolerance: 100
+      discrepancyTolerance: 100,
+      categoryCatalogVersion: 2,
     }));
 
     // Settings use an exact document shape and a single canonical document ID.

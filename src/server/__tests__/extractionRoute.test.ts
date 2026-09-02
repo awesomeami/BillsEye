@@ -247,7 +247,7 @@ describe('Extraction Route Contract Tests', () => {
               dateInterpretationNote: 'Date is unambiguous.',
               currency: 'PKR',
               paymentMethodCandidate: 'Card',
-              items: [{ rawLineText: 'Lipton Yellow Label 380g', confidence: 0.95, warnings: [] }],
+              items: [{ rawLineText: 'Lipton Yellow Label 380g', categorySuggestion: 'Beverages', confidence: 0.95, warnings: [] }],
               overallConfidence: 0.9,
               documentWarnings: [],
               rawOcrText: 'Imtiaz\nLipton Yellow Label 380g',
@@ -269,6 +269,7 @@ describe('Extraction Route Contract Tests', () => {
     assert.strictEqual(res.body.isReceipt, true);
     assert.strictEqual(res.body.merchantRaw, 'Imtiaz Super Market');
     assert.strictEqual(res.body.items.length, 1);
+    assert.strictEqual(res.body.items[0].category, 'Beverages');
     assert.match(res.body.items[0].id, /^[a-f0-9-]{36}$/i);
     assert.strictEqual(res.body.merchantNormalized, 'Imtiaz');
     assert.strictEqual(res.body.transactionDate, '2026-08-28');
@@ -276,7 +277,7 @@ describe('Extraction Route Contract Tests', () => {
     assert.strictEqual(res.body.dateAmbiguous, false);
     assert.strictEqual(res.body.paymentMethod, 'Card');
     assert.doesNotThrow(() => ExtractionResultSchema.parse(res.body));
-    assert.strictEqual(res.body.extractionSchemaVersion, '3');
+    assert.strictEqual(res.body.extractionSchemaVersion, '4');
   });
 
   test('rejects Gemini fields that exceed the browser extraction contract', async () => {
@@ -536,6 +537,8 @@ describe('Extraction Route Contract Tests', () => {
     );
     assert.match(RECEIPT_EXTRACTION_INSTRUCTION, /S\.Tax@%/);
     assert.match(RECEIPT_EXTRACTION_INSTRUCTION, /Cash\/tendered\/card-paid amounts and change due are payment metadata/);
+    assert.match(RECEIPT_EXTRACTION_INSTRUCTION, /Toys & Games/);
+    assert.match(RECEIPT_EXTRACTION_INSTRUCTION, /Miscellaneous \/ Unclear/);
     assert.strictEqual(res.body.extractionModel, 'gemini-3.5-flash-lite');
     assert.strictEqual(res.body.extractionModelActual, 'gemini-3.5-flash-lite-001');
   });

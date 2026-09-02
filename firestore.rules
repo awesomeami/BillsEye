@@ -185,13 +185,14 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return data is map
-        && data.keys().hasOnly(['currency', 'locale', 'timeZone', 'theme', 'lowConfidenceThreshold', 'discrepancyTolerance'])
+        && data.keys().hasOnly(['currency', 'locale', 'timeZone', 'theme', 'lowConfidenceThreshold', 'discrepancyTolerance', 'categoryCatalogVersion'])
         && checkStringOrNull(data.get('currency', null), 10)
         && checkStringOrNull(data.get('locale', null), 20)
         && checkStringOrNull(data.get('timeZone', null), 50)
         && (data.get('theme', null) == null || data.get('theme', null) in ['light', 'dark', 'system'])
         && checkNumberOrNull(data.get('lowConfidenceThreshold', null), 0, 1)
-        && checkNumberOrNullNoMax(data.get('discrepancyTolerance', null), 0);
+        && checkNumberOrNullNoMax(data.get('discrepancyTolerance', null), 0)
+        && checkNumberOrNullNoMax(data.get('categoryCatalogVersion', null), 1);
     }
 
     function isValidSyncDiagnostic(data) {

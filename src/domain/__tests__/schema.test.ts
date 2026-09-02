@@ -146,6 +146,21 @@ describe('Receipt data contract', () => {
     }).success, false);
   });
 
+  test('accepts only the expanded AI category catalogue', () => {
+    const baseRaw = {
+      isReceipt: true,
+      items: [{ rawLineText: 'Building Blocks', categorySuggestion: 'Toys & Games' }],
+      rawOcrText: 'Building Blocks',
+      overallConfidence: 1,
+    };
+
+    assert.strictEqual(RawGeminiReceiptV2.safeParse(baseRaw).success, true);
+    assert.strictEqual(RawGeminiReceiptV2.safeParse({
+      ...baseRaw,
+      items: [{ rawLineText: 'Rice', categorySuggestion: 'Groceries' }],
+    }).success, false);
+  });
+
   test('rejects impossible calendar dates at every receipt ingestion boundary', () => {
     const impossibleDate = '2026-02-31';
     assert.strictEqual(ReceiptSchema.safeParse({

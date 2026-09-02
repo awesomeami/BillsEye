@@ -39,7 +39,8 @@ import {
   AppSettingsSchema
 } from '../../domain/schema';
 import {
-  DEFAULT_CATEGORIES,
+  CATEGORY_CATALOG_VERSION,
+  buildCategoryCatalogMigration,
   canonicalizeReceiptItemCategories,
   categoryMatchesLegacyName,
   normalizeCategoryName,
@@ -238,6 +239,7 @@ export const userRepository = {
       const current = userSnap.data();
       setDoc(userRef, { lastLoginAt: serverTimestamp() }, { merge: true })
         .catch(() => console.warn('Could not update the profile login timestamp.'));
+      this.seedDefaultCategories(uid).catch(() => console.warn('Could not update the category catalogue.'));
       return current;
     }
 
@@ -265,27 +267,33 @@ export const userRepository = {
   },
 
   async seedDefaultCategories(uid: string) {
-    const categoriesRef = collection(db, `users/${uid}/categories`).withConverter(converters.category);
-    const now = new Date().toISOString();
     const auth = getAuth();
-    
-    let order = 0;
-    for (const name of DEFAULT_CATEGORIES) {
-      const id = `cat_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-      const catRef = doc(categoriesRef, id);
-      try {
-        await setDoc(catRef, {
-          id,
-          name,
-          legacyNames: [],
-          isCustom: false,
-          createdAt: now,
-          order: order++,
-          isActive: true
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `users/${uid}/categories/${id}`, auth);
+    const settingsRef = doc(db, `users/${uid}/settings/default`);
+    try {
+      const [settingsSnapshot, categoriesSnapshot] = await Promise.all([
+        getDoc(settingsRef),
+        getDocs(collection(db, `users/${uid}/categories`)),
+      ]);
+      const existingVersion = settingsSnapshot.data()?.categoryCatalogVersion;
+      if (typeof existingVersion === 'number' && existingVersion >= CATEGORY_CATALOG_VERSION) return;
+
+      const categories = categoriesSnapshot.docs.flatMap(categorySnapshot => {
+        const parsed = CategorySchema.safeParse(categorySnapshot.data());
+        return parsed.success ? [parsed.data] : [];
+      });
+      const migration = buildCategoryCatalogMigration(categories, new Date().toISOString());
+      const batch = writeBatch(db);
+      for (const category of migration.creates) {
+        batch.set(doc(db, `users/${uid}/categories`, category.id), category);
       }
+      for (const update of migration.updates) {
+        batch.update(doc(db, `users/${uid}/categories`, update.id), update.data);
+      }
+      // Advance the version in the same atomic write as every catalogue change.
+      batch.set(settingsRef, { categoryCatalogVersion: CATEGORY_CATALOG_VERSION }, { merge: true });
+      await batch.commit();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${uid}/categories`, auth);
     }
   }
 };

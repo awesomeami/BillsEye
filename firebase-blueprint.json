@@ -125,7 +125,8 @@
         "timeZone": { "type": "string", "maxLength": 50 },
         "theme": { "type": "string", "enum": ["light", "dark", "system"] },
         "lowConfidenceThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
-        "discrepancyTolerance": { "type": "number", "minimum": 0 }
+        "discrepancyTolerance": { "type": "number", "minimum": 0 },
+        "categoryCatalogVersion": { "type": "number", "minimum": 1 }
       },
       "required": []
     }

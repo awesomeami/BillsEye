@@ -2,6 +2,10 @@
 
 ## Categories
 
+The default category catalogue is: Pantry & Groceries; Fresh Produce; Meat, Poultry & Seafood; Dairy & Eggs; Bakery; Snacks & Confectionery; Beverages; Household Cleaning; Home & Kitchen; Personal Care & Cosmetics; Medicine & Health; Baby Care; Clothing & Accessories; Electronics & Appliances; Toys & Games; Stationery & Books; Pet Supplies; Eating Out & Prepared Food; Transport & Fuel; and Miscellaneous / Unclear.
+
+The receipt-extraction model may select only one of these labels or leave an item uncategorized. The prompt intentionally supplies category names without definitions or examples: extra definitions increase the request's input tokens and cannot reduce model latency or token usage. Users can still add, rename, deactivate, or manually apply custom categories during review.
+
 BillsEye uses a stable category ID as the canonical category value for every newly created or updated receipt item. The category document supplies the display name, so a rename changes presentation without changing modern receipts, reports, or aliases.
 
 Older receipts may contain only the former `category` display-name field. They remain valid and readable. Each category keeps prior names in `legacyNames`, allowing those historical values to resolve to the renamed category. The next ordinary application write also converts any matching legacy item to `categoryId`. No background migration or destructive rewrite is required.
