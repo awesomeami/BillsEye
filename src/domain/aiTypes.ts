@@ -41,7 +41,7 @@ export interface VaultInspection {
 }
 
 export interface AiRequestError {
-  code: 'rate_limit' | 'auth_failed' | 'network_error' | 'bad_request' | 'cancelled' | 'unknown' | 'fatal_auth_error';
+  code: 'rate_limit' | 'service_rate_limit' | 'auth_failed' | 'network_error' | 'bad_request' | 'cancelled' | 'unknown' | 'fatal_auth_error';
   message: string;
   retryAfterMs?: number;
 }

@@ -1,6 +1,12 @@
 import assert from 'node:assert';
 import { describe, test } from 'node:test';
-import { MAX_RECEIPT_ITEMS, ReceiptSchema, ReceiptWriteSchema, StoredReceiptWriteSchema } from '../schema';
+import {
+  MAX_RECEIPT_ITEMS,
+  RawGeminiReceiptV2,
+  ReceiptSchema,
+  ReceiptWriteSchema,
+  StoredReceiptWriteSchema,
+} from '../schema';
 
 const makeReceipt = (itemCount = 1) => ({
   id: 'receipt-contract',
@@ -113,5 +119,29 @@ describe('Receipt data contract', () => {
     const { merchantRaw: _merchantRaw, ...historical } = current;
 
     assert.strictEqual(ReceiptSchema.safeParse({ ...historical, items: [historicalItem] }).success, true);
+  });
+
+  test('enforces the browser extraction limits at the raw Gemini boundary', () => {
+    const rawItem = { rawLineText: 'Rice', quantity: 1 };
+    const baseRaw = {
+      isReceipt: true,
+      items: [rawItem],
+      rawOcrText: 'Rice',
+      overallConfidence: 1,
+    };
+
+    assert.strictEqual(RawGeminiReceiptV2.safeParse(baseRaw).success, true);
+    assert.strictEqual(RawGeminiReceiptV2.safeParse({
+      ...baseRaw,
+      items: Array.from({ length: MAX_RECEIPT_ITEMS + 1 }, () => rawItem),
+    }).success, false);
+    assert.strictEqual(RawGeminiReceiptV2.safeParse({
+      ...baseRaw,
+      merchantRaw: 'x'.repeat(256),
+    }).success, false);
+    assert.strictEqual(RawGeminiReceiptV2.safeParse({
+      ...baseRaw,
+      items: [{ ...rawItem, quantity: -1 }],
+    }).success, false);
   });
 });

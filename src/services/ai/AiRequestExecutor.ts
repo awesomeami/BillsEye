@@ -11,6 +11,7 @@ interface RequestErrorDetails {
   message?: string;
   status?: number;
   statusCode?: number;
+  code?: string;
   retryAfterMs?: number;
 }
 
@@ -22,6 +23,7 @@ const requestErrorDetails = (error: unknown): RequestErrorDetails => {
       message: extended.message,
       status: extended.status,
       statusCode: extended.statusCode,
+      code: extended.code,
       retryAfterMs: extended.retryAfterMs,
     };
   }
@@ -32,6 +34,7 @@ const requestErrorDetails = (error: unknown): RequestErrorDetails => {
       message: typeof candidate.message === 'string' ? candidate.message : undefined,
       status: typeof candidate.status === 'number' ? candidate.status : undefined,
       statusCode: typeof candidate.statusCode === 'number' ? candidate.statusCode : undefined,
+      code: typeof candidate.code === 'string' ? candidate.code : undefined,
       retryAfterMs: typeof candidate.retryAfterMs === 'number' ? candidate.retryAfterMs : undefined,
     };
   }
@@ -97,9 +100,24 @@ export class AiRequestExecutor {
         
         const aiError = this.classifyError(details, safeMessage);
 
+        if (aiError.code === 'cancelled') {
+          throw aiError;
+        }
+
         if (aiError.code === 'fatal_auth_error') {
           // Firebase 401 session expired - do NOT penalize the Gemini key or rotate, abort immediately.
           throw new Error(`AI Request Failed: ${aiError.message}`);
+        }
+
+        if (aiError.code === 'service_rate_limit') {
+          throw Object.assign(
+            new Error(aiError.message),
+            {
+              status: details.status ?? details.statusCode ?? 429,
+              code: details.code,
+              retryAfterMs: aiError.retryAfterMs,
+            },
+          );
         }
 
         if (aiError.code === 'network_error') {
@@ -108,20 +126,23 @@ export class AiRequestExecutor {
           // retry the service request instead of reporting key cooldown.
           throw Object.assign(
             new Error('Receipt extraction service is temporarily unavailable. Please try again.'),
-            { status: details.status ?? details.statusCode ?? 503 },
+            {
+              status: details.status ?? details.statusCode ?? 503,
+              code: details.code,
+              retryAfterMs: details.retryAfterMs,
+            },
           );
-        }
-
-        this.rotationManager.handleError(keyIndex, aiError);
-
-        if (aiError.code === 'cancelled') {
-          throw aiError;
         }
 
         if (aiError.code === 'bad_request') {
           // Schema rejection, safety block, 400 - DO NOT rotate, abort.
-          throw new Error(`AI Request Failed: ${aiError.message}`);
+          throw Object.assign(
+            new Error(`AI Request Failed: ${aiError.message}`),
+            { status: details.status ?? details.statusCode, code: details.code },
+          );
         }
+
+        this.rotationManager.handleError(keyIndex, aiError);
 
         // For auth_failed and rate_limit, loop and try the next key.
         if (attempts >= maxAttempts) {
@@ -140,8 +161,15 @@ export class AiRequestExecutor {
     
     const status = error.status ?? error.statusCode;
     
-    if (status === 429) {
+    if (status === 429 && error.code === 'QUOTA_EXCEEDED') {
       return { code: 'rate_limit', message: 'Rate limit exceeded', retryAfterMs: error.retryAfterMs };
+    }
+    if (status === 429) {
+      return {
+        code: 'service_rate_limit',
+        message: safeMessage || 'Extraction service is busy. Please try again.',
+        retryAfterMs: error.retryAfterMs,
+      };
     }
     if (status === 401) {
       return { code: 'fatal_auth_error', message: 'User authentication failed (Firebase 401)' };
@@ -149,7 +177,7 @@ export class AiRequestExecutor {
     if (status === 403) {
       return { code: 'auth_failed', message: 'Invalid API key or permissions' };
     }
-    if (status === 400 || error.message?.toLowerCase().includes('schema')) {
+    if (status === 400 || status === 422 || error.message?.toLowerCase().includes('schema')) {
       return { code: 'bad_request', message: safeMessage };
     }
     if ((status !== undefined && status >= 500) || status === 408 || error.message?.toLowerCase().includes('network')) {

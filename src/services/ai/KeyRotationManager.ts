@@ -78,6 +78,13 @@ export class KeyRotationManager {
   handleError(index: number, error: AiRequestError) {
     const now = Date.now();
     this._updateSlot(index, s => {
+      if (
+        error.code === 'bad_request'
+        || error.code === 'service_rate_limit'
+        || error.code === 'cancelled'
+      ) {
+        return s;
+      }
       const failureCount = (s.failureCount || 0) + 1;
       const newSlot = { ...s, failureCount };
       
@@ -97,10 +104,6 @@ export class KeyRotationManager {
         case 'auth_failed':
           newSlot.status = 'invalid';
           newSlot.cooldownUntil = undefined;
-          break;
-        case 'bad_request':
-        case 'cancelled':
-          // No penalty
           break;
         default:
           newSlot.status = 'cooldown';

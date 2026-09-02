@@ -158,6 +158,24 @@ describe('receipt queue processor', () => {
     assert.strictEqual(harness.state[0].attempts.length, 2);
   });
 
+  test('schedules a server-supplied retry interval for an app-wide limit', async () => {
+    const item = createItem('server-retry');
+    const harness = createHarness(item);
+    harness.claim();
+    const before = Date.now();
+
+    const outcome = await processClaimedItem(item, harness.dispatch, createServices({
+      extractReceipt: async () => {
+        throw { status: 429, message: 'Please wait', retryAfterMs: 9000 };
+      },
+    }));
+
+    assert.strictEqual(outcome, 'pause');
+    assert.strictEqual(harness.state[0].status, 'retry-wait');
+    assert.ok((harness.state[0].retryAfter ?? 0) >= before + 9000);
+    assert.ok((harness.state[0].retryAfter ?? 0) <= Date.now() + 9000);
+  });
+
   test('cancellation reaches its terminal state and does not create a receipt', async () => {
     const item = createItem('cancel');
     const harness = createHarness(item);

@@ -310,7 +310,11 @@ export function DashboardScreen() {
                     <li key={item.canonicalName} className="flex justify-between items-center text-sm bg-white/60 p-2 px-3 rounded-lg">
                       <span className="font-medium text-gray-900 capitalize">{item.canonicalName}</span>
                       <div className="flex items-center gap-3">
-                        <span className="text-gray-600">{formatCurrency(item.latestPrice / 100)}/{item.standardUnit}</span>
+                        <span className="text-gray-600">
+                          {item.latestPrice == null
+                            ? 'Unavailable'
+                            : `${formatCurrency(item.latestPrice / 100)}/${item.standardUnit}`}
+                        </span>
                         <span className="text-red-600 font-medium">+{item.priceChangePct!.toFixed(1)}%</span>
                       </div>
                     </li>

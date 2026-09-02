@@ -46,7 +46,7 @@ describe('Item Analytics', () => {
     assert.ok(result);
 
     // Simple average of prices: (300 + 200 + 150) / 3 = 216.66
-    assert.ok(Math.abs(result.simpleAverage - 216.666) < 0.01);
+    assert.ok(Math.abs(result.simpleAverage! - 216.666) < 0.01);
     
     // Weighted average: total spend / total units = (300+1000+1500) / (1+5+10) = 2800 / 16 = 175
     assert.strictEqual(result.weightedAverage, 175);
@@ -72,7 +72,7 @@ describe('Item Analytics', () => {
     assert.strictEqual(res.length, 0); // 0 quantity items are excluded
   });
 
-  it('excludes estimated quantities from strict analysis', () => {
+  it('keeps estimated quantities in spend without inventing a rate', () => {
     const result = analyzeItem([{
       receiptId: 'r1',
       transactionDate: '2026-08-01',
@@ -85,7 +85,11 @@ describe('Item Analytics', () => {
       isRefund: false,
     }]);
 
-    assert.strictEqual(result, null);
+    assert.ok(result);
+    assert.strictEqual(result.totalSpent, 300);
+    assert.strictEqual(result.latestPrice, null);
+    assert.strictEqual(result.weightedAverage, null);
+    assert.deepStrictEqual(result.observations, []);
   });
 
   it('handles insufficient observations for percentage change safely', () => {
@@ -112,4 +116,104 @@ describe('Item Analytics', () => {
     assert.strictEqual(res.find(r => r.unitCategory === 'mass')?.canonicalName, 'rice');
     assert.strictEqual(res.find(r => r.unitCategory === 'count')?.canonicalName, 'rice');
   });
+
+  it('prefers the extracted unit rate over a discounted line-total derivation', () => {
+    const receipts: ReceiptDocument[] = [{
+      ...createReceipt('discounted-rate', 18000),
+      items: [{
+        id: 'item-1',
+        userEdited: false,
+        name: 'Soap',
+        quantity: 2,
+        unit: 'pc',
+        unitPrice: 10000,
+        discount: 2000,
+        lineTotal: 18000,
+      }],
+    }];
+
+    const [result] = groupAndAnalyzeItems(receipts);
+    assert.strictEqual(result.latestPrice, 10000);
+    assert.strictEqual(result.weightedAverage, 10000);
+    assert.strictEqual(result.totalSpent, 18000);
+  });
+
+  it('converts an extracted rate to the normalized standard unit', () => {
+    const receipts: ReceiptDocument[] = [{
+      ...createReceipt('mass-rate', 1000),
+      items: [{
+        id: 'item-1',
+        userEdited: false,
+        name: 'Spice',
+        quantity: 500,
+        unit: 'g',
+        unitPrice: 2,
+        lineTotal: 1000,
+      }],
+    }];
+
+    const [result] = groupAndAnalyzeItems(receipts);
+    assert.strictEqual(result.standardUnit, 'kg');
+    assert.strictEqual(result.latestPrice, 2000);
+  });
+
+  it('keeps different unknown units in separate groups', () => {
+    const receipts: ReceiptDocument[] = [{
+      ...createReceipt('unknown-units', 3000),
+      items: [
+        { id: 'box', userEdited: false, name: 'Tea', quantity: 1, unit: 'box', lineTotal: 1000 },
+        { id: 'bottle', userEdited: false, name: 'Tea', quantity: 1, unit: 'bottle', lineTotal: 2000 },
+      ],
+    }];
+
+    const result = groupAndAnalyzeItems(receipts);
+    assert.strictEqual(result.length, 2);
+    assert.deepStrictEqual(result.map(item => item.standardUnit).sort(), ['bottle', 'box']);
+  });
+
+  it('nets refunds into total spend without treating a return as a price observation', () => {
+    const purchase = {
+      ...createReceipt('purchase', 10000),
+      transactionDate: '2026-08-01',
+      items: [{
+        id: 'purchase-item', userEdited: false, name: 'Kettle', quantity: 1,
+        unit: 'pc', unitPrice: 10000, lineTotal: 10000,
+      }],
+    };
+    const refund = {
+      ...createReceipt('refund', -4000),
+      transactionDate: '2026-08-05',
+      items: [{
+        id: 'refund-item', userEdited: false, name: 'Kettle', quantity: 1,
+        unit: 'pc', unitPrice: 4000, lineTotal: 4000,
+      }],
+    };
+
+    const [result] = groupAndAnalyzeItems([purchase, refund]);
+    assert.strictEqual(result.totalSpent, 6000);
+    assert.strictEqual(result.occasions, 2);
+    assert.strictEqual(result.latestPrice, 10000);
+    assert.strictEqual(result.observations.length, 1);
+  });
 });
+
+function createReceipt(id: string, printedGrandTotal: number): ReceiptDocument {
+  return {
+    id,
+    schemaVersion: 2,
+    revision: 1,
+    status: 'confirmed',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    transactionDate: '2026-08-01',
+    merchantRaw: 'Merchant',
+    items: [],
+    currency: 'PKR',
+    printedGrandTotal,
+    warnings: [],
+    ambiguousFields: [],
+    dateAmbiguous: false,
+    wasEditedByUser: false,
+    reconciliationStatus: 'matched',
+  };
+}

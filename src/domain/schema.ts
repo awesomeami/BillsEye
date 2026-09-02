@@ -151,43 +151,43 @@ export const AliasSchema = z.object({
 export type AliasDocument = z.infer<typeof AliasSchema>;
 
 export const RawGeminiItemV2 = z.object({
-  rawLineText: z.string().default(''),
-  name: z.string().nullable().default(null),
-  brand: z.string().nullable().default(null),
-  quantity: z.number().nullable().default(null),
-  unit: z.string().nullable().default(null),
-  unitPrice: z.string().nullable().default(null), // Decimal string
-  discount: z.string().nullable().default(null), // Decimal string
-  taxAmount: z.string().nullable().default(null), // Decimal string; extraction-only per-line tax
-  taxRatePercent: z.string().nullable().default(null), // Decimal percentage; never a money amount
-  lineTotal: z.string().nullable().default(null), // Decimal string
+  rawLineText: z.string().max(500).default(''),
+  name: z.string().max(200).nullable().default(null),
+  brand: z.string().max(100).nullable().default(null),
+  quantity: z.number().min(0).nullable().default(null),
+  unit: z.string().max(50).nullable().default(null),
+  unitPrice: z.string().max(100).nullable().default(null), // Decimal string
+  discount: z.string().max(100).nullable().default(null), // Decimal string
+  taxAmount: z.string().max(100).nullable().default(null), // Decimal string; extraction-only per-line tax
+  taxRatePercent: z.string().max(100).nullable().default(null), // Decimal percentage; never a money amount
+  lineTotal: z.string().max(100).nullable().default(null), // Decimal string
   categorySuggestion: z.enum(['Groceries', 'Meat', 'Fruit & Vegetables', 'Household', 'Medicine', 'Eating Out', 'Miscellaneous']).nullable().default(null),
   confidence: z.number().min(0).max(1).default(1),
-  warnings: z.array(z.string()).default([])
+  warnings: z.array(z.string().max(200)).max(10).default([])
 });
 
 export const RawGeminiReceiptV2 = z.object({
   isReceipt: z.boolean().default(true),
-  documentWarnings: z.array(z.string()).default([]),
-  merchantRaw: z.string().nullable().default(null),
-  merchantNormalizedSuggestion: z.string().nullable().default(null),
-  branchAddress: z.string().nullable().default(null),
-  receiptNumber: z.string().nullable().default(null),
+  documentWarnings: z.array(z.string().max(255)).max(20).default([]),
+  merchantRaw: z.string().max(255).nullable().default(null),
+  merchantNormalizedSuggestion: z.string().max(255).nullable().default(null),
+  branchAddress: z.string().max(500).nullable().default(null),
+  receiptNumber: z.string().max(100).nullable().default(null),
   transactionDateCandidate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
-  transactionTimeCandidate: z.string().nullable().default(null),
-  dateInterpretationNote: z.string().nullable().default(null),
+  transactionTimeCandidate: z.string().max(20).nullable().default(null),
+  dateInterpretationNote: z.string().max(500).nullable().default(null),
   currency: z.enum(['PKR', 'USD']).nullable().default(null),
-  paymentMethodCandidate: z.string().nullable().default(null),
-  items: z.array(RawGeminiItemV2).default([]),
-  printedSubtotal: z.string().nullable().default(null),
-  printedDiscount: z.string().nullable().default(null),
-  printedTax: z.string().nullable().default(null),
-  printedFees: z.string().nullable().default(null),
-  printedRounding: z.string().nullable().default(null),
-  printedGrandTotal: z.string().nullable().default(null),
-  rawOcrText: z.string().default(''),
+  paymentMethodCandidate: z.string().max(50).nullable().default(null),
+  items: z.array(RawGeminiItemV2).max(MAX_RECEIPT_ITEMS).default([]),
+  printedSubtotal: z.string().max(100).nullable().default(null),
+  printedDiscount: z.string().max(100).nullable().default(null),
+  printedTax: z.string().max(100).nullable().default(null),
+  printedFees: z.string().max(100).nullable().default(null),
+  printedRounding: z.string().max(100).nullable().default(null),
+  printedGrandTotal: z.string().max(100).nullable().default(null),
+  rawOcrText: z.string().max(100000).default(''),
   overallConfidence: z.number().min(0).max(1).default(1),
-  ambiguousFields: z.array(z.string()).default([])
+  ambiguousFields: z.array(z.string().max(100)).max(20).default([])
 });
 
 // The extraction DTO uses the same item representation that is persisted.
@@ -197,7 +197,7 @@ export const ExtractionResultItemSchema = ReceiptItemSchema;
 
 export const ExtractionResultSchema = z.object({
   isReceipt: z.boolean(),
-  documentWarnings: z.array(z.string()).optional().default([]),
+  documentWarnings: z.array(z.string().max(255)).max(20).optional().default([]),
   merchantRaw: z.string().max(255).optional().nullable(),
   merchantNormalized: z.string().max(255).optional().nullable(),
   branchAddress: z.string().max(500).optional().nullable(),
@@ -205,7 +205,7 @@ export const ExtractionResultSchema = z.object({
   transactionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   transactionTime: z.string().max(20).optional().nullable(),
   dateAmbiguous: z.boolean().optional().default(false),
-  currency: z.string().max(10).optional().default('PKR'),
+  currency: z.enum(['PKR', 'USD']).optional().default('PKR'),
   paymentMethod: z.string().max(50).optional().nullable(),
   items: z.array(ExtractionResultItemSchema).max(MAX_RECEIPT_ITEMS).optional().default([]),
   printedSubtotal: z.number().optional().nullable(),
@@ -214,9 +214,9 @@ export const ExtractionResultSchema = z.object({
   printedFees: z.number().optional().nullable(),
   printedRounding: z.number().optional().nullable(),
   printedGrandTotal: z.number().optional().nullable(),
-  rawOcrText: z.string().optional().default(''),
-  overallConfidence: z.number().optional().default(1),
-  ambiguousFields: z.array(z.string()).optional().default([]),
+  rawOcrText: z.string().max(100000).optional().default(''),
+  overallConfidence: z.number().min(0).max(1).optional().default(1),
+  ambiguousFields: z.array(z.string().max(100)).max(20).optional().default([]),
   extractionSchemaVersion: z.string().max(50).optional().nullable(),
   extractionModel: z.string().max(100).optional().nullable(),
   extractionModelActual: z.string().max(100).optional().nullable(),

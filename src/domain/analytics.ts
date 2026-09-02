@@ -226,7 +226,9 @@ export function calculateDashboardSummary(
     pendingCount,
     topMerchants: Array.from(merchantMap.entries()).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 5),
     topItems: Array.from(itemMap.entries()).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 5),
-    categoryComposition: categoryComposition.map(c => ({ name: c.category, total: c.total })),
+    categoryComposition: categoryComposition
+      .filter(category => category.compositionTotal > 0)
+      .map(category => ({ name: category.category, total: category.compositionTotal })),
     dailyTrend: Array.from(dailyMap.entries()).map(([date, total]) => ({ date, total })).sort((a, b) => a.date.localeCompare(b.date)),
     recentReceipts: [...periodReceipts].sort((a,b) => ((b.transactionDate || "") > (a.transactionDate || "") ? 1 : -1)).slice(0, 5)
   };
@@ -288,6 +290,9 @@ export interface CategoryReportItem {
   category: string;
   categoryId: string | null;
   filterValue: string | null;
+  /** Positive outflows only; used for composition charts and percentages. */
+  compositionTotal: number;
+  /** Signed net amount; used for the report's financial total. */
   total: number;
   proportion: number;
   receiptCount: number;
@@ -322,13 +327,13 @@ export function generateCategoryReport(
   const filtered = getFilteredReceipts(receipts, range);
   const map = new Map<string, {
     total: number;
+    compositionTotal: number;
     receiptIds: Set<string>;
     category: string;
     categoryId: string | null;
     filterValue: string | null;
   }>();
-  let grandTotal = 0;
-  
+
   for (const r of filtered) {
     const rTotal = getReceiptTotal(r);
     if (rTotal === null) continue;
@@ -337,37 +342,44 @@ export function generateCategoryReport(
     for (const item of r.items) {
       const lineTotal = item.lineTotal;
       if (lineTotal == null) continue;
+      const signedLineTotal = rTotal < 0 ? -Math.abs(lineTotal) : lineTotal;
       const category = getCategoryReference(item, categories);
       const current = map.get(category.key) || {
         total: 0,
+        compositionTotal: 0,
         receiptIds: new Set(),
         category: category.label,
         categoryId: category.categoryId,
         filterValue: category.filterValue,
       };
-      current.total += lineTotal;
+      current.total += signedLineTotal;
+      current.compositionTotal += Math.max(0, signedLineTotal);
       current.receiptIds.add(r.id);
       map.set(category.key, current);
-      itemSum += lineTotal;
+      itemSum += signedLineTotal;
     }
     
-    grandTotal += rTotal;
-    // Compute diff between items and grandTotal, apply correct signs.
+    // Compute the difference between item lines and the receipt total.
     // Refund/negative means diff goes the other way.
     const diff = rTotal - itemSum;
     if (diff !== 0) {
       const current = map.get('adjustments') || {
         total: 0,
+        compositionTotal: 0,
         receiptIds: new Set(),
         category: 'Adjustments / Unallocated',
         categoryId: null,
         filterValue: null,
       };
       current.total += diff;
+      current.compositionTotal += Math.max(0, diff);
       current.receiptIds.add(r.id);
       map.set('adjustments', current);
     }
   }
+
+  const grossSpendTotal = Array.from(map.values())
+    .reduce((sum, data) => sum + data.compositionTotal, 0);
 
   return Array.from(map.entries())
     .map(([, data]) => ({
@@ -375,7 +387,10 @@ export function generateCategoryReport(
       categoryId: data.categoryId,
       filterValue: data.filterValue,
       total: data.total,
-      proportion: Math.abs(grandTotal) > 0 ? (Math.abs(data.total) / Math.abs(grandTotal)) * 100 : 0,
+      compositionTotal: data.compositionTotal,
+      proportion: grossSpendTotal > 0
+        ? (data.compositionTotal / grossSpendTotal) * 100
+        : 0,
       receiptCount: data.receiptIds.size
     }))
     .sort((a, b) => b.total - a.total);

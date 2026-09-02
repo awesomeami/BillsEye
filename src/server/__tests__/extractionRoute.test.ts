@@ -9,7 +9,7 @@ import {
 } from '../extractionRoute';
 import { getFirebaseAdmin } from '../firebaseAdmin';
 import { ExtractionControlService, InMemoryExtractionControlStore } from '../extractionControls';
-import { ExtractionResultSchema } from '../../domain/schema';
+import { ExtractionResultSchema, MAX_RECEIPT_ITEMS } from '../../domain/schema';
 
 process.env.FIREBASE_PROJECT_ID ??= 'test-project';
 process.env.FIREBASE_DATABASE_ID ??= '(default)';
@@ -277,6 +277,52 @@ describe('Extraction Route Contract Tests', () => {
     assert.strictEqual(res.body.paymentMethod, 'Card');
     assert.doesNotThrow(() => ExtractionResultSchema.parse(res.body));
     assert.strictEqual(res.body.extractionSchemaVersion, '3');
+  });
+
+  test('rejects Gemini fields that exceed the browser extraction contract', async () => {
+    mockAuthSuccess();
+    const invalidPayloads = [
+      {
+        isReceipt: true,
+        items: Array.from({ length: MAX_RECEIPT_ITEMS + 1 }, (_, index) => ({
+          rawLineText: `Item ${index}`,
+        })),
+        rawOcrText: 'Too many items',
+        overallConfidence: 1,
+      },
+      {
+        isReceipt: true,
+        merchantRaw: 'x'.repeat(256),
+        items: [],
+        rawOcrText: 'Long merchant',
+        overallConfidence: 1,
+      },
+      {
+        isReceipt: true,
+        items: [{ rawLineText: 'Invalid quantity', quantity: -1 }],
+        rawOcrText: 'Negative quantity',
+        overallConfidence: 1,
+      },
+    ];
+    let responseIndex = 0;
+    mock.method(global, 'fetch', () => Promise.resolve(new Response(JSON.stringify({
+      candidates: [{
+        content: {
+          parts: [{ text: JSON.stringify(invalidPayloads[responseIndex++]) }],
+        },
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+
+    for (const fileName of ['too-many.jpg', 'long-merchant.jpg', 'negative-quantity.jpg']) {
+      const res = await request(app)
+        .post('/api/extract')
+        .set('Authorization', 'Bearer valid-token')
+        .field('geminiKey', 'test-key')
+        .attach('receiptImage', Buffer.from('fake'), { filename: fileName, contentType: 'image/jpeg' });
+
+      assert.strictEqual(res.status, 422);
+      assert.strictEqual(res.body.code, 'UNPROCESSABLE_ENTITY');
+    }
   });
 
   test('handles a combined sales-tax amount/rate column without double-counting tax', async () => {

@@ -8,7 +8,8 @@ import {
   getFilteredReceipts,
   generateMonthlyReport,
   generateItemReport,
-  generateMerchantReport
+  generateMerchantReport,
+  generateCategoryReport,
 } from '../analytics';
 import { ReceiptDocument } from '../schema';
 
@@ -250,6 +251,45 @@ for (const tz of testTimezones) {
       assert.strictEqual(foodCat?.total, 300);
       assert.strictEqual(transportCat?.total, 50);
       assert.strictEqual(unalloc?.total, 50); // 100 total - 50 known
+    });
+
+    test('uses gross purchases for category shares while retaining signed refunds', () => {
+      const purchase: ReceiptDocument = {
+        ...baseReceipt,
+        id: 'purchase',
+        transactionDate: '2026-08-01',
+        printedGrandTotal: 10000,
+        items: [{ id: 'food', userEdited: false, name: 'Food', lineTotal: 10000, category: 'Food' }],
+      };
+      const refund: ReceiptDocument = {
+        ...baseReceipt,
+        id: 'refund',
+        transactionDate: '2026-08-02',
+        printedGrandTotal: -9000,
+        // Some providers keep refund lines positive even when the receipt total
+        // carries the return sign; the category domain normalizes that shape.
+        items: [{ id: 'medicine', userEdited: false, name: 'Medicine', lineTotal: 9000, category: 'Medicine' }],
+      };
+      const report = generateCategoryReport(
+        [purchase, refund],
+        { start: '2026-08-01', end: '2026-08-31' },
+      );
+      const food = report.find(item => item.category === 'Food');
+      const medicine = report.find(item => item.category === 'Medicine');
+
+      assert.strictEqual(food?.total, 10000);
+      assert.strictEqual(food?.compositionTotal, 10000);
+      assert.strictEqual(food?.proportion, 100);
+      assert.strictEqual(medicine?.total, -9000);
+      assert.strictEqual(medicine?.compositionTotal, 0);
+      assert.strictEqual(medicine?.proportion, 0);
+      assert.strictEqual(report.reduce((sum, item) => sum + item.proportion, 0), 100);
+
+      const summary = calculateDashboardSummary(
+        [purchase, refund],
+        new Date('2026-08-10T12:00:00Z'),
+      );
+      assert.deepStrictEqual(summary.categoryComposition, [{ name: 'Food', total: 10000 }]);
     });
 
     test('handles merchant reports and item reports correctly', () => {

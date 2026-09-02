@@ -1,23 +1,20 @@
 import { ExtractionResultSchema, type ExtractionResultDTO } from '../../domain/schema';
 import { getAuth } from 'firebase/auth';
 import { isE2eMockMode } from '../../config/e2eMocks';
+import { readExtractionErrorResponse } from './extractionErrors';
 
 const useE2eMocks = isE2eMockMode;
 
-class ExtractionRequestError extends Error {
-  constructor(message: string, readonly status: number, readonly code?: string) {
+export class ExtractionRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+    readonly retryAfterMs?: number,
+  ) {
     super(message);
     this.name = 'ExtractionRequestError';
   }
-}
-
-function getErrorResponse(data: unknown): { message?: string; code?: string } {
-  if (typeof data !== 'object' || data === null) return {};
-  const record = data as Record<string, unknown>;
-  return {
-    message: typeof record.error === 'string' ? record.error : undefined,
-    code: typeof record.code === 'string' ? record.code : undefined,
-  };
 }
 
 export class ExtractionClient {
@@ -53,23 +50,34 @@ export class ExtractionClient {
     });
 
     if (!response.ok) {
-      let errorMessage = 'Extraction failed';
-      let errorData: { message?: string; code?: string } | undefined;
-      try {
-        errorData = getErrorResponse(await response.json());
-        errorMessage = errorData.message || errorMessage;
-      } catch {
-        // Not JSON
-        errorMessage = await response.text();
-      }
-      
-      throw new ExtractionRequestError(errorMessage, response.status, errorData?.code);
+      const errorData = await readExtractionErrorResponse(response);
+      throw new ExtractionRequestError(
+        errorData.message,
+        response.status,
+        errorData.code,
+        errorData.retryAfterMs,
+      );
     }
 
-    
-    const result = await response.json();
-    const validatedResult = ExtractionResultSchema.parse(result);
-    return validatedResult;
+    let result: unknown;
+    try {
+      result = await response.json();
+    } catch {
+      throw new ExtractionRequestError(
+        'Extraction service returned a malformed success response.',
+        502,
+        'INVALID_SERVER_RESPONSE',
+      );
+    }
+    const validatedResult = ExtractionResultSchema.safeParse(result);
+    if (!validatedResult.success) {
+      throw new ExtractionRequestError(
+        'Extraction service returned a malformed success response.',
+        502,
+        'INVALID_SERVER_RESPONSE',
+      );
+    }
+    return validatedResult.data;
 
   }
 }

@@ -29,8 +29,7 @@ export function ItemReportView({ receipts, range }: Props) {
   if (data.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-        <p>No comparable item data available for the selected period.</p>
-        <p className="text-sm mt-2">Make sure items have quantity and unit data to analyze unit prices.</p>
+        <p>No item data available for the selected period.</p>
       </div>
     );
   }
@@ -57,7 +56,7 @@ export function ItemReportView({ receipts, range }: Props) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {sortedData.map((row) => {
-                const rowId = `${row.canonicalName}-${row.unitCategory}`;
+                const rowId = `${row.canonicalName}-${row.unitCategory}-${row.standardUnit}`;
                 const isExpanded = expandedId === rowId;
                 const hasChange = row.priceChangePct !== null;
                 const isUp = hasChange && row.priceChangePct! > 0;
@@ -85,7 +84,11 @@ export function ItemReportView({ receipts, range }: Props) {
                         <div className="text-xs text-gray-500">Unit: {row.standardUnit}</div>
                       </td>
                       <td className="money-value px-6 py-4 text-right font-medium">{formatCurrency(row.totalSpent / 100)}</td>
-                      <td className="money-value px-6 py-4 text-right">{formatCurrency(row.latestPrice / 100)} / {row.standardUnit}</td>
+                      <td className="money-value px-6 py-4 text-right">
+                        {row.latestPrice == null
+                          ? <span className="text-gray-400">Unavailable</span>
+                          : `${formatCurrency(row.latestPrice / 100)} / ${row.standardUnit}`}
+                      </td>
                       <td className="px-6 py-4 text-right">
                         {hasChange ? (
                           <div className={`inline-flex items-center gap-1 ${isUp ? 'text-red-600' : isDown ? 'text-green-600' : 'text-gray-500'}`}>
@@ -114,19 +117,23 @@ export function ItemReportView({ receipts, range }: Props) {
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
                                     <div className="text-gray-500 text-xs mb-1">Simple Average</div>
-                                    <div className="font-medium">{formatCurrency(row.simpleAverage / 100)}</div>
+                                    <div className="font-medium">{row.simpleAverage == null ? 'Unavailable' : formatCurrency(row.simpleAverage / 100)}</div>
                                   </div>
                                   <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
                                     <div className="text-gray-500 text-xs mb-1">Weighted Average</div>
-                                    <div className="font-medium">{formatCurrency(row.weightedAverage / 100)}</div>
+                                    <div className="font-medium">{row.weightedAverage == null ? 'Unavailable' : formatCurrency(row.weightedAverage / 100)}</div>
                                   </div>
                                   <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
                                     <div className="text-gray-500 text-xs mb-1">Median Price</div>
-                                    <div className="font-medium">{formatCurrency(row.medianPrice / 100)}</div>
+                                    <div className="font-medium">{row.medianPrice == null ? 'Unavailable' : formatCurrency(row.medianPrice / 100)}</div>
                                   </div>
                                   <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
                                     <div className="text-gray-500 text-xs mb-1">Min / Max Range</div>
-                                    <div className="font-medium">{formatCurrency(row.minPrice / 100)} - {formatCurrency(row.maxPrice / 100)}</div>
+                                    <div className="font-medium">
+                                      {row.minPrice == null || row.maxPrice == null
+                                        ? 'Unavailable'
+                                        : `${formatCurrency(row.minPrice / 100)} - ${formatCurrency(row.maxPrice / 100)}`}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -135,7 +142,7 @@ export function ItemReportView({ receipts, range }: Props) {
                               <div>
                                 <h4 className="font-medium text-gray-900 mb-4">Merchant Averages</h4>
                                 <div className="space-y-2">
-                                  {row.merchants.map(m => (
+                                  {row.merchants.length > 0 ? row.merchants.map(m => (
                                     <div key={m.name} className="flex justify-between items-center bg-white p-2 px-3 rounded-lg border border-gray-100 shadow-sm text-sm">
                                       <span className="text-gray-700 truncate mr-2">{m.name}</span>
                                       <div className="flex gap-4">
@@ -143,7 +150,7 @@ export function ItemReportView({ receipts, range }: Props) {
                                         <span className="font-medium text-gray-900">{formatCurrency(m.avgPrice / 100)}</span>
                                       </div>
                                     </div>
-                                  ))}
+                                  )) : <p className="text-sm text-gray-500">No comparable purchase rates.</p>}
                                 </div>
                               </div>
                             </div>
@@ -153,7 +160,7 @@ export function ItemReportView({ receipts, range }: Props) {
                               <h4 className="font-medium text-gray-900 mb-4">Price Trend</h4>
                               {row.observations.length > 1 ? (
                                 <>
-                                  <p id={`price-trend-summary-${rowId}`} className="sr-only">Price trend for {row.canonicalName}: {row.observations.length} comparable purchases, from {formatCurrency(row.minPrice / 100)} to {formatCurrency(row.maxPrice / 100)} per {row.standardUnit}.</p>
+                                  <p id={`price-trend-summary-${rowId}`} className="sr-only">Price trend for {row.canonicalName}: {row.observations.length} comparable purchases, from {formatCurrency(row.minPrice! / 100)} to {formatCurrency(row.maxPrice! / 100)} per {row.standardUnit}.</p>
                                   <div aria-hidden="true" aria-describedby={`price-trend-summary-${rowId}`} className="h-64 w-full bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                                   <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={row.observations}>

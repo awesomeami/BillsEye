@@ -99,11 +99,17 @@ function ensureAttemptIsActive(signal: AbortSignal, isSessionActive: () => boole
 }
 
 function errorDetails(error: unknown) {
-  const value = error as { name?: string; message?: string; status?: number };
+  const value = error as {
+    name?: string;
+    message?: string;
+    status?: number;
+    retryAfterMs?: number;
+  };
   return {
     name: value?.name,
     message: value?.message || 'Receipt processing failed.',
-    status: value?.status
+    status: value?.status,
+    retryAfterMs: value?.retryAfterMs,
   };
 }
 
@@ -222,7 +228,7 @@ export async function processQueueAttempt({
     return 'continue';
   } catch (error: unknown) {
     if (!isSessionActive()) return 'stopped';
-    const { name, message, status } = errorDetails(error);
+    const { name, message, status, retryAfterMs } = errorDetails(error);
     if (name === 'AbortError') {
       if (isSessionActive()) dispatch({ type: 'CANCEL_ITEM', id });
       return 'stopped';
@@ -238,7 +244,9 @@ export async function processQueueAttempt({
         updates: {
           status: 'retry-wait',
           error: message,
-          retryAfter: rotationManager?.getEarliestRetryTime() || Date.now() + 30000
+          retryAfter: retryAfterMs != null
+            ? Date.now() + Math.max(0, retryAfterMs)
+            : rotationManager?.getEarliestRetryTime() || Date.now() + 30000
         }
       });
       return 'pause';

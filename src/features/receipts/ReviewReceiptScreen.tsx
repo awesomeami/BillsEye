@@ -11,7 +11,8 @@ import { ImageSessionStore } from '../../utils/imageSessionStore';
 import { createSha256Hash, preprocessImage } from '../../utils/imageUtils';
 import { aliasRepository, receiptRepository, ReceiptRevisionConflictError } from '../../services/firebase/db';
 import { calculateReceiptTotals } from '../../domain/reconciliation';
-import { applyMerchantCategoryAlias, canonicalizeReceiptItemCategories, resolveReceiptItemCategoryId } from '../../domain/categories';
+import { applyMerchantCategoryAlias, resolveReceiptItemCategoryId } from '../../domain/categories';
+import { prepareReceiptSave } from '../../domain/receiptConfirmation';
 import { useReceiptsLibrary } from './library/ReceiptsLibraryContext';
 import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard';
 import { useReceiptQueue } from './queue/ReceiptQueueContext';
@@ -281,10 +282,6 @@ export function ReviewReceiptScreen() {
       showToast('Resolve the highlighted amount fields before saving.', 'error');
       return;
     }
-    if (APP_CONFIG.currency === 'PKR' && materialized.draft.currency !== 'PKR') {
-      showToast('This app is configured for PKR only. Please resolve the currency to PKR before saving.', 'error');
-      return;
-    }
     const scope = sessionActions.capture();
     if (!scope) return;
     const receiptId = receipt.id;
@@ -292,24 +289,13 @@ export function ReviewReceiptScreen() {
     saveInFlightRef.current = true;
     setIsSaving(true);
     try {
-      const savedReconciliation = calculateReceiptTotals(materialized.draft.items ?? [], {
-        printedSubtotal: materialized.draft.printedSubtotal,
-        printedDiscount: materialized.draft.printedDiscount,
-        printedTax: materialized.draft.printedTax,
-        printedFees: materialized.draft.printedFees,
-        printedRounding: materialized.draft.printedRounding,
-        printedGrandTotal: materialized.draft.printedGrandTotal,
-      }, settings.discrepancyTolerance);
-      const payload: Partial<ReceiptDocument> = {
-        ...materialized.draft,
-        items: canonicalizeReceiptItemCategories(materialized.draft.items ?? [], categories),
+      const payload = prepareReceiptSave({
+        receipt: materialized.draft,
         status,
-        confirmedAt: status === 'confirmed' ? receipt.confirmedAt ?? new Date().toISOString() : null,
-        computedLineTotal: savedReconciliation.computedLineTotal,
-        computedExpectedTotal: savedReconciliation.computedExpectedTotal,
-        discrepancy: savedReconciliation.discrepancy,
-        reconciliationStatus: savedReconciliation.reconciliationStatus,
-      };
+        categories,
+        discrepancyTolerance: settings.discrepancyTolerance,
+        expectedCurrency: APP_CONFIG.currency,
+      });
       const saved = await receiptRepository.updateReceipt(scope.uid, receiptId, payload, receipt.revision);
       if (!active()) return;
       const editor = applyAuthoritativeReceiptSave(saved);

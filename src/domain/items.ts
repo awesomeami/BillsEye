@@ -83,8 +83,6 @@ export function extractObservations(receipts: ReceiptDocument[]): ItemObservatio
   for (const r of receipts) {
     if (r.status !== 'confirmed' || !r.transactionDate) continue;
     
-    // Skip refunds entirely for price analytics? Or mark them?
-    // "Handle refunds/negative receipts explicitly."
     const isReceiptRefund = (getReceiptTotal(r) ?? 0) < 0;
 
     for (const item of r.items) {
@@ -92,15 +90,20 @@ export function extractObservations(receipts: ReceiptDocument[]): ItemObservatio
       if (lineTotal == null) continue;
       
       const isRefund = isReceiptRefund || lineTotal < 0;
-      if (isRefund) continue; // For now, we skip refunds for pricing analytics to avoid skewed averages
-
-      const unit = parseUnit(item.quantity ?? null, item.unit ?? null, false);
+      const normalizedLineTotal = isRefund ? -Math.abs(lineTotal) : lineTotal;
+      const quantityWasEstimated = item.quantity == null;
+      const unit = parseUnit(item.quantity ?? null, item.unit ?? null, quantityWasEstimated);
       
       if (unit.standardValue === 0) continue; // Prevent division by zero
-      if (lineTotal === 0) continue; // Ignore zero price items (freebies)
+      if (normalizedLineTotal === 0 && item.unitPrice == null) continue;
 
-      // Calculate unit price per standard unit (e.g. per kg, per L, per piece)
-      const unitPrice = lineTotal / unit.standardValue;
+      // A printed rate is authoritative even when a discount makes lineTotal / quantity
+      // lower. Convert that rate to the normalized standard unit when necessary.
+      const quantity = item.quantity ?? 1;
+      const unitPrice = item.unitPrice != null
+        ? item.unitPrice * (quantity / unit.standardValue)
+        : normalizedLineTotal / unit.standardValue;
+      if (!Number.isFinite(unitPrice)) continue;
       
       const canonicalName = getCanonicalItemName(item.name ?? item.rawLineText ?? '', item.brand ?? undefined);
 
@@ -111,7 +114,7 @@ export function extractObservations(receipts: ReceiptDocument[]): ItemObservatio
         rawName: item.rawLineText || item.name || 'Unknown',
         canonicalName,
         unit,
-        lineTotal,
+        lineTotal: normalizedLineTotal,
         unitPrice,
         isRefund
       });
@@ -128,13 +131,13 @@ export interface ItemAnalytics {
   lastPurchase: string;
   
   // Price stats (for comparable observations)
-  minPrice: number;
-  maxPrice: number;
-  medianPrice: number;
-  simpleAverage: number;
-  weightedAverage: number;
+  minPrice: number | null;
+  maxPrice: number | null;
+  medianPrice: number | null;
+  simpleAverage: number | null;
+  weightedAverage: number | null;
   
-  latestPrice: number;
+  latestPrice: number | null;
   previousPrice: number | null;
   priceChangeAbs: number | null;
   priceChangePct: number | null;
@@ -149,35 +152,44 @@ export interface ItemAnalytics {
 export function analyzeItem(observations: ItemObservation[]): ItemAnalytics | null {
   if (observations.length === 0) return null;
 
-  // Filter out estimated quantities for strict price comparisons
-  const strictObs = observations.filter(o => !o.unit.isEstimated);
-  if (strictObs.length === 0) return null; // No comparable observations
+  const allObservations = [...observations]
+    .sort((a, b) => a.transactionDate.localeCompare(b.transactionDate));
+  // Refunds affect spend, but they are not purchase-price observations. Missing
+  // quantities remain visible in spend totals without becoming invented rates.
+  const strictObs = allObservations.filter(o => (
+    !o.isRefund
+    && !o.unit.isEstimated
+    && o.unit.standardValue > 0
+    && o.unitPrice > 0
+  ));
 
-  // Sort by date ASC
-  strictObs.sort((a, b) => a.transactionDate.localeCompare(b.transactionDate));
-
-  const totalSpent = strictObs.reduce((sum, o) => sum + o.lineTotal, 0);
+  const totalSpent = allObservations.reduce((sum, o) => sum + o.lineTotal, 0);
   const totalStandardUnits = strictObs.reduce((sum, o) => sum + o.unit.standardValue, 0);
-  const weightedAverage = totalStandardUnits > 0 ? totalSpent / totalStandardUnits : 0;
+  const weightedAverage = totalStandardUnits > 0
+    ? strictObs.reduce((sum, o) => sum + (o.unitPrice * o.unit.standardValue), 0)
+      / totalStandardUnits
+    : null;
   
   const prices = strictObs.map(o => o.unitPrice).sort((a, b) => a - b);
-  const minPrice = prices[0];
-  const maxPrice = prices[prices.length - 1];
-  const simpleAverage = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const minPrice = prices.length > 0 ? prices[0] : null;
+  const maxPrice = prices.length > 0 ? prices[prices.length - 1] : null;
+  const simpleAverage = prices.length > 0
+    ? prices.reduce((a, b) => a + b, 0) / prices.length
+    : null;
   
-  let medianPrice = 0;
+  let medianPrice: number | null = null;
   if (prices.length > 0) {
     const mid = Math.floor(prices.length / 2);
     medianPrice = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2;
   }
 
   const latestObs = strictObs[strictObs.length - 1];
-  const latestPrice = latestObs.unitPrice;
+  const latestPrice = latestObs?.unitPrice ?? null;
   let previousPrice: number | null = null;
   let priceChangeAbs: number | null = null;
   let priceChangePct: number | null = null;
 
-  if (strictObs.length > 1) {
+  if (latestObs && strictObs.length > 1) {
     const latestMonth = latestObs.transactionDate.substring(0, 7);
     // Find all observations in the most recent month PRIOR to latestMonth
     let priorMonth: string | null = null;
@@ -192,11 +204,14 @@ export function analyzeItem(observations: ItemObservation[]): ItemAnalytics | nu
     if (priorMonth) {
       const priorMonthObs = strictObs.filter(o => o.transactionDate.substring(0, 7) === priorMonth);
       if (priorMonthObs.length > 0) {
-        const pTotal = priorMonthObs.reduce((sum, o) => sum + o.lineTotal, 0);
+        const pTotal = priorMonthObs.reduce(
+          (sum, o) => sum + (o.unitPrice * o.unit.standardValue),
+          0,
+        );
         const pUnits = priorMonthObs.reduce((sum, o) => sum + o.unit.standardValue, 0);
         previousPrice = pUnits > 0 ? pTotal / pUnits : null;
         
-        if (previousPrice !== null) {
+        if (previousPrice !== null && latestPrice !== null) {
           priceChangeAbs = latestPrice - previousPrice;
           if (previousPrice !== 0) {
             priceChangePct = (priceChangeAbs / previousPrice) * 100;
@@ -210,7 +225,7 @@ export function analyzeItem(observations: ItemObservation[]): ItemAnalytics | nu
   const merchantMap = new Map<string, { totalSpend: number; totalUnits: number; occasions: number }>();
   for (const o of strictObs) {
     const curr = merchantMap.get(o.merchant) || { totalSpend: 0, totalUnits: 0, occasions: 0 };
-    curr.totalSpend += o.lineTotal;
+    curr.totalSpend += o.unitPrice * o.unit.standardValue;
     curr.totalUnits += o.unit.standardValue;
     curr.occasions += 1;
     merchantMap.set(o.merchant, curr);
@@ -223,11 +238,11 @@ export function analyzeItem(observations: ItemObservation[]): ItemAnalytics | nu
   })).sort((a, b) => b.occasions - a.occasions);
 
   return {
-    canonicalName: strictObs[0].canonicalName,
+    canonicalName: allObservations[0].canonicalName,
     totalSpent,
-    occasions: strictObs.length,
-    firstPurchase: strictObs[0].transactionDate,
-    lastPurchase: latestObs.transactionDate,
+    occasions: allObservations.length,
+    firstPurchase: allObservations[0].transactionDate,
+    lastPurchase: allObservations[allObservations.length - 1].transactionDate,
     minPrice,
     maxPrice,
     medianPrice,
@@ -237,8 +252,8 @@ export function analyzeItem(observations: ItemObservation[]): ItemAnalytics | nu
     previousPrice,
     priceChangeAbs,
     priceChangePct,
-    unitCategory: strictObs[0].unit.category,
-    standardUnit: strictObs[0].unit.standardUnit,
+    unitCategory: allObservations[0].unit.category,
+    standardUnit: allObservations[0].unit.standardUnit,
     observations: strictObs,
     merchants
   };
@@ -247,12 +262,15 @@ export function analyzeItem(observations: ItemObservation[]): ItemAnalytics | nu
 export function groupAndAnalyzeItems(receipts: ReceiptDocument[]): ItemAnalytics[] {
   const allObs = extractObservations(receipts);
   
-  // Group by canonical name AND unit category (to prevent mixing compatible vs incompatible units if canonical name matches but units are completely different)
+  // Known units compare within their normalized category. Unknown units need
+  // their exact normalized label as well, so boxes never mix with bottles.
   const groups = new Map<string, ItemObservation[]>();
   
   for (const o of allObs) {
-    // We group by canonical name AND unit category to avoid comparing 'kg' with 'pcs' for the same product name
-    const key = `${o.canonicalName}::${o.unit.category}`;
+    const unitKey = o.unit.category === 'unknown'
+      ? `${o.unit.category}:${o.unit.standardUnit}`
+      : o.unit.category;
+    const key = `${o.canonicalName}::${unitKey}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(o);
   }

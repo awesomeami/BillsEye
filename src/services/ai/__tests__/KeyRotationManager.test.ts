@@ -156,7 +156,10 @@ describe('KeyRotationManager Fake Clock Tests', () => {
       async (key) => {
         callIndex++;
         if (key === 'decrypted-key-0') {
-          const error = Object.assign(new Error('Rate limit exceeded'), { status: 429 });
+          const error = Object.assign(new Error('Rate limit exceeded'), {
+            status: 429,
+            code: 'QUOTA_EXCEEDED',
+          });
           throw error;
         }
         return `success-with-${key}`;
@@ -174,6 +177,77 @@ describe('KeyRotationManager Fake Clock Tests', () => {
 
     assert.strictEqual(slots[1]!.status, 'healthy');
     assert.strictEqual(slots[1]!.failureCount, 0);
+  });
+
+  test('AiRequestExecutor: app-wide rate limits preserve every Gemini key', async () => {
+    krm.updateSlots([
+      { slotId: 1, isEnabled: true, status: 'healthy', maskedKey: 'key-1', isSessionOnly: false },
+      { slotId: 2, isEnabled: true, status: 'healthy', maskedKey: 'key-2', isSessionOnly: false },
+    ]);
+    const executor = new AiRequestExecutor(krm);
+    let attempts = 0;
+
+    await assert.rejects(
+      () => executor.execute(
+        'extractReceipt',
+        async () => {
+          attempts += 1;
+          throw Object.assign(new Error('Another extraction is still running.'), {
+            status: 429,
+            code: 'EXTRACTION_IN_PROGRESS',
+            retryAfterMs: 7000,
+          });
+        },
+        async index => `decrypted-key-${index}`,
+      ),
+      (error: unknown) => {
+        const requestError = error as Error & { status?: number; retryAfterMs?: number };
+        assert.strictEqual(requestError.status, 429);
+        assert.strictEqual(requestError.retryAfterMs, 7000);
+        return true;
+      },
+    );
+
+    assert.strictEqual(attempts, 1);
+    for (const slot of krm.getSlotsForTesting()) {
+      assert.strictEqual(slot.status, 'healthy');
+      assert.strictEqual(slot.failureCount, undefined);
+      assert.strictEqual(slot.cooldownUntil, undefined);
+    }
+  });
+
+  test('AiRequestExecutor: malformed Gemini output does not rotate or cool keys', async () => {
+    krm.updateSlots([
+      { slotId: 1, isEnabled: true, status: 'healthy', maskedKey: 'key-1', isSessionOnly: false },
+      { slotId: 2, isEnabled: true, status: 'healthy', maskedKey: 'key-2', isSessionOnly: false },
+    ]);
+    const executor = new AiRequestExecutor(krm);
+    let attempts = 0;
+
+    await assert.rejects(
+      () => executor.execute(
+        'extractReceipt',
+        async () => {
+          attempts += 1;
+          throw Object.assign(new Error('Gemini response did not match expected schema'), {
+            status: 422,
+            code: 'UNPROCESSABLE_ENTITY',
+          });
+        },
+        async index => `decrypted-key-${index}`,
+      ),
+      (error: unknown) => {
+        assert.strictEqual((error as Error & { status?: number }).status, 422);
+        return true;
+      },
+    );
+
+    assert.strictEqual(attempts, 1);
+    for (const slot of krm.getSlotsForTesting()) {
+      assert.strictEqual(slot.status, 'healthy');
+      assert.strictEqual(slot.failureCount, undefined);
+      assert.strictEqual(slot.cooldownUntil, undefined);
+    }
   });
 
   test('AiRequestExecutor: rotates to next key on auth_failed and marks key invalid', async () => {

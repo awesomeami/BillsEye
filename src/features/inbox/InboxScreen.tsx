@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useToast } from '../../components/ui/Toast';
-import { formatDate } from '../../utilities/config';
+import { APP_CONFIG, formatDate } from '../../utilities/config';
 import { CheckCircle, Search, Trash2 } from 'lucide-react';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
 import { Link } from 'react-router-dom';
@@ -10,11 +10,20 @@ import { useClientSessionActionGuard } from '../auth/useClientSessionActionGuard
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 import { useReceiptQueue } from '../receipts/queue/ReceiptQueueContext';
 import { RouteLoadingState } from '../../components/ui/LoadingState';
+import { aliasRepository } from '../../services/firebase/db';
+import { prepareReceiptSave } from '../../domain/receiptConfirmation';
 
 export function InboxScreen() {
   const sessionActions = useClientSessionActionGuard();
   const { showToast } = useToast();
-  const { pendingReceipts, updateReceipt, deleteReceipt, loading } = useReceiptsLibrary();
+  const {
+    pendingReceipts,
+    updateReceipt,
+    deleteReceipt,
+    categories,
+    settings,
+    loading,
+  } = useReceiptsLibrary();
   const { finalizeReceipt } = useReceiptQueue();
   
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -42,17 +51,30 @@ export function InboxScreen() {
     const scope = sessionActions.capture();
     if (!scope) return;
     try {
-      await updateReceipt(receipt.id, {
-        // The repository supplies serverTimestamp() when confirmation changes,
-        // so Firestore receives a timestamp rather than a client-side value.
-        status: 'confirmed'
-      }, receipt.revision);
+      const alias = receipt.merchantNormalized
+        ? await aliasRepository.getAliasForMerchant(scope.uid, receipt.merchantNormalized)
+        : null;
+      if (!sessionActions.isActive(scope)) return;
+      const payload = prepareReceiptSave({
+        receipt,
+        status: 'confirmed',
+        categories,
+        discrepancyTolerance: settings.discrepancyTolerance,
+        expectedCurrency: APP_CONFIG.currency,
+        merchantAliasCategoryId: alias?.categoryId,
+      });
+      await updateReceipt(receipt.id, payload, receipt.revision);
       if (!sessionActions.isActive(scope)) return;
       finalizeReceipt(receipt.id);
-    } catch {
+    } catch (error: unknown) {
       if (!sessionActions.isActive(scope)) return;
       console.error('Failed to confirm receipt.');
-      showToast("Failed to confirm receipt. It may have been updated on another device.", "error");
+      showToast(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to confirm receipt. It may have been updated on another device.',
+        'error',
+      );
     }
   };
 

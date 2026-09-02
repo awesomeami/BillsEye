@@ -10,7 +10,7 @@ import {
 } from './extractionControls.js';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { getReceiptExtractionModel, EXTRACTION_SCHEMA_VERSION } from './geminiConfig.js';
-import { RawGeminiReceiptV2 } from '../domain/schema.js';
+import { ExtractionResultSchema, RawGeminiReceiptV2 } from '../domain/schema.js';
 import { parseMajorToMinor } from '../domain/money.js';
 import { calculateReceiptTotals } from '../domain/reconciliation.js';
 
@@ -452,7 +452,7 @@ router.post('/extract', authenticateAndAcquire, multipartParser, async (req, res
         lineTotal: safeParseItemAmount(item.lineTotal),
         category: item.categorySuggestion,
         confidence: item.confidence,
-        warnings: itemWarnings,
+        warnings: itemWarnings.slice(0, 10),
       };
     });
 
@@ -518,8 +518,8 @@ router.post('/extract', authenticateAndAcquire, multipartParser, async (req, res
       rawOcrText: rawGeminiResult.rawOcrText,
       overallConfidence: rawGeminiResult.overallConfidence,
       ambiguousFields: rawGeminiResult.ambiguousFields,
-      documentWarnings: docWarnings,
-      warnings: [...docWarnings, ...reconciliation.warnings],
+      documentWarnings: docWarnings.slice(0, 20),
+      warnings: [...docWarnings, ...reconciliation.warnings].slice(0, 20),
       
       extractionSchemaVersion: EXTRACTION_SCHEMA_VERSION,
       extractionModel,
@@ -527,8 +527,17 @@ router.post('/extract', authenticateAndAcquire, multipartParser, async (req, res
       extractionDurationMs
     };
 
+    const validatedDto = ExtractionResultSchema.safeParse(finalDto);
+    if (!validatedDto.success) {
+      logSafe(reqId, 'Normalized extraction failed response-contract validation');
+      return res.status(422).json({
+        error: 'Gemini response could not be normalized safely',
+        code: 'UNPROCESSABLE_ENTITY',
+      });
+    }
+
     logSafe(reqId, 'Successfully extracted receipt');
-    return res.status(200).json(finalDto);
+    return res.status(200).json(validatedDto.data);
 
   } catch {
     logSafe(reqId, 'Unexpected error');
