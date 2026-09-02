@@ -107,7 +107,7 @@ export interface DashboardSummary {
   recentReceipts: ReceiptDocument[];
 }
 
-export type DashboardPeriod = 'this_month' | 'all_time' | 'custom';
+export type DashboardPeriod = DateRangeFilter;
 
 /**
  * Compares this month through the reference date with the same elapsed days of
@@ -146,9 +146,9 @@ export function calculateDashboardSummary(
   const confirmed = getConfirmedReceipts(allReceipts);
   
   const comparisonRanges = getElapsedMonthComparisonRanges(referenceDate);
-  const currentRange = period === 'all_time'
-    ? getDateRange('all_time')
-    : period === 'custom' ? customRange : comparisonRanges.current;
+  const currentRange = period === 'this_month'
+    ? comparisonRanges.current
+    : period === 'custom' ? customRange : getDateRange(period, referenceDate);
   const lastMonthRange = comparisonRanges.previous;
   
   let currentTotal = 0;

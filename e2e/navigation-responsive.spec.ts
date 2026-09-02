@@ -40,7 +40,7 @@ test('mobile navigation keeps five primary destinations and routes secondary vie
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test('mobile reports summarize sparse data and keep tab navigation discoverable', async ({ page }) => {
+test('mobile reports keep tab navigation and the complete sortable table discoverable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route('**/api/extract', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(extractionResponse) }));
   await signIn(page);
@@ -53,8 +53,11 @@ test('mobile reports summarize sparse data and keep tab navigation discoverable'
   await page.getByRole('menuitem', { name: 'Reports' }).click();
   await expect(page.getByText('Swipe to see all report views')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Monthly spending summary' })).toBeVisible();
-  await expect(page.getByText('First month in this period')).toBeVisible();
-  await expect(page.getByRole('article')).toHaveCount(1);
+  await expect(page.getByRole('table', { name: 'Monthly spending summary' })).toBeVisible();
+  for (const label of ['Month', 'Total', 'Receipts', 'Average', 'Change']) {
+    await expect(page.getByRole('button', { name: new RegExp(`Sort by ${label}`) })).toBeVisible();
+  }
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test('tablet review uses a compact rail and keeps every editor control readable', async ({ page }) => {

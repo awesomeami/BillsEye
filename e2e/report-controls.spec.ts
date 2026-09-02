@@ -60,3 +60,75 @@ test('table sorting, custom date ranges, and receipt search spacing work togethe
     await expect(page.getByRole('button', { name: new RegExp(`Sort by ${label.replace(/[()]/g, '\\$&')}`) })).toBeVisible();
   }
 });
+
+test('phones and tablets expose every date preset and every sortable table column', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-02T12:00:00+05:00'));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+
+  await page.evaluate(() => {
+    const target = window as typeof window & { __KHARCHALENS_E2E_SEED_RECEIPTS__?: (count: number) => void };
+    target.__KHARCHALENS_E2E_SEED_RECEIPTS__?.(3);
+  });
+
+  const expectedDateOptions = [
+    'This Month',
+    'Last Month',
+    'Last 3 Months',
+    'This Year',
+    'All Time',
+    'Custom Range',
+  ];
+  const viewports = [
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.getByRole('link', { name: 'Home', exact: true }).click();
+    const dashboardRange = page.getByLabel('Dashboard date range');
+    await expect(dashboardRange.locator('option')).toHaveText(expectedDateOptions);
+    await dashboardRange.selectOption('last_month');
+    await expect(dashboardRange).toHaveValue('last_month');
+
+    await page.getByRole('link', { name: 'Receipts', exact: true }).click();
+    for (const label of ['date', 'merchant', 'categories', 'total']) {
+      const header = page.getByRole('columnheader', { name: new RegExp(`Sort by ${label}`, 'i') });
+      await expect(header).toBeVisible();
+      await header.getByRole('button').click();
+      await expect(header).not.toHaveAttribute('aria-sort', 'none');
+    }
+
+    const reportsLink = page.getByRole('link', { name: 'Reports', exact: true });
+    if (await reportsLink.count() > 0) {
+      await reportsLink.click();
+    } else {
+      await page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('button', { name: 'More' }).click();
+      await page.getByRole('menuitem', { name: 'Reports' }).click();
+    }
+    await expect(page.getByLabel('Report date range').locator('option')).toHaveText(expectedDateOptions);
+    const reportTables = [
+      { tab: 'Monthly', columns: ['Month', 'Total', 'Receipts', 'Average', 'Change'] },
+      { tab: 'Categories', columns: ['Category', 'Total', '% of Total', 'Contained in Receipts'] },
+      { tab: 'Merchants', columns: ['Merchant', 'Total Spent', 'Visits', 'Average Basket', 'First Purchase', 'Last Purchase'] },
+      { tab: 'Items', columns: ['Canonical Item', 'Total Spent', 'Unit Price (Latest)', 'Change', 'Occasions'] },
+    ];
+
+    for (const report of reportTables) {
+      await page.getByRole('tab', { name: report.tab, exact: true }).click();
+      for (const label of report.columns) {
+        const header = page.getByRole('columnheader', {
+          name: new RegExp(`Sort by ${label.replace(/[()]/g, '\\$&')}`, 'i'),
+        });
+        await expect(header).toBeVisible();
+        await header.getByRole('button').click();
+        await expect(header).not.toHaveAttribute('aria-sort', 'none');
+      }
+    }
+
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});

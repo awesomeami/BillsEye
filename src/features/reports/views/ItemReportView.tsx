@@ -41,57 +41,9 @@ export function ItemReportView({ receipts, range }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-3 xl:hidden">
-        {sortedData.map((row) => {
-          const rowId = `${row.canonicalName}-${row.unitCategory}`;
-          const isExpanded = expandedId === rowId;
-          const hasChange = row.priceChangePct !== null;
-          const isUp = hasChange && row.priceChangePct! > 0;
-          const isDown = hasChange && row.priceChangePct! < 0;
-          return (
-            <article key={rowId} className="app-card overflow-hidden">
-              <button type="button" aria-expanded={isExpanded} aria-controls={`mobile-item-details-${rowId}`} onClick={() => toggleExpand(rowId)} className="touch-target w-full p-4 text-left">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold capitalize text-gray-950">{row.canonicalName}</p>
-                    <p className="mt-1 text-xs text-gray-500">{row.occasions} occasion{row.occasions === 1 ? '' : 's'}. Latest per {row.standardUnit}</p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="money-value font-bold text-gray-950">{formatCurrency(row.latestPrice / 100)}</p>
-                    {hasChange ? <p className={`mt-1 inline-flex items-center gap-1 text-xs font-medium ${isUp ? 'text-red-700' : isDown ? 'text-green-700' : 'text-gray-500'}`}>{isUp ? <TrendingUp size={13} /> : isDown ? <TrendingDown size={13} /> : <Minus size={13} />}{Math.abs(row.priceChangePct!).toFixed(1)}%</p> : null}
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 text-sm">
-                  <span className="text-gray-500">Total spent</span>
-                  <span className="flex items-center gap-2 font-semibold text-gray-900">{formatCurrency(row.totalSpent / 100)} {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
-                </div>
-              </button>
-              {isExpanded ? (
-                <div id={`mobile-item-details-${rowId}`} className="space-y-5 border-t border-gray-200 bg-gray-50 p-4">
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <Metric label="Simple average" value={formatCurrency(row.simpleAverage / 100)} />
-                    <Metric label="Weighted average" value={formatCurrency(row.weightedAverage / 100)} />
-                    <Metric label="Median price" value={formatCurrency(row.medianPrice / 100)} />
-                    <Metric label="Min / max" value={`${formatCurrency(row.minPrice / 100)} – ${formatCurrency(row.maxPrice / 100)}`} />
-                  </div>
-                  <div>
-                    <h4 className="mb-2 text-sm font-semibold text-gray-900">Merchant averages</h4>
-                    <div className="space-y-2">{row.merchants.map(merchant => <div key={merchant.name} className="flex items-center justify-between rounded-lg bg-white p-3 text-sm"><span className="min-w-0 truncate text-gray-700">{merchant.name}</span><span className="tabular-nums ml-3 shrink-0 font-medium">{formatCurrency(merchant.avgPrice / 100)}</span></div>)}</div>
-                  </div>
-                  <div>
-                    <h4 className="mb-2 text-sm font-semibold text-gray-900">Price history</h4>
-                    <div className="space-y-2">{row.observations.map((observation, observationIndex) => <Link key={`${observation.receiptId}-${observationIndex}`} to={`/receipts?id=${observation.receiptId}`} className="flex items-center justify-between rounded-lg bg-white p-3 text-sm hover:bg-blue-50"><span className="min-w-0"><span className="block font-medium text-gray-900">{observation.transactionDate}</span><span className="block truncate text-xs text-gray-500">{observation.merchant}</span></span><span className="tabular-nums ml-3 shrink-0 font-semibold text-blue-700">{formatCurrency(observation.unitPrice / 100)}</span></Link>)}</div>
-                  </div>
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
-      </div>
-
-      <div className="app-card hidden overflow-hidden xl:block">
+      <div className="app-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+          <table className="w-full min-w-[58rem] text-left text-sm">
             <caption className="sr-only">Item price and spending summary. Activate an item row to show its details.</caption>
             <thead className="border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
               <tr>
@@ -100,7 +52,7 @@ export function ItemReportView({ receipts, range }: Props) {
                 <SortableTableHeader label="Unit Price (Latest)" active={sort?.field === 'latestPrice'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('latestPrice', 'desc')} align="right" />
                 <SortableTableHeader label="Change" active={sort?.field === 'priceChangePct'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('priceChangePct', 'desc')} align="right" />
                 <SortableTableHeader label="Occasions" active={sort?.field === 'occasions'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('occasions', 'desc')} align="right" />
-                <th scope="col" className="px-4 py-4"><span className="sr-only">Item details</span></th>
+                <th scope="col" aria-label="Item details" className="px-4 py-4" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -286,8 +238,4 @@ export function ItemReportView({ receipts, range }: Props) {
       </div>
     </div>
   );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg border border-gray-100 bg-white p-3"><p className="text-xs text-gray-500">{label}</p><p className="tabular-nums mt-1 font-medium text-gray-900">{value}</p></div>;
 }

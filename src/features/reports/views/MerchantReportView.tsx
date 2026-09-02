@@ -32,12 +32,9 @@ export function MerchantReportView({ receipts, range }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-3 xl:hidden">
-        {sortedData.map((row) => <article key={row.merchant} className="app-card bg-white p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link to={`/receipts?search=${encodeURIComponent(row.merchant)}`} className="font-semibold text-blue-700 hover:underline">{row.merchant}</Link><p className="mt-1 text-xs text-gray-500">{row.visits} visit{row.visits === 1 ? '' : 's'}. Average {formatCurrency(row.averageBasket / 100)}</p></div><p className="money-value shrink-0 text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div><p className="mt-3 text-xs text-gray-500">First purchase: {row.firstPurchase || '—'}. Last: {row.lastPurchase || '—'}</p></article>)}
-      </div>
-      <div className="app-card hidden overflow-hidden xl:block">
+      <div className="app-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+          <table className="w-full min-w-[60rem] text-left text-sm">
             <caption className="sr-only">Merchant spending summary</caption>
             <thead className="border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
               <tr>

@@ -68,13 +68,9 @@ export function CategoryReportView({ receipts, categories, range }: Props) {
         </div>
       </div>
 
-      <div className="space-y-3 xl:hidden">
-        {sortedData.map((row) => <article key={row.category} className="app-card bg-white p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold text-gray-900">{row.filterValue ? <Link to={`/receipts?category=${encodeURIComponent(row.filterValue)}`} className="text-blue-700 hover:underline">{row.category}</Link> : row.category}</p><p className="mt-1 text-xs text-gray-500">{row.receiptCount} receipt{row.receiptCount === 1 ? '' : 's'}. {row.proportion.toFixed(1)}% of spending</p></div><p className="money-value shrink-0 text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div></article>)}
-      </div>
-
-      <div className="app-card hidden overflow-hidden xl:block">
+      <div className="app-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+          <table className="w-full min-w-[42rem] text-left text-sm">
             <caption className="sr-only">Category spending summary</caption>
             <thead className="border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
               <tr>

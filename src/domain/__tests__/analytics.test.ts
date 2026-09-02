@@ -138,6 +138,22 @@ for (const tz of testTimezones) {
       assert.strictEqual(generateMonthlyReport(receipts, getDateRange('all_time'))[0].total, 50900);
     });
 
+    test('dashboard summaries support every preset date range', () => {
+      const referenceDate = new Date('2026-09-02T12:00:00Z');
+      const receipts = [
+        { ...baseReceipt, id: 'current', transactionDate: '2026-09-01', printedGrandTotal: 100 },
+        { ...baseReceipt, id: 'last', transactionDate: '2026-08-15', printedGrandTotal: 200 },
+        { ...baseReceipt, id: 'third', transactionDate: '2026-07-15', printedGrandTotal: 300 },
+        { ...baseReceipt, id: 'year', transactionDate: '2026-01-15', printedGrandTotal: 400 },
+        { ...baseReceipt, id: 'historic', transactionDate: '2025-12-15', printedGrandTotal: 500 },
+      ];
+
+      assert.strictEqual(calculateDashboardSummary(receipts, referenceDate, [], 'last_month').currentTotal, 200);
+      assert.strictEqual(calculateDashboardSummary(receipts, referenceDate, [], 'current_and_previous_2_months').currentTotal, 600);
+      assert.strictEqual(calculateDashboardSummary(receipts, referenceDate, [], 'this_year').currentTotal, 1000);
+      assert.strictEqual(calculateDashboardSummary(receipts, referenceDate, [], 'all_time').currentTotal, 1500);
+    });
+
     test('builds and applies custom ranges using Karachi calendar dates', () => {
       const refDate = new Date('2026-09-01T20:00:00Z');
       assert.deepStrictEqual(getDefaultCustomDateRange(refDate), {

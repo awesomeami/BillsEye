@@ -11,8 +11,21 @@ const DashboardCharts = lazy(() => import('./DashboardCharts').then(module => ({
 
 const dashboardDateOptions: readonly DateRangeOption[] = [
   { value: 'this_month', label: 'This Month' },
+  { value: 'last_month', label: 'Last Month' },
+  { value: 'current_and_previous_2_months', label: 'Last 3 Months' },
+  { value: 'this_year', label: 'This Year' },
   { value: 'all_time', label: 'All Time' },
 ];
+
+const dashboardPeriodLabels: Record<DashboardPeriod, string> = {
+  this_month: 'This Month',
+  last_month: 'Last Month',
+  previous_3_months: 'Previous 3 Months',
+  current_and_previous_2_months: 'Last 3 Months',
+  this_year: 'This Year',
+  all_time: 'All Time',
+  custom: 'Custom Range',
+};
 
 export function DashboardScreen() {
   const { receipts, pendingReceipts, categories, loading } = useReceiptsLibrary();
@@ -22,7 +35,10 @@ export function DashboardScreen() {
   const period = selectedPeriod ?? (monthSummary.receiptCount === 0 && receipts.some(receipt => receipt.transactionDate) ? 'all_time' : 'this_month');
   const isAllTime = period === 'all_time';
   const isCustom = period === 'custom';
-  const periodLabel = isAllTime ? 'All Time' : isCustom ? 'Custom Range' : 'This Month';
+  const periodLabel = dashboardPeriodLabels[period];
+  const periodDescription = isAllTime
+    ? 'across all dates'
+    : isCustom ? 'within the selected dates' : `in ${periodLabel.toLowerCase()}`;
   const summary = useMemo(() => period === 'this_month'
     ? monthSummary
     : calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories, period, customRange),
@@ -52,7 +68,7 @@ export function DashboardScreen() {
       <header className="page-header flex-wrap">
         <div>
           <h1 className="page-title">Overview</h1>
-          <p className="page-subtitle">{isAllTime ? 'All-time snapshot' : isCustom ? 'Snapshot for your selected dates' : "This month's snapshot"}</p>
+          <p className="page-subtitle">{isCustom ? 'Snapshot for your selected dates' : `${periodLabel} snapshot`}</p>
         </div>
         <DateRangeControl
           id="dashboard-date-range"
@@ -118,7 +134,7 @@ export function DashboardScreen() {
           </div>
           <div className="flex items-center gap-2 text-sm">
             {period !== 'this_month' ? (
-              <span className="text-gray-500">{isAllTime ? 'All confirmed receipts with a transaction date' : 'Confirmed receipts within the selected dates'}</span>
+              <span className="text-gray-500">Confirmed receipts {periodDescription}</span>
             ) : summary.receiptCount === 0 ? (
               <span className="text-gray-500">No confirmed receipts dated this month</span>
             ) : changePct !== null ? (
@@ -143,7 +159,7 @@ export function DashboardScreen() {
         <div className="ledger-surface flex flex-col justify-between p-5 sm:p-6">
           <div>
             <h3 className="font-medium text-gray-900 mb-1">Recent Activity</h3>
-            <p className="text-sm text-gray-500">{summary.receiptCount} confirmed receipt{summary.receiptCount !== 1 ? 's' : ''} {isAllTime ? 'across all dates' : isCustom ? 'within the selected dates' : 'dated this month'}.</p>
+            <p className="text-sm text-gray-500">{summary.receiptCount} confirmed receipt{summary.receiptCount !== 1 ? 's' : ''} {periodDescription}.</p>
           </div>
           <Link to="/add" className="btn-outline mt-5 justify-between p-4 text-blue-700">
             <div className="flex items-center gap-3">

@@ -239,9 +239,8 @@ export function ReceiptsListScreen() {
         )}
       </div>
 
-      <div className="app-card overflow-hidden">
-        {/* Desktop Table Header */}
-        <div role="row" className="hidden grid-cols-12 gap-4 border-b border-gray-200 bg-gray-50 p-4 text-xs font-semibold text-gray-500 lg:grid">
+      <div role="table" aria-label="Receipts" className="app-card overflow-x-auto">
+        <div role="row" className="grid min-w-[48rem] grid-cols-12 gap-4 border-b border-gray-200 bg-gray-50 p-4 text-xs font-semibold text-gray-500">
           <div role="columnheader" aria-sort={sort.field === 'date' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-3">
             <button type="button" onClick={() => handleSortChange('date')} className="touch-target flex items-center gap-1 hover:text-gray-700" aria-label={`Sort by date, currently ${sort.field === 'date' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
               Date {sort.field === 'date' ? (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>) : <ArrowUpDown aria-hidden="true" size={14} className="text-gray-400" />}
@@ -272,7 +271,7 @@ export function ReceiptsListScreen() {
             <Link to="/add" className="btn-primary mt-5">Add Receipt</Link>
           </div>
         ) : (
-          <ul className="divide-y divide-gray-200">
+          <ul role="rowgroup" className="min-w-[48rem] divide-y divide-gray-200">
             {visibleReceipts.map((receipt) => {
               const hasWarning = receipt.warnings.length > 0 || receipt.ambiguousFields.length > 0 || receipt.reconciliationStatus === 'mismatched';
               const categories = Array.from(new Set(
@@ -282,33 +281,9 @@ export function ReceiptsListScreen() {
               ));
 
               return (
-                <li key={receipt.id} className="render-lazy border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors group">
+                <li role="row" key={receipt.id} className="render-lazy border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors group">
     <button onClick={() => setSelectedReceipt(receipt)} aria-label={`View details for ${receipt.merchantNormalized || receipt.merchantRaw || 'Unknown Merchant'}`} className="w-full text-left p-4 sm:px-4 focus:outline-none focus:bg-gray-50 focus:ring-2 focus:ring-inset focus:ring-blue-500">
-      
-                  {/* Mobile View */}
-                  <div className="flex flex-col gap-2 lg:hidden">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-sm font-bold text-gray-900 flex items-center gap-1">
-                          {receipt.merchantNormalized || receipt.merchantRaw || 'Unknown Merchant'}
-                          {receipt.wasEditedByUser && <Edit2 size={12} className="text-gray-400" />}
-                        </p>
-                        <p className="text-xs text-gray-500">{formatDate(receipt.transactionDate || '')}</p>
-                      </div>
-                      <div className="text-right flex flex-col items-end gap-1">
-                        <ReceiptTotalValue receipt={receipt} className="text-sm font-bold text-gray-900" />
-                        {hasWarning && <AlertTriangle size={14} className="text-amber-500" />}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {categories.slice(0, 3).map(cat => (
-                        <span key={cat} className="rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">{cat}</span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Desktop View */}
-                  <div className="hidden grid-cols-12 items-center gap-4 lg:grid">
+                  <div className="grid grid-cols-12 items-center gap-4">
                     <div className="col-span-3 flex flex-col">
                       <span className="text-sm text-gray-900">{formatDate(receipt.transactionDate || '')}</span>
                       <span className="text-xs text-gray-500">{receipt.paymentMethod}</span>
