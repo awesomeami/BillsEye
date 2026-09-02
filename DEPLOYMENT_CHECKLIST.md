@@ -1,4 +1,4 @@
-# KharchaLens deployment checklist
+# BillsEye deployment checklist
 
 ## Before deployment
 

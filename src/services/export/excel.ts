@@ -11,8 +11,8 @@ function sanitizeCell(value: string): string {
 
 export async function exportExcel(receipts: ReceiptDocument[], categories: CategoryDocument[]) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'KharchaLens';
-  workbook.lastModifiedBy = 'KharchaLens';
+  workbook.creator = 'BillsEye';
+  workbook.lastModifiedBy = 'BillsEye';
   workbook.created = new Date();
   workbook.modified = new Date();
 

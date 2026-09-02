@@ -50,7 +50,7 @@ function PwaUpdatePrompt({ editorIsDirty }: { editorIsDirty: boolean }) {
       aria-live="polite"
       aria-label="Application update available"
     >
-      <p className="font-semibold text-gray-900">A KharchaLens update is ready.</p>
+      <p className="font-semibold text-gray-900">A BillsEye update is ready.</p>
       <p className="mt-1 text-sm text-gray-600">
         {deferralReason ?? 'Reload when ready to use the latest version.'}
       </p>

@@ -102,7 +102,8 @@ test('mocked sign-in, upload, review, confirmation, dashboard and reports journe
   await page.getByRole('link', { name: 'Home' }).click();
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   await expect(page.getByRole('link', { name: /Example Market 2026-08-28/ })).toBeVisible();
-  await expect(page.getByLabel('Dashboard date range')).toHaveValue('this_month');
+  await expect(page.getByLabel('Total spent date range')).toHaveValue('this_month');
+  await expect(page.getByLabel('Recent activity date range')).toHaveValue('this_month');
   await page.getByRole('link', { name: 'Reports' }).click();
   await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
   await expect(page.getByRole('cell', { name: '2026-08', exact: true })).toBeVisible();
@@ -252,18 +253,21 @@ test('a historical receipt populates the overview and every report without chang
   await page.getByRole('button', { name: 'Confirm & Save' }).click();
   await page.getByRole('link', { name: 'Home' }).click();
 
-  await expect(page.getByLabel('Dashboard date range')).toHaveValue('all_time');
-  await expect(page.getByText('Total Spent (All Time)').locator('..').locator('..')).toContainText('Rs 509');
+  await expect(page.getByLabel('Total spent date range')).toHaveValue('all_time');
+  await expect(page.getByLabel('Recent activity date range')).toHaveValue('all_time');
+  const totalSpent = page.getByRole('region', { name: /Total Spent/ });
+  await expect(totalSpent).toContainText('Rs 509');
   await expect(page.getByText('1 confirmed receipt across all dates.')).toBeVisible();
   await expect(page.getByRole('link', { name: /Al-Shaheer Corporation Ltd. 2022-01-30/ })).toBeVisible();
   await expect(page.getByText('Chicken', { exact: true })).toBeVisible();
   await expect(page.getByText(/You've recorded Rs\s+509/)).toBeVisible();
   await expect(page.getByText('Add a receipt with categories to see your spending mix.')).toHaveCount(0);
 
-  await page.getByLabel('Dashboard date range').selectOption('this_month');
-  await expect(page.getByText('Total Spent (This Month)').locator('..').locator('..')).toContainText('Rs 0');
+  await page.getByLabel('Total spent date range').selectOption('this_month');
+  await expect(totalSpent).toContainText('Rs 0');
   await expect(page.getByText('No confirmed receipts dated this month')).toBeVisible();
-  await page.getByLabel('Dashboard date range').selectOption('all_time');
+  await expect(page.getByLabel('Recent activity date range')).toHaveValue('all_time');
+  await page.getByLabel('Total spent date range').selectOption('all_time');
   await expect(page.getByText('1 confirmed receipt across all dates.')).toBeVisible();
 
   await page.getByRole('link', { name: 'Reports' }).click();

@@ -53,8 +53,8 @@ export default defineConfig(({ command, mode }) => {
         injectRegister: false,
         includeAssets: ['pwa-192x192.png', 'pwa-512x512.png'],
         manifest: {
-          name: 'KharchaLens',
-          short_name: 'KharchaLens',
+          name: 'BillsEye',
+          short_name: 'BillsEye',
           description: 'Receipt Analytics and Expense Tracking',
           theme_color: '#4b50a3',
           background_color: '#f4f6f3',

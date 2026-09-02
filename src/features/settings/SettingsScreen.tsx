@@ -265,7 +265,7 @@ export function SettingsScreen() {
         <div className="app-card space-y-4 p-5 sm:p-6">
           <h3 className="font-bold text-gray-900">Device Security & Cache</h3>
           <p className="text-sm text-gray-500">
-            By default, KharchaLens stores data only in temporary memory. If this is your personal, trusted device, you can enable persistent offline cache. Changing this setting requires the app to reinitialize Firestore, so it takes effect only after a reload.
+            By default, BillsEye stores data only in temporary memory. If this is your personal, trusted device, you can enable persistent offline cache. Changing this setting requires the app to reinitialize Firestore, so it takes effect only after a reload.
           </p>
           <label className="relative flex min-h-12 cursor-pointer items-center justify-between gap-4 rounded-xl border border-gray-200 p-3 hover:bg-gray-50">
             <span className="text-sm font-medium text-gray-900 select-none">This is a trusted device</span>

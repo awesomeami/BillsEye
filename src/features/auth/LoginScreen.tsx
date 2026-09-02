@@ -34,7 +34,7 @@ export function LoginScreen() {
       <div className="relative mx-auto grid w-full max-w-5xl items-center gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-20">
         <section className="text-center lg:text-left">
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-md bg-blue-600 text-white"><Receipt size={30} /></div>
-          <h1 className="mt-6 text-4xl font-extrabold tracking-[-0.045em] text-gray-950 sm:text-5xl">KharchaLens</h1>
+          <h1 className="mt-6 text-4xl font-extrabold tracking-[-0.045em] text-gray-950 sm:text-5xl">BillsEye</h1>
           <p className="mx-auto mt-4 max-w-lg text-base leading-7 text-gray-600 lg:mx-0 lg:text-lg">A clear, private view of everyday spending—built from the receipts you already have.</p>
           <div className="mt-8 hidden max-w-lg space-y-3 text-left lg:block">
             {privacyPoints.map(point => <div key={point} className="flex items-center gap-3 text-sm text-gray-600"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-blue-100 text-blue-700"><Check size={14} /></span>{point}</div>)}

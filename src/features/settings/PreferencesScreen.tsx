@@ -52,13 +52,13 @@ export function PreferencesScreen({ onBack }: { onBack: () => void }) {
 
       <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 space-y-2">
         <h3 className="font-semibold text-gray-900">Profile</h3>
-        <p className="text-sm text-gray-600">{user?.displayName || 'KharchaLens user'}</p>
+        <p className="text-sm text-gray-600">{user?.displayName || 'BillsEye user'}</p>
         <p className="text-sm text-gray-500">{user?.email}</p>
       </section>
 
       <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 space-y-3">
         <h3 className="font-semibold text-gray-900">Regional formatting</h3>
-        <p className="text-sm text-gray-600">KharchaLens currently uses one centralized PKR configuration so totals and reports stay consistent across devices.</p>
+        <p className="text-sm text-gray-600">BillsEye currently uses one centralized PKR configuration so totals and reports stay consistent across devices.</p>
         <dl className="text-sm grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
           <dt className="text-gray-500">Currency</dt><dd className="font-medium text-gray-900">{APP_CONFIG.currency}</dd>
           <dt className="text-gray-500">Locale</dt><dd className="font-medium text-gray-900">{APP_CONFIG.locale}</dd>

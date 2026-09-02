@@ -1,6 +1,6 @@
-# KharchaLens - Project Rules
+# BillsEye - Project Rules
 
-This document outlines the strict constraints and rules for KharchaLens.
+This document outlines the strict constraints and rules for BillsEye.
 
 ## Product Constraints
 1. **Authentication**: Every user signs in with their own Google account. No guest mode for core data.

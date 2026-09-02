@@ -18,7 +18,7 @@ test('daily spending uses elapsed-time spacing, full years, and a live mobile br
     ]);
   });
 
-  const trend = page.getByRole('heading', { name: 'Daily Spending Trend' }).locator('..');
+  const trend = page.getByRole('region', { name: 'Daily Spending Trend' });
   await expect(trend.getByLabel('Selected trend date range')).toContainText('2022');
   await expect(trend.getByLabel('Selected trend date range')).toContainText('2025');
 

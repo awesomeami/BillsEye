@@ -1,5 +1,5 @@
 {
-  "name": "KharchaLens",
+  "name": "BillsEye",
   "description": "Production-quality receipt analytics web app for private, isolated expense tracking.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

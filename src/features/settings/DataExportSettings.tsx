@@ -129,7 +129,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
       const { receipts, categories } = await fetchAllData();
       const { exportExcel } = await import('../../services/export/excel');
       const buffer = await exportExcel(receipts, categories);
-      downloadFile(buffer, 'kharchalens_export.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      downloadFile(buffer, 'billseye_export.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       setSuccess('Excel exported successfully.');
     } catch (error) {
       setError(messageForError(error));
@@ -157,7 +157,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
     try {
       setLoading(true);
       const json = await generateJSONBackup(await fetchAllData());
-      downloadFile(new Blob([json]), 'kharchalens_backup.json', 'application/json');
+      downloadFile(new Blob([json]), 'billseye_backup.json', 'application/json');
       setSuccess('JSON Backup exported successfully.');
     } catch (error) {
       setError(messageForError(error));

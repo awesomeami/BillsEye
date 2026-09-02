@@ -7,7 +7,7 @@ export function PrivacyScreen() {
       
       <div className="prose prose-blue max-w-none text-gray-600">
         <p className="font-medium text-gray-900">
-          KharchaLens is designed to protect your data across all interactions.
+          BillsEye is designed to protect your data across all interactions.
         </p>
 
         <h3 className="text-lg font-bold text-gray-900 mt-6">Text Data & Syncing</h3>

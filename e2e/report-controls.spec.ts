@@ -12,11 +12,11 @@ test('table sorting, custom date ranges, and receipt search spacing work togethe
     target.__KHARCHALENS_E2E_SEED_RECEIPTS__?.(3);
   });
 
-  await page.getByLabel('Dashboard date range').selectOption('custom');
-  await expect(page.getByLabel('Dashboard date range start')).toHaveValue('2026-09-01');
-  await expect(page.getByLabel('Dashboard date range end')).toHaveValue('2026-09-02');
-  await page.getByLabel('Dashboard date range start').fill('2026-08-01');
-  await page.getByLabel('Dashboard date range end').fill('2026-08-02');
+  await page.getByLabel('Recent activity date range').selectOption('custom');
+  await expect(page.getByLabel('Recent activity date range start')).toHaveValue('2026-09-01');
+  await expect(page.getByLabel('Recent activity date range end')).toHaveValue('2026-09-02');
+  await page.getByLabel('Recent activity date range start').fill('2026-08-01');
+  await page.getByLabel('Recent activity date range end').fill('2026-08-02');
   await expect(page.getByText('2 confirmed receipts within the selected dates.')).toBeVisible();
 
   await page.getByRole('link', { name: 'Receipts' }).click();
@@ -85,14 +85,29 @@ test('phones and tablets expose every date preset and every sortable table colum
     { width: 390, height: 844 },
     { width: 768, height: 1024 },
   ];
+  const dashboardRangeLabels = [
+    'Total spent date range',
+    'Recent activity date range',
+    'Category composition date range',
+    'Daily spending trend date range',
+    'Top merchants date range',
+    'Top items date range',
+    'Recent receipts date range',
+  ];
 
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await page.getByRole('link', { name: 'Home', exact: true }).click();
-    const dashboardRange = page.getByLabel('Dashboard date range');
-    await expect(dashboardRange.locator('option')).toHaveText(expectedDateOptions);
-    await dashboardRange.selectOption('last_month');
-    await expect(dashboardRange).toHaveValue('last_month');
+    await expect(page.getByLabel('Dashboard date range')).toHaveCount(0);
+    for (const label of dashboardRangeLabels) {
+      await expect(page.getByLabel(label).locator('option')).toHaveText(expectedDateOptions);
+    }
+    const totalRange = page.getByLabel('Total spent date range');
+    const categoryRange = page.getByLabel('Category composition date range');
+    await totalRange.selectOption('last_month');
+    await expect(totalRange).toHaveValue('last_month');
+    await expect(categoryRange).toHaveValue('all_time');
+    await totalRange.selectOption('all_time');
 
     await page.getByRole('link', { name: 'Receipts', exact: true }).click();
     for (const label of ['date', 'merchant', 'categories', 'total']) {

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowUpRight, ArrowDownRight, Wallet, ReceiptText, Inbox, ChevronRight, AlertTriangle, TrendingUp, Tag } from 'lucide-react';
 import { formatCurrency } from '../../utilities/config';
 import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
-import { calculateDashboardSummary, DashboardPeriod, DateRange, getDefaultCustomDateRange, generateSummaryInsights } from '../../domain/analytics';
+import { calculateDashboardSummary, DashboardPeriod, DashboardSummary, DateRange, DateRangeFilter, getDefaultCustomDateRange, generateSummaryInsights } from '../../domain/analytics';
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 import { RouteLoadingState } from '../../components/ui/LoadingState';
 import { DateRangeControl, DateRangeOption } from '../../components/ui/DateRangeControl';
@@ -27,23 +27,140 @@ const dashboardPeriodLabels: Record<DashboardPeriod, string> = {
   custom: 'Custom Range',
 };
 
+const dashboardWidgetIds = [
+  'total',
+  'activity',
+  'categories',
+  'trend',
+  'merchants',
+  'items',
+  'receipts',
+] as const;
+
+type DashboardWidgetId = typeof dashboardWidgetIds[number];
+
+interface DashboardWidgetRangeState {
+  selectedPeriod: DashboardPeriod | null;
+  customRange: DateRange;
+}
+
+interface DashboardWidgetRange extends DashboardWidgetRangeState {
+  period: DashboardPeriod;
+  periodLabel: string;
+  periodDescription: string;
+  summary: DashboardSummary;
+}
+
+function createDashboardWidgetRanges(): Record<DashboardWidgetId, DashboardWidgetRangeState> {
+  return Object.fromEntries(dashboardWidgetIds.map(widgetId => [
+    widgetId,
+    {
+      selectedPeriod: null,
+      customRange: getDefaultCustomDateRange(),
+    },
+  ])) as Record<DashboardWidgetId, DashboardWidgetRangeState>;
+}
+
+interface DashboardWidgetDateRangeControlProps {
+  widgetId: DashboardWidgetId;
+  label: string;
+  range: DashboardWidgetRange;
+  onPeriodChange: (widgetId: DashboardWidgetId, period: DashboardPeriod) => void;
+  onCustomRangeChange: (widgetId: DashboardWidgetId, range: DateRange) => void;
+}
+
+function DashboardWidgetDateRangeControl({
+  widgetId,
+  label,
+  range,
+  onPeriodChange,
+  onCustomRangeChange,
+}: DashboardWidgetDateRangeControlProps) {
+  const accessibleLabel = `${label} date range`;
+
+  return (
+    <DateRangeControl
+      id={`dashboard-${widgetId}-date-range`}
+      label={accessibleLabel}
+      value={range.period}
+      options={dashboardDateOptions}
+      customRange={range.customRange}
+      onChange={(value: DateRangeFilter) => onPeriodChange(widgetId, value as DashboardPeriod)}
+      onCustomRangeChange={(nextRange: DateRange) => onCustomRangeChange(widgetId, nextRange)}
+      className="w-full sm:w-auto sm:min-w-0"
+      selectClassName="w-full sm:!w-auto sm:min-w-36"
+    />
+  );
+}
+
 export function DashboardScreen() {
   const { receipts, pendingReceipts, categories, loading } = useReceiptsLibrary();
-  const [selectedPeriod, setSelectedPeriod] = useState<DashboardPeriod | null>(null);
-  const [customRange, setCustomRange] = useState<DateRange>(() => getDefaultCustomDateRange());
-  const monthSummary = useMemo(() => calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories), [receipts, pendingReceipts, categories]);
-  const period = selectedPeriod ?? (monthSummary.receiptCount === 0 && receipts.some(receipt => receipt.transactionDate) ? 'all_time' : 'this_month');
-  const isAllTime = period === 'all_time';
-  const isCustom = period === 'custom';
-  const periodLabel = dashboardPeriodLabels[period];
-  const periodDescription = isAllTime
-    ? 'across all dates'
-    : isCustom ? 'within the selected dates' : `in ${periodLabel.toLowerCase()}`;
-  const summary = useMemo(() => period === 'this_month'
-    ? monthSummary
-    : calculateDashboardSummary([...receipts, ...pendingReceipts], new Date(), categories, period, customRange),
-  [categories, customRange, monthSummary, pendingReceipts, period, receipts]);
+  const [widgetRangeStates, setWidgetRangeStates] = useState(createDashboardWidgetRanges);
+  const allReceipts = useMemo(() => [...receipts, ...pendingReceipts], [receipts, pendingReceipts]);
+  const monthSummary = useMemo(
+    () => calculateDashboardSummary(allReceipts, new Date(), categories),
+    [allReceipts, categories],
+  );
+  const defaultPeriod: DashboardPeriod = monthSummary.receiptCount === 0
+    && receipts.some(receipt => receipt.transactionDate)
+    ? 'all_time'
+    : 'this_month';
+  const widgetRanges = useMemo(() => {
+    const summaryCache = new Map<string, DashboardSummary>();
+    summaryCache.set('this_month', monthSummary);
+
+    return Object.fromEntries(dashboardWidgetIds.map(widgetId => {
+      const state = widgetRangeStates[widgetId];
+      const period = state.selectedPeriod ?? defaultPeriod;
+      const cacheKey = period === 'custom'
+        ? `${period}:${state.customRange.start ?? ''}:${state.customRange.end ?? ''}`
+        : period;
+      let summary = summaryCache.get(cacheKey);
+      if (!summary) {
+        summary = calculateDashboardSummary(
+          allReceipts,
+          new Date(),
+          categories,
+          period,
+          state.customRange,
+        );
+        summaryCache.set(cacheKey, summary);
+      }
+      const periodLabel = dashboardPeriodLabels[period];
+      const periodDescription = period === 'all_time'
+        ? 'across all dates'
+        : period === 'custom'
+          ? 'within the selected dates'
+          : `in ${periodLabel.toLowerCase()}`;
+
+      return [widgetId, {
+        ...state,
+        period,
+        periodLabel,
+        periodDescription,
+        summary,
+      }];
+    })) as Record<DashboardWidgetId, DashboardWidgetRange>;
+  }, [allReceipts, categories, defaultPeriod, monthSummary, widgetRangeStates]);
+  const dataQualitySummary = useMemo(
+    () => calculateDashboardSummary(allReceipts, new Date(), categories, 'all_time'),
+    [allReceipts, categories],
+  );
   const insights = useMemo(() => generateSummaryInsights(receipts, new Date(), categories), [receipts, categories]);
+
+  const updateWidgetPeriod = (widgetId: DashboardWidgetId, selectedPeriod: DashboardPeriod) => {
+    setWidgetRangeStates(current => ({
+      ...current,
+      [widgetId]: { ...current[widgetId], selectedPeriod },
+    }));
+  };
+
+  const updateWidgetCustomRange = (widgetId: DashboardWidgetId, customRange: DateRange) => {
+    setWidgetRangeStates(current => ({
+      ...current,
+      [widgetId]: { ...current[widgetId], customRange },
+    }));
+  };
 
   const {
     currentTotal,
@@ -52,12 +169,11 @@ export function DashboardScreen() {
     previousTotalAvailable,
     changeAbs,
     changePct,
-    pendingCount,
-    categoryComposition,
-    dailyTrend,
-    needsDateCount,
-    excludedNullCount
-  } = summary;
+  } = widgetRanges.total.summary;
+
+  const { pendingCount } = monthSummary;
+  const { needsDateCount, excludedNullCount } = dataQualitySummary;
+  const totalRange = widgetRanges.total;
 
   const isUp = changeAbs > 0;
 
@@ -68,19 +184,8 @@ export function DashboardScreen() {
       <header className="page-header flex-wrap">
         <div>
           <h1 className="page-title">Overview</h1>
-          <p className="page-subtitle">{isCustom ? 'Snapshot for your selected dates' : `${periodLabel} snapshot`}</p>
+          <p className="page-subtitle">Your spending at a glance</p>
         </div>
-        <DateRangeControl
-          id="dashboard-date-range"
-          label="Dashboard date range"
-          value={period}
-          options={dashboardDateOptions}
-          customRange={customRange}
-          onChange={value => setSelectedPeriod(value as DashboardPeriod)}
-          onCustomRangeChange={setCustomRange}
-          className="w-full sm:w-auto"
-          selectClassName="sm:!w-auto sm:min-w-36"
-        />
         {pendingCount > 0 && (
           <Link to="/inbox" className="flex items-center gap-2 bg-red-50 text-red-700 px-3 py-1.5 rounded-full text-sm font-medium hover:bg-red-100 transition-colors">
             <Inbox size={16} />
@@ -88,10 +193,6 @@ export function DashboardScreen() {
           </Link>
         )}
       </header>
-
-      {selectedPeriod === null && isAllTime && (
-        <p className="text-sm text-gray-500">Your saved receipts are dated outside this month, so all-time statistics are shown. Spending uses the receipt date, not the upload date.</p>
-      )}
 
       {needsDateCount > 0 && (
         <div className="bg-amber-50 text-amber-800 p-4 rounded-xl flex items-center gap-3">
@@ -124,18 +225,27 @@ export function DashboardScreen() {
 
       {/* Hero Metric */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_0.65fr]">
-        <div className="app-card receipt-paper p-6 sm:p-8">
-          <div className="flex items-center gap-2 text-gray-500 mb-2">
-            <Wallet size={18} />
-            <span className="font-medium">Total Spent ({periodLabel})</span>
+        <section aria-labelledby="dashboard-total-heading" className="app-card receipt-paper p-6 sm:p-8">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-center gap-2 text-gray-500">
+              <Wallet size={18} />
+              <h2 id="dashboard-total-heading" className="font-medium">Total Spent ({totalRange.periodLabel})</h2>
+            </div>
+            <DashboardWidgetDateRangeControl
+              widgetId="total"
+              label="Total spent"
+              range={totalRange}
+              onPeriodChange={updateWidgetPeriod}
+              onCustomRangeChange={updateWidgetCustomRange}
+            />
           </div>
           <div className="money-display mb-4 text-5xl text-gray-950 sm:text-6xl">
-            {currentTotalAvailable || summary.receiptCount === 0 ? formatCurrency(currentTotal / 100) : 'Unavailable'}
+            {currentTotalAvailable || totalRange.summary.receiptCount === 0 ? formatCurrency(currentTotal / 100) : 'Unavailable'}
           </div>
           <div className="flex items-center gap-2 text-sm">
-            {period !== 'this_month' ? (
-              <span className="text-gray-500">Confirmed receipts {periodDescription}</span>
-            ) : summary.receiptCount === 0 ? (
+            {totalRange.period !== 'this_month' ? (
+              <span className="text-gray-500">Confirmed receipts {totalRange.periodDescription}</span>
+            ) : totalRange.summary.receiptCount === 0 ? (
               <span className="text-gray-500">No confirmed receipts dated this month</span>
             ) : changePct !== null ? (
               <>
@@ -153,13 +263,22 @@ export function DashboardScreen() {
               <span className="text-gray-500">Comparable totals are unavailable</span>
             )}
           </div>
-        </div>
+        </section>
 
         {/* Quick actions or secondary metric */}
         <div className="ledger-surface flex flex-col justify-between p-5 sm:p-6">
           <div>
-            <h3 className="font-medium text-gray-900 mb-1">Recent Activity</h3>
-            <p className="text-sm text-gray-500">{summary.receiptCount} confirmed receipt{summary.receiptCount !== 1 ? 's' : ''} {periodDescription}.</p>
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between lg:flex-col">
+              <h3 className="font-medium text-gray-900">Recent Activity</h3>
+              <DashboardWidgetDateRangeControl
+                widgetId="activity"
+                label="Recent activity"
+                range={widgetRanges.activity}
+                onPeriodChange={updateWidgetPeriod}
+                onCustomRangeChange={updateWidgetCustomRange}
+              />
+            </div>
+            <p className="text-sm text-gray-500">{widgetRanges.activity.summary.receiptCount} confirmed receipt{widgetRanges.activity.summary.receiptCount !== 1 ? 's' : ''} {widgetRanges.activity.periodDescription}.</p>
           </div>
           <Link to="/add" className="btn-outline mt-5 justify-between p-4 text-blue-700">
             <div className="flex items-center gap-3">
@@ -172,7 +291,7 @@ export function DashboardScreen() {
       </div>
 
       {/* AI Insights Section */}
-      {period === 'this_month' && (insights.largestIncreases.length > 0 || insights.categoryChanges.length > 0) && (
+      {(insights.largestIncreases.length > 0 || insights.categoryChanges.length > 0) && (
         <div className="border-l-4 border-blue-600 bg-blue-50 p-6">
           <div className="flex items-center gap-2 mb-4">
             <Tag size={20} className="text-blue-600" />
@@ -235,14 +354,44 @@ export function DashboardScreen() {
       )}
 
       <Suspense fallback={<div className="grid grid-cols-1 gap-5 lg:grid-cols-2"><div className="skeleton h-80 rounded-2xl" /><div className="skeleton h-80 rounded-2xl" /></div>}>
-        <DashboardCharts categoryComposition={categoryComposition} dailyTrend={dailyTrend} />
+        <DashboardCharts
+          categoryComposition={widgetRanges.categories.summary.categoryComposition}
+          dailyTrend={widgetRanges.trend.summary.dailyTrend}
+          categoryRangeControl={(
+            <DashboardWidgetDateRangeControl
+              widgetId="categories"
+              label="Category composition"
+              range={widgetRanges.categories}
+              onPeriodChange={updateWidgetPeriod}
+              onCustomRangeChange={updateWidgetCustomRange}
+            />
+          )}
+          trendRangeControl={(
+            <DashboardWidgetDateRangeControl
+              widgetId="trend"
+              label="Daily spending trend"
+              range={widgetRanges.trend}
+              onPeriodChange={updateWidgetPeriod}
+              onCustomRangeChange={updateWidgetCustomRange}
+            />
+          )}
+        />
       </Suspense>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-2">
+      <div className="grid grid-cols-1 gap-5 pt-2 xl:grid-cols-3">
         <div className="app-card flex flex-col p-5 sm:p-6">
-          <h3 className="font-medium text-gray-900 mb-4">Top Merchants</h3>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between xl:flex-col">
+            <h3 className="font-medium text-gray-900">Top Merchants</h3>
+            <DashboardWidgetDateRangeControl
+              widgetId="merchants"
+              label="Top merchants"
+              range={widgetRanges.merchants}
+              onPeriodChange={updateWidgetPeriod}
+              onCustomRangeChange={updateWidgetCustomRange}
+            />
+          </div>
           <div className="space-y-4">
-            {summary.topMerchants.length > 0 ? summary.topMerchants.map(m => (
+            {widgetRanges.merchants.summary.topMerchants.length > 0 ? widgetRanges.merchants.summary.topMerchants.map(m => (
               <div key={m.name} className="flex justify-between items-center">
                 <span className="text-gray-600 truncate mr-2">{m.name}</span>
                 <span className="money-value font-medium text-gray-900">{formatCurrency(m.total / 100)}</span>
@@ -254,9 +403,18 @@ export function DashboardScreen() {
         </div>
 
         <div className="app-card flex flex-col p-5 sm:p-6">
-          <h3 className="font-medium text-gray-900 mb-4">Top Items</h3>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between xl:flex-col">
+            <h3 className="font-medium text-gray-900">Top Items</h3>
+            <DashboardWidgetDateRangeControl
+              widgetId="items"
+              label="Top items"
+              range={widgetRanges.items}
+              onPeriodChange={updateWidgetPeriod}
+              onCustomRangeChange={updateWidgetCustomRange}
+            />
+          </div>
           <div className="space-y-4">
-            {summary.topItems.length > 0 ? summary.topItems.map(item => (
+            {widgetRanges.items.summary.topItems.length > 0 ? widgetRanges.items.summary.topItems.map(item => (
               <div key={item.name} className="flex justify-between items-center">
                 <span className="text-gray-600 truncate mr-2">{item.name}</span>
                 <span className="money-value font-medium text-gray-900">{formatCurrency(item.total / 100)}</span>
@@ -268,9 +426,18 @@ export function DashboardScreen() {
         </div>
 
         <div className="app-card flex flex-col p-5 sm:p-6">
-          <h3 className="font-medium text-gray-900 mb-4">Recent Receipts</h3>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between xl:flex-col">
+            <h3 className="font-medium text-gray-900">Recent Receipts</h3>
+            <DashboardWidgetDateRangeControl
+              widgetId="receipts"
+              label="Recent receipts"
+              range={widgetRanges.receipts}
+              onPeriodChange={updateWidgetPeriod}
+              onCustomRangeChange={updateWidgetCustomRange}
+            />
+          </div>
           <div className="space-y-4">
-            {summary.recentReceipts.length > 0 ? summary.recentReceipts.map(r => (
+            {widgetRanges.receipts.summary.recentReceipts.length > 0 ? widgetRanges.receipts.summary.recentReceipts.map(r => (
               <Link to={`/receipts?id=${r.id}`} key={r.id} className="flex justify-between items-center hover:bg-gray-50 p-2 -mx-2 rounded-lg transition-colors">
                 <div className="flex flex-col min-w-0">
                   <span className="text-gray-900 font-medium truncate">{r.merchantNormalized || r.merchantRaw || 'Unknown'}</span>

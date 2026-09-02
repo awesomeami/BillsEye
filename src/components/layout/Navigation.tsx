@@ -75,7 +75,7 @@ export function Navigation() {
       <aside className="sticky top-0 hidden h-dvh w-20 shrink-0 flex-col overflow-y-auto border-r border-gray-200/90 bg-white/90 md:flex lg:w-60">
         <div className="flex min-h-20 items-center justify-center gap-3 px-3 lg:justify-start lg:px-5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white"><Receipt size={23} /></div>
-          <h1 className="hidden text-xl font-semibold tracking-tight text-gray-950 lg:block">Kharcha Lens</h1>
+          <h1 className="hidden text-xl font-semibold tracking-tight text-gray-950 lg:block">BillsEye</h1>
         </div>
 
         <div className="px-3 pb-5 lg:px-4">

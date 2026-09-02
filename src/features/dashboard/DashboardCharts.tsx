@@ -29,9 +29,16 @@ const tooltipStyle = {
 interface DashboardChartsProps {
   categoryComposition: DashboardSummary['categoryComposition'];
   dailyTrend: DashboardSummary['dailyTrend'];
+  categoryRangeControl: React.ReactNode;
+  trendRangeControl: React.ReactNode;
 }
 
-export function DashboardCharts({ categoryComposition, dailyTrend }: DashboardChartsProps) {
+export function DashboardCharts({
+  categoryComposition,
+  dailyTrend,
+  categoryRangeControl,
+  trendRangeControl,
+}: DashboardChartsProps) {
   const trendData = useMemo(() => buildDailyTrendChartData(dailyTrend), [dailyTrend]);
   const trendVersion = trendData.length === 0
     ? 'empty'
@@ -39,8 +46,11 @@ export function DashboardCharts({ categoryComposition, dailyTrend }: DashboardCh
 
   return (
     <div className="grid grid-cols-1 gap-5 pt-1 lg:grid-cols-2">
-      <section className="app-card flex min-h-72 flex-col p-5 sm:p-6">
-        <h3 className="mb-4 font-semibold text-gray-950">Category Composition</h3>
+      <section aria-labelledby="dashboard-category-heading" className="app-card flex min-h-72 flex-col p-5 sm:p-6">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <h3 id="dashboard-category-heading" className="font-semibold text-gray-950">Category Composition</h3>
+          {categoryRangeControl}
+        </div>
         {categoryComposition.length > 0 ? (
           <>
             <p id="dashboard-category-summary" className="sr-only">Spending grouped by category. Percentages are listed below the chart.</p>
@@ -68,8 +78,11 @@ export function DashboardCharts({ categoryComposition, dailyTrend }: DashboardCh
         )}
       </section>
 
-      <section className="app-card flex min-h-72 flex-col p-5 sm:p-6">
-        <h3 className="mb-4 font-semibold text-gray-950">Daily Spending Trend</h3>
+      <section aria-labelledby="dashboard-trend-heading" className="app-card flex min-h-72 flex-col p-5 sm:p-6">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <h3 id="dashboard-trend-heading" className="font-semibold text-gray-950">Daily Spending Trend</h3>
+          {trendRangeControl}
+        </div>
         {trendData.length > 1 ? (
           <DailySpendingTrend key={trendVersion} data={trendData} />
         ) : (

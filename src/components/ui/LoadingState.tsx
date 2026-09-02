@@ -16,7 +16,7 @@ export function LoadingScreen() {
       <div className="rounded-2xl bg-blue-50 p-3">
         <LoadingSpinner size={32} />
       </div>
-      <p className="text-sm font-medium text-gray-500">Loading KharchaLens…</p>
+      <p className="text-sm font-medium text-gray-500">Loading BillsEye…</p>
     </div>
   );
 }

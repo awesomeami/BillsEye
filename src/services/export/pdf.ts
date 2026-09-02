@@ -9,7 +9,7 @@ export function exportPDF(receipts: ReceiptDocument[], dateRangeStr: string) {
   const doc = new jsPDF();
   
   doc.setFontSize(20);
-  doc.text('KharchaLens Expense Report', 14, 22);
+  doc.text('BillsEye Expense Report', 14, 22);
   
   doc.setFontSize(11);
   doc.text(`Date Range: ${dateRangeStr}`, 14, 30);

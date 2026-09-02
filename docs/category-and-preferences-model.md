@@ -2,11 +2,11 @@
 
 ## Categories
 
-KharchaLens uses a stable category ID as the canonical category value for every newly created or updated receipt item. The category document supplies the display name, so a rename changes presentation without changing modern receipts, reports, or aliases.
+BillsEye uses a stable category ID as the canonical category value for every newly created or updated receipt item. The category document supplies the display name, so a rename changes presentation without changing modern receipts, reports, or aliases.
 
 Older receipts may contain only the former `category` display-name field. They remain valid and readable. Each category keeps prior names in `legacyNames`, allowing those historical values to resolve to the renamed category. The next ordinary application write also converts any matching legacy item to `categoryId`. No background migration or destructive rewrite is required.
 
-Deleting a category with references requires a replacement. Each affected receipt is updated with its current revision. If another device updates a receipt first, KharchaLens reloads it and applies the same deterministic replacement once; if any receipt cannot be updated safely, the category is retained and the problem is reported. Aliases pointing to the removed category move to the replacement at the same time.
+Deleting a category with references requires a replacement. Each affected receipt is updated with its current revision. If another device updates a receipt first, BillsEye reloads it and applies the same deterministic replacement once; if any receipt cannot be updated safely, the category is retained and the problem is reported. Aliases pointing to the removed category move to the replacement at the same time.
 
 ## Merchant aliases
 
