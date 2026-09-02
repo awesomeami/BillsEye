@@ -10,7 +10,7 @@ export function NetworkStatus() {
 
   return (
     <div className={cn(
-      "fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full shadow-md text-sm font-medium flex items-center gap-2 transition-all duration-300",
+      "fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-md shadow-md text-sm font-medium flex items-center gap-2",
       syncState === 'offline' ? "bg-gray-800 text-white" :
       syncState === 'syncing' ? "bg-blue-100 text-blue-800" :
       syncState === 'pending-writes' ? "bg-amber-100 text-amber-900" :

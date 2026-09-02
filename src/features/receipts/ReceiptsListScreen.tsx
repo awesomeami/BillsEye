@@ -241,7 +241,7 @@ export function ReceiptsListScreen() {
 
       <div className="app-card overflow-hidden">
         {/* Desktop Table Header */}
-        <div role="row" className="hidden grid-cols-12 gap-4 border-b border-gray-200 bg-gray-50 p-4 text-xs font-semibold uppercase tracking-wider text-gray-500 lg:grid">
+        <div role="row" className="hidden grid-cols-12 gap-4 border-b border-gray-200 bg-gray-50 p-4 text-xs font-semibold text-gray-500 lg:grid">
           <div role="columnheader" aria-sort={sort.field === 'date' ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'} className="col-span-3">
             <button type="button" onClick={() => handleSortChange('date')} className="touch-target flex items-center gap-1 hover:text-gray-700" aria-label={`Sort by date, currently ${sort.field === 'date' ? sort.order === 'asc' ? 'ascending' : 'descending' : 'not sorted'}`}>
               Date {sort.field === 'date' ? (sort.order === 'asc' ? <ChevronUp aria-hidden="true" size={14}/> : <ChevronDown aria-hidden="true" size={14}/>) : <ArrowUpDown aria-hidden="true" size={14} className="text-gray-400" />}

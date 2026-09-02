@@ -207,7 +207,7 @@ export function CategoriesSettings({ onBack }: { onBack: () => void }) {
                 ) : (
                   <span className="font-medium text-gray-900 text-sm">
                     {cat.name} 
-                    {!cat.isCustom && <span className="ml-2 text-[10px] uppercase bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Default</span>}
+                    {!cat.isCustom && <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">Default</span>}
                   </span>
                 )}
               </div>

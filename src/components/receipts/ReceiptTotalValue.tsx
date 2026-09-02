@@ -12,7 +12,7 @@ export function ReceiptTotalValue({ receipt, className }: ReceiptTotalValueProps
   const total = getReceiptTotal(receipt);
 
   return (
-    <span className={className} data-total-state={total == null ? 'unavailable' : 'available'}>
+    <span className={['money-value', className].filter(Boolean).join(' ')} data-total-state={total == null ? 'unavailable' : 'available'}>
       {total == null ? 'Unavailable' : formatCurrency(total / 100)}
     </span>
   );

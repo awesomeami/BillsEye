@@ -3,7 +3,22 @@ import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis
 import { DashboardSummary } from '../../domain/analytics';
 import { APP_CONFIG, formatCurrency } from '../../utilities/config';
 
-const COLORS = ['#3269e8', '#12b76a', '#f79009', '#7f56d9', '#06aed4', '#ee46bc', '#6172f3', '#15b79e'];
+const COLORS = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+  'var(--chart-6)',
+];
+
+const tooltipStyle = {
+  background: 'var(--surface-raised)',
+  border: '1px solid var(--rule)',
+  borderRadius: '4px',
+  boxShadow: 'none',
+  color: 'var(--ink)',
+};
 
 const formatTrendDate = (date: string) => new Intl.DateTimeFormat(APP_CONFIG.locale, {
   timeZone: APP_CONFIG.timeZone,
@@ -27,10 +42,10 @@ export function DashboardCharts({ categoryComposition, dailyTrend }: DashboardCh
             <div aria-hidden="true" aria-describedby="dashboard-category-summary" className="h-56 min-h-0 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={categoryComposition} cx="50%" cy="50%" innerRadius="50%" outerRadius="76%" paddingAngle={3} dataKey="total" nameKey="name">
+                  <Pie data={categoryComposition} cx="50%" cy="50%" innerRadius="50%" outerRadius="76%" paddingAngle={3} dataKey="total" nameKey="name" isAnimationActive={false}>
                     {categoryComposition.map((entry, index) => <Cell key={`${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />)}
                   </Pie>
-                  <Tooltip formatter={(value: number) => formatCurrency(value / 100)} contentStyle={{ borderRadius: '12px', border: '1px solid #e4e7ec', boxShadow: '0 8px 24px rgb(16 24 40 / 0.08)' }} />
+                  <Tooltip formatter={(value: number) => formatCurrency(value / 100)} contentStyle={tooltipStyle} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -56,11 +71,11 @@ export function DashboardCharts({ categoryComposition, dailyTrend }: DashboardCh
             <div aria-hidden="true" aria-describedby="dashboard-trend-summary" className="h-64 min-h-0">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eaecf0" />
-                  <XAxis dataKey="date" tickFormatter={formatTrendDate} stroke="#98a2b3" fontSize={12} tickMargin={10} />
-                  <YAxis tickFormatter={(value: number) => formatCurrency(value / 100)} stroke="#98a2b3" fontSize={12} width={58} />
-                  <Tooltip formatter={(value: number) => formatCurrency(value / 100)} labelFormatter={(label) => `Date: ${formatTrendDate(String(label))}`} contentStyle={{ borderRadius: '12px', border: '1px solid #e4e7ec', boxShadow: '0 8px 24px rgb(16 24 40 / 0.08)' }} />
-                  <Line type="monotone" dataKey="total" stroke="#12b76a" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 5 }} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-rule)" />
+                  <XAxis dataKey="date" tickFormatter={formatTrendDate} stroke="var(--chart-muted)" fontSize={12} tickMargin={10} />
+                  <YAxis tickFormatter={(value: number) => formatCurrency(value / 100)} stroke="var(--chart-muted)" fontSize={12} width={58} />
+                  <Tooltip formatter={(value: number) => formatCurrency(value / 100)} labelFormatter={(label) => `Date: ${formatTrendDate(String(label))}`} contentStyle={tooltipStyle} />
+                  <Line type="monotone" dataKey="total" stroke="var(--chart-1)" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 5 }} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

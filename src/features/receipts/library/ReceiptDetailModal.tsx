@@ -34,7 +34,7 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-gray-950/50 backdrop-blur-sm sm:items-center sm:p-4">
-      <div ref={dialogRef} role="dialog" tabIndex={-1} aria-modal="true" aria-labelledby="receipt-detail-title" className="flex h-[100dvh] w-full max-w-2xl flex-col overflow-y-auto bg-white sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl">
+      <div ref={dialogRef} role="dialog" tabIndex={-1} aria-modal="true" aria-labelledby="receipt-detail-title" className="flex h-[100dvh] w-full max-w-2xl flex-col overflow-y-auto bg-white sm:h-auto sm:max-h-[90dvh] sm:rounded-md">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white/95 p-4 backdrop-blur">
           <h2 id="receipt-detail-title" className="text-lg font-bold flex items-center gap-2">
             Receipt Details
@@ -51,23 +51,23 @@ export function ReceiptDetailModal({ receipt, onClose, onDelete }: Props) {
             <p>Original image was not stored for privacy reasons. Only textual data is available.</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-5 rounded-xl bg-gray-50 p-4">
-            <div><span className="text-xs text-gray-500 uppercase font-medium">Merchant</span><p className="font-medium text-gray-900">{receipt.merchantNormalized || receipt.merchantRaw || 'Unknown merchant'}</p></div>
-            <div><span className="text-xs text-gray-500 uppercase font-medium">Date</span><p className="font-medium text-gray-900">{formatDate(receipt.transactionDate || '')}</p></div>
-            <div><span className="text-xs text-gray-500 uppercase font-medium">Grand Total</span><ReceiptTotalValue receipt={receipt} className="block font-medium text-gray-900" /></div>
-            <div><span className="text-xs text-gray-500 uppercase font-medium">Status</span><p className="font-medium capitalize text-gray-900">{reconciliation.reconciliationStatus}</p></div>
+          <div className="receipt-paper grid grid-cols-2 gap-x-5 gap-y-4 border-y border-gray-200 p-5">
+            <div className="col-span-2"><span className="text-xs font-medium text-gray-500">Merchant</span><p className="mt-1 text-lg font-semibold text-gray-900">{receipt.merchantNormalized || receipt.merchantRaw || 'Unknown merchant'}</p></div>
+            <div><span className="text-xs font-medium text-gray-500">Date</span><p className="font-medium text-gray-900">{formatDate(receipt.transactionDate || '')}</p></div>
+            <div><span className="text-xs font-medium text-gray-500">Status</span><p className="font-medium capitalize text-gray-900">{reconciliation.reconciliationStatus}</p></div>
+            <div className="col-span-2 border-t border-gray-300 pt-4"><span className="text-xs font-medium text-gray-500">Grand total</span><ReceiptTotalValue receipt={receipt} className="money-display mt-2 block text-4xl text-gray-900" /></div>
           </div>
 
           <div>
             <h3 className="font-bold text-sm text-gray-900 border-b pb-2 mb-3">Items</h3>
-            <ul className="space-y-3">
+            <ul className="divide-y divide-gray-100">
               {receipt.items.map((item) => (
-                <li key={item.id} className="render-lazy flex gap-2 text-sm items-start">
+                <li key={item.id} className="render-lazy flex items-start gap-2 py-3 text-sm">
                   <div className="flex-1">
                     <span>{item.quantity ? `${item.quantity}x ` : ''}{item.name || item.rawLineText || 'Unknown item'}</span>
                     {(item.categoryId || item.category) && <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{getReceiptItemCategoryLabel(item, categories)}</span>}
                   </div>
-                  <span className="font-medium whitespace-nowrap">{formatOptionalMinor(item.lineTotal)}</span>
+                  <span className="money-value whitespace-nowrap font-medium">{formatOptionalMinor(item.lineTotal)}</span>
                 </li>
               ))}
             </ul>

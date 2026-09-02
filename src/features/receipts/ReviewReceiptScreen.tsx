@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowLeft, Check, Plus, Trash2, Upload } from 'lucide-re
 import { useToast } from '../../components/ui/Toast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { RouteLoadingState } from '../../components/ui/LoadingState';
-import { APP_CONFIG } from '../../utilities/config';
+import { APP_CONFIG, formatCurrency } from '../../utilities/config';
 import { useAuth } from '../auth/AuthContext';
 import { MAX_RECEIPT_ITEMS, ReceiptDocument } from '../../domain/schema';
 import { ImageSessionStore } from '../../utils/imageSessionStore';
@@ -60,7 +60,7 @@ function MoneyInput({ id, label, value, error, className = '', onChange, onBlur 
       <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <input id={id} type="text" inputMode="decimal" value={value} onChange={(event) => onChange(event.target.value)}
         onBlur={onBlur} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
-        className={'form-control tabular-nums ' + className} />
+        className={'form-control amount-input ' + className} />
       {error && <p id={errorId} className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );
@@ -415,9 +415,22 @@ export function ReviewReceiptScreen() {
 
       <main className="app-card min-w-0 flex-1 p-4 sm:p-6">
         {duplicates.length > 0 && <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm text-orange-800"><p className="font-bold">Possible Duplicate</p><p>Found {duplicates.length} other receipt(s) with the same merchant, date, and total.</p></div>}
-        <div className="space-y-8 pb-36">
+        <div className="review-total-summary">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Extracted total</p>
+            <p className="mt-1 max-w-[34ch] text-xs leading-5 text-gray-500">
+              Check this against the paper receipt before saving.
+            </p>
+          </div>
+          <strong>
+            {formData.printedGrandTotal == null
+              ? 'Unavailable'
+              : formatCurrency(formData.printedGrandTotal / 100)}
+          </strong>
+        </div>
+        <div className="mt-8 space-y-8 pb-36">
           <section>
-            <h2 className="mb-4 border-b border-gray-200 pb-2 text-lg font-bold text-gray-950">Header Info</h2>
+            <h2 className="mb-4 border-b border-gray-200 pb-2 text-lg font-bold text-gray-950">Receipt details</h2>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <TextInput id="merchant-normalized" label="Merchant (Normalized)" value={formData.merchantNormalized ?? ''} onChange={(value) => updateField('merchantNormalized', value)} />
               <TextInput id="merchant-raw" label="Merchant (Raw)" value={formData.merchantRaw ?? ''} onChange={(value) => updateField('merchantRaw', value)} />
@@ -438,7 +451,7 @@ export function ReviewReceiptScreen() {
                 const prefix = 'item-' + item.id;
                 const unitKey = itemMoneyKey(item.id, 'unitPrice');
                 const totalKey = itemMoneyKey(item.id, 'lineTotal');
-                return <div key={item.id} className="render-lazy relative rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                return <div key={item.id} className="render-lazy relative border-b border-gray-200 bg-gray-50/80 px-1 py-5 sm:px-4">
                   <button onClick={() => removeItem(index)} aria-label={'Remove item ' + (index + 1)} className="touch-target absolute top-1 right-1 flex items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-700"><Trash2 size={16} /></button>
                   <div className="grid grid-cols-1 gap-3 pr-8 lg:grid-cols-12">
                     <div className="lg:col-span-5"><TextInput id={prefix + '-name'} label="Name" value={item.name ?? ''} onChange={(value) => updateItem(index, 'name', value)} /></div>
@@ -455,19 +468,19 @@ export function ReviewReceiptScreen() {
           </section>
 
           <section>
-            <h2 className="text-lg font-bold text-gray-900 border-b pb-2 mb-4">Totals & Reconciliation</h2>
+            <h2 className="text-lg font-bold text-gray-900 border-b pb-2 mb-4">Check the total</h2>
             {reconciliation.reconciliationStatus === 'mismatched' && <div className="mb-4 bg-red-50 border border-red-200 text-red-800 p-3 rounded-lg text-sm"><p className="font-bold">Totals Mismatch</p><p className="mt-2">Calculated line subtotal: {displayMinor(reconciliation.computedLineTotal)}<br />Calculated grand total: {displayMinor(reconciliation.computedExpectedTotal)}<br />Printed total − calculated total: {displayMinor(reconciliation.discrepancy)}</p></div>}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
               {([['printedSubtotal', 'Printed Subtotal'], ['printedDiscount', 'Printed Discount'], ['printedTax', 'Printed Tax'], ['printedFees', 'Printed Fees'], ['printedRounding', 'Printed Rounding'], ['printedGrandTotal', 'Printed Grand Total']] as const).map(([field, label]) => {
                 const key = receiptMoneyKey(field);
-                return <MoneyInput key={field} id={field} label={label} value={receiptValue(field)} error={moneyErrors[key]} className={field === 'printedGrandTotal' ? 'font-bold bg-blue-50' : ''} onChange={(value) => editMoney(key, value)} onBlur={() => commitMoney(key, (value) => updateField(field, value))} />;
+                return <MoneyInput key={field} id={field} label={label} value={receiptValue(field)} error={moneyErrors[key]} className={field === 'printedGrandTotal' ? 'bg-blue-50 text-lg font-bold' : ''} onChange={(value) => editMoney(key, value)} onBlur={() => commitMoney(key, (value) => updateField(field, value))} />;
               })}
             </div>
           </section>
 
           <section>
-            <h2 className="text-lg font-bold text-gray-900 border-b pb-2 mb-4">Notes & Raw Data</h2>
-            <div className="space-y-4"><div><label htmlFor="user-note" className="mb-1 block text-sm font-medium text-gray-700">User Notes</label><textarea id="user-note" value={formData.userNote ?? ''} onChange={(event) => updateField('userNote', event.target.value)} rows={3} className="form-control resize-y" /></div><div><label htmlFor="raw-ocr-text" className="mb-1 block text-sm font-medium text-gray-700">Raw OCR Text</label><textarea id="raw-ocr-text" value={formData.rawOcrText ?? ''} readOnly rows={6} className="form-control resize-y font-mono text-xs" /></div></div>
+            <h2 className="text-lg font-bold text-gray-900 border-b pb-2 mb-4">Notes and source text</h2>
+            <div className="space-y-4"><div><label htmlFor="user-note" className="mb-1 block text-sm font-medium text-gray-700">User notes</label><textarea id="user-note" value={formData.userNote ?? ''} onChange={(event) => updateField('userNote', event.target.value)} rows={3} className="form-control resize-y" /></div><div><label htmlFor="raw-ocr-text" className="mb-1 block text-sm font-medium text-gray-700">Extracted source text</label><textarea id="raw-ocr-text" value={formData.rawOcrText ?? ''} readOnly rows={6} className="form-control resize-y text-xs" /></div></div>
           </section>
         </div>
 

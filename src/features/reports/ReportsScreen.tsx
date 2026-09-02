@@ -42,7 +42,7 @@ export function ReportsScreen() {
 
   React.useEffect(() => {
     const activeIndex = tabs.findIndex(tab => tab.id === activeTab);
-    tabsRef.current[activeIndex]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    tabsRef.current[activeIndex]?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
   }, [activeTab]);
 
   const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
@@ -101,7 +101,7 @@ export function ReportsScreen() {
 
       {/* Tabs */}
       <div className="relative">
-        <div role="tablist" aria-label="Report Views" className="no-scrollbar flex snap-x space-x-2 overflow-x-auto pb-2 pr-10">
+        <div role="tablist" aria-label="Report Views" className="no-scrollbar flex snap-x gap-6 overflow-x-auto border-b border-gray-200 pr-10">
           {tabs.map((tab, index) => {
           
           const Icon = tab.icon;
@@ -119,10 +119,10 @@ export function ReportsScreen() {
               onKeyDown={(e) => handleKeyDown(e, index)}
               onClick={() => setActiveTab(tab.id as Tab)}
               className={cn(
-                "touch-target snap-start flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium",
+                "touch-target -mb-px snap-start flex items-center gap-2 whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium",
                 isActive
-                  ? "bg-gray-900 text-white"
-                  : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                  ? "border-blue-600 text-blue-700"
+                  : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900"
               )}
             >
               <Icon size={16} />
@@ -131,7 +131,7 @@ export function ReportsScreen() {
           );
           })}
         </div>
-        <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-end bg-gradient-to-l from-[#f7f8fb] via-[#f7f8fb]/90 to-transparent text-lg text-gray-500 lg:hidden">›</div>
+        <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-end bg-gradient-to-l from-[var(--canvas)] via-[var(--canvas)]/90 to-transparent text-lg text-gray-500 lg:hidden">›</div>
       </div>
       <p className="-mt-3 text-xs text-gray-500 lg:hidden">Swipe to see all report views</p>
 

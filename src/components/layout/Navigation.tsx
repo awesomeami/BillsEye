@@ -37,14 +37,14 @@ export function Navigation() {
 
   return (
     <>
-      <nav aria-label="Mobile navigation" className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200/90 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(16,24,40,0.08)] backdrop-blur-md md:hidden">
+      <nav aria-label="Mobile navigation" className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200/90 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden">
         <div className="flex h-16 items-center justify-around px-1">
           <MobileNavLink name="Home" path="/" icon={Home} isActive={isRouteActive(currentPath, '/')} />
           <MobileNavLink name="Inbox" path="/inbox" icon={Inbox} isActive={isRouteActive(currentPath, '/inbox')} badge={pendingCount} />
           <Link {...preloadProps('/add')} to="/add" className="flex h-full w-full flex-col items-center justify-center gap-0.5 text-blue-700" aria-label="Add Receipt" aria-current={currentPath === '/add' ? 'page' : undefined}>
             <span className={cn(
-              'flex h-11 w-11 items-center justify-center rounded-full text-white shadow-[0_5px_14px_rgba(36,88,214,0.28)] transition-transform',
-              currentPath === '/add' ? 'scale-105 bg-blue-700' : 'bg-blue-600 hover:-translate-y-0.5 hover:bg-blue-700',
+              'flex h-11 w-11 items-center justify-center rounded-md bg-blue-600 text-white',
+              currentPath === '/add' ? 'outline-2 outline-offset-2 outline-blue-600' : 'hover:bg-blue-700',
             )}>
               <PlusCircle size={25} strokeWidth={2.5} />
             </span>
@@ -62,7 +62,7 @@ export function Navigation() {
         <>
           <button type="button" aria-label="Close more menu" onClick={() => setMoreOpen(false)} className="fixed inset-0 z-40 bg-gray-950/15 md:hidden" />
           <div id="mobile-more-menu" role="menu" aria-label="More destinations" className="fixed right-3 bottom-[calc(4rem+env(safe-area-inset-bottom)+0.75rem)] z-50 w-56 rounded-2xl border border-gray-200 bg-white p-2 shadow-xl md:hidden">
-            <div className="flex items-center justify-between px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <div className="flex items-center justify-between px-2 pb-2 text-xs font-semibold text-gray-500">
               More
               <button type="button" onClick={() => setMoreOpen(false)} className="touch-target -mr-2 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100" aria-label="Close more menu"><X size={18} /></button>
             </div>
@@ -72,10 +72,10 @@ export function Navigation() {
         </>
       ) : null}
 
-      <aside className="sticky top-0 hidden h-dvh w-20 shrink-0 flex-col overflow-y-auto border-r border-gray-200/90 bg-white/90 backdrop-blur-md md:flex lg:w-60">
+      <aside className="sticky top-0 hidden h-dvh w-20 shrink-0 flex-col overflow-y-auto border-r border-gray-200/90 bg-white/90 md:flex lg:w-60">
         <div className="flex min-h-20 items-center justify-center gap-3 px-3 lg:justify-start lg:px-5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm"><Receipt size={23} /></div>
-          <h1 className="hidden text-xl font-bold tracking-tight text-gray-950 lg:block">KharchaLens</h1>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white"><Receipt size={23} /></div>
+          <h1 className="hidden text-xl font-semibold tracking-tight text-gray-950 lg:block">Kharcha Lens</h1>
         </div>
 
         <div className="px-3 pb-5 lg:px-4">
@@ -98,7 +98,7 @@ export function Navigation() {
                 aria-label={item.name}
                 title={item.name}
                 className={cn(
-                  'relative flex min-h-12 items-center justify-center rounded-xl px-3 font-medium lg:justify-start lg:gap-3',
+                  'relative flex min-h-12 items-center justify-center rounded-md px-3 font-medium lg:justify-start lg:gap-3',
                   isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-950',
                 )}
               >

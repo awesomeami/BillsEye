@@ -56,8 +56,8 @@ export default defineConfig(({ command, mode }) => {
           name: 'KharchaLens',
           short_name: 'KharchaLens',
           description: 'Receipt Analytics and Expense Tracking',
-          theme_color: '#2458d6',
-          background_color: '#f7f8fb',
+          theme_color: '#4b50a3',
+          background_color: '#f4f6f3',
           display: 'standalone',
           icons: [
             {

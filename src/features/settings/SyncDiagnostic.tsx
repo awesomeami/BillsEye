@@ -94,7 +94,7 @@ export function SyncDiagnostic() {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 text-xs font-mono text-gray-700">
       <div className="flex justify-between items-center mb-2">
-        <h3 className="font-bold uppercase tracking-wider text-gray-900">Sync Diagnostic</h3>
+        <h3 className="font-bold text-gray-900">Sync diagnostic</h3>
         <button 
           onClick={runSyncTest} 
           disabled={testing || !online}

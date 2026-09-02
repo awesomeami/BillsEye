@@ -54,10 +54,10 @@ export function ItemReportView({ receipts, range }: Props) {
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="truncate font-semibold capitalize text-gray-950">{row.canonicalName}</p>
-                    <p className="mt-1 text-xs text-gray-500">{row.occasions} occasion{row.occasions === 1 ? '' : 's'} · Latest per {row.standardUnit}</p>
+                    <p className="mt-1 text-xs text-gray-500">{row.occasions} occasion{row.occasions === 1 ? '' : 's'}. Latest per {row.standardUnit}</p>
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="tabular-nums font-bold text-gray-950">{formatCurrency(row.latestPrice / 100)}</p>
+                    <p className="money-value font-bold text-gray-950">{formatCurrency(row.latestPrice / 100)}</p>
                     {hasChange ? <p className={`mt-1 inline-flex items-center gap-1 text-xs font-medium ${isUp ? 'text-red-700' : isDown ? 'text-green-700' : 'text-gray-500'}`}>{isUp ? <TrendingUp size={13} /> : isDown ? <TrendingDown size={13} /> : <Minus size={13} />}{Math.abs(row.priceChangePct!).toFixed(1)}%</p> : null}
                   </div>
                 </div>
@@ -93,7 +93,7 @@ export function ItemReportView({ receipts, range }: Props) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <caption className="sr-only">Item price and spending summary. Activate an item row to show its details.</caption>
-            <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b border-gray-100">
+            <thead className="border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
               <tr>
                 <SortableTableHeader label="Canonical Item" active={sort?.field === 'canonicalName'} direction={sort?.direction ?? 'asc'} initialDirection="asc" onSort={() => handleSort('canonicalName', 'asc')} />
                 <SortableTableHeader label="Total Spent" active={sort?.field === 'totalSpent'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('totalSpent', 'desc')} align="right" />
@@ -132,8 +132,8 @@ export function ItemReportView({ receipts, range }: Props) {
                         <div className="font-medium text-gray-900 capitalize">{row.canonicalName}</div>
                         <div className="text-xs text-gray-500">Unit: {row.standardUnit}</div>
                       </td>
-                      <td className="px-6 py-4 text-right font-medium">{formatCurrency(row.totalSpent / 100)}</td>
-                      <td className="px-6 py-4 text-right">{formatCurrency(row.latestPrice / 100)} / {row.standardUnit}</td>
+                      <td className="money-value px-6 py-4 text-right font-medium">{formatCurrency(row.totalSpent / 100)}</td>
+                      <td className="money-value px-6 py-4 text-right">{formatCurrency(row.latestPrice / 100)} / {row.standardUnit}</td>
                       <td className="px-6 py-4 text-right">
                         {hasChange ? (
                           <div className={`inline-flex items-center gap-1 ${isUp ? 'text-red-600' : isDown ? 'text-green-600' : 'text-gray-500'}`}>
@@ -205,16 +205,16 @@ export function ItemReportView({ receipts, range }: Props) {
                                   <div aria-hidden="true" aria-describedby={`price-trend-summary-${rowId}`} className="h-64 w-full bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                                   <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={row.observations}>
-                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-rule)" />
                                       <XAxis 
                                         dataKey="transactionDate" 
-                                        tick={{ fontSize: 12, fill: '#6b7280' }} 
+                                        tick={{ fontSize: 12, fill: 'var(--chart-muted)' }}
                                         axisLine={false}
                                         tickLine={false}
                                       />
                                       <YAxis 
                                         tickFormatter={(value) => `${(value / 100).toFixed(0)}`}
-                                        tick={{ fontSize: 12, fill: '#6b7280' }}
+                                        tick={{ fontSize: 12, fill: 'var(--chart-muted)' }}
                                         axisLine={false}
                                         tickLine={false}
                                         domain={['auto', 'auto']}
@@ -256,10 +256,11 @@ export function ItemReportView({ receipts, range }: Props) {
                                       <Line 
                                         type="monotone" 
                                         dataKey="unitPrice" 
-                                        stroke="#3b82f6" 
+                                        stroke="var(--chart-1)"
                                         strokeWidth={2}
                                         dot={{ r: 4, strokeWidth: 2 }}
                                         activeDot={{ r: 6, strokeWidth: 0 }}
+                                        isAnimationActive={false}
                                       />
                                     </LineChart>
                                   </ResponsiveContainer>

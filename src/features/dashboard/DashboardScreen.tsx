@@ -107,13 +107,13 @@ export function DashboardScreen() {
       ) : <>
 
       {/* Hero Metric */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="app-card bg-gradient-to-br from-white to-blue-50/60 p-5 sm:p-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+        <div className="app-card receipt-paper p-6 sm:p-8">
           <div className="flex items-center gap-2 text-gray-500 mb-2">
             <Wallet size={18} />
             <span className="font-medium">Total Spent ({periodLabel})</span>
           </div>
-          <div className="tabular-nums mb-3 text-4xl font-bold tracking-tight text-gray-950">
+          <div className="money-display mb-4 text-5xl text-gray-950 sm:text-6xl">
             {currentTotalAvailable || summary.receiptCount === 0 ? formatCurrency(currentTotal / 100) : 'Unavailable'}
           </div>
           <div className="flex items-center gap-2 text-sm">
@@ -140,12 +140,12 @@ export function DashboardScreen() {
         </div>
 
         {/* Quick actions or secondary metric */}
-        <div className="app-card flex flex-col justify-between p-5 sm:p-6">
+        <div className="ledger-surface flex flex-col justify-between p-5 sm:p-6">
           <div>
             <h3 className="font-medium text-gray-900 mb-1">Recent Activity</h3>
             <p className="text-sm text-gray-500">{summary.receiptCount} confirmed receipt{summary.receiptCount !== 1 ? 's' : ''} {isAllTime ? 'across all dates' : isCustom ? 'within the selected dates' : 'dated this month'}.</p>
           </div>
-          <Link to="/add" className="btn-primary mt-4 justify-between p-4">
+          <Link to="/add" className="btn-outline mt-5 justify-between p-4 text-blue-700">
             <div className="flex items-center gap-3">
               <ReceiptText size={20} />
               <span className="font-medium">Add a new receipt</span>
@@ -157,7 +157,7 @@ export function DashboardScreen() {
 
       {/* AI Insights Section */}
       {period === 'this_month' && (insights.largestIncreases.length > 0 || insights.categoryChanges.length > 0) && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100 shadow-sm">
+        <div className="border-l-4 border-blue-600 bg-blue-50 p-6">
           <div className="flex items-center gap-2 mb-4">
             <Tag size={20} className="text-blue-600" />
             <h3 className="text-lg font-semibold text-blue-900">Monthly Insights</h3>
@@ -229,7 +229,7 @@ export function DashboardScreen() {
             {summary.topMerchants.length > 0 ? summary.topMerchants.map(m => (
               <div key={m.name} className="flex justify-between items-center">
                 <span className="text-gray-600 truncate mr-2">{m.name}</span>
-                <span className="font-medium text-gray-900">{formatCurrency(m.total / 100)}</span>
+                <span className="money-value font-medium text-gray-900">{formatCurrency(m.total / 100)}</span>
               </div>
             )) : (
               <span className="text-gray-500 text-sm">No merchant data</span>
@@ -243,7 +243,7 @@ export function DashboardScreen() {
             {summary.topItems.length > 0 ? summary.topItems.map(item => (
               <div key={item.name} className="flex justify-between items-center">
                 <span className="text-gray-600 truncate mr-2">{item.name}</span>
-                <span className="font-medium text-gray-900">{formatCurrency(item.total / 100)}</span>
+                <span className="money-value font-medium text-gray-900">{formatCurrency(item.total / 100)}</span>
               </div>
             )) : (
               <span className="text-gray-500 text-sm">No item data</span>

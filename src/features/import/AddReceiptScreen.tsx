@@ -7,6 +7,7 @@ import { QueueItem, isRetryableQueueStatus } from '../receipts/queue/queueReduce
 import { ReceiptCropper } from '../receipts/queue/components/ReceiptCropper';
 import { PdfPageSelector } from './PdfPageSelector';
 import { PdfSelectionRequest, preparePdfSelections } from './pdfSelectionQueue';
+import { formatCurrency } from '../../utilities/config';
 
 export function AddReceiptScreen() {
   const { showToast } = useToast();
@@ -91,7 +92,7 @@ export function AddReceiptScreen() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 pb-24">
+    <div className="mx-auto max-w-3xl space-y-7 pb-24">
       <header className="page-header">
         <div>
           <h1 className="page-title">Add Receipts</h1>
@@ -178,10 +179,10 @@ export function AddReceiptScreen() {
           onDragOver={handleDrag}
           onDrop={handleDrop}
         >
-          <div className="flex gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+          <div className="flex gap-3 border-l-4 border-blue-600 bg-blue-50 p-4 text-sm text-blue-900">
             <div className="mt-0.5 shrink-0"><Upload size={18} /></div>
             <div>
-              <p className="font-medium">Privacy & Memory Notice</p>
+              <p className="font-medium">Privacy &amp; Memory Notice</p>
               <ul className="mt-1 space-y-1 text-blue-800">
                 <li>Images are processed temporarily and are never saved permanently.</li>
                 <li>Refreshing or closing the browser clears queued files and temporary previews.</li>
@@ -190,8 +191,8 @@ export function AddReceiptScreen() {
           </div>
           
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <button onClick={() => cameraInputRef.current?.click()} className="app-card group col-span-2 flex h-52 flex-col items-center justify-center border-2 border-dashed p-6 hover:-translate-y-0.5 hover:border-blue-400 hover:bg-blue-50/40 sm:col-span-1 sm:h-44">
-              <div className="bg-blue-100 p-4 rounded-full group-hover:bg-blue-200 transition-colors mb-4">
+            <button onClick={() => cameraInputRef.current?.click()} className="app-card group col-span-2 flex h-52 flex-col items-center justify-center border-2 border-dashed border-blue-300 p-6 hover:border-blue-600 hover:bg-blue-50/40 sm:col-span-1 sm:h-44">
+              <div className="mb-4 rounded-md bg-blue-100 p-4">
                 <Camera size={40} className="text-blue-700" />
               </div>
               <span className="text-lg font-medium text-gray-900">Take a Photo</span>
@@ -200,7 +201,7 @@ export function AddReceiptScreen() {
 
             <button
               onClick={() => imageInputRef.current?.click()}
-              className="app-card flex h-52 cursor-pointer flex-col items-center justify-center p-5 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/30 sm:h-44"
+              className="app-card flex h-52 cursor-pointer flex-col items-center justify-center p-5 hover:border-blue-300 hover:bg-blue-50/30 sm:h-44"
             >
               <div className="bg-gray-100 p-3 rounded-full mb-3">
                 <ImageIcon size={24} className="text-gray-700" />
@@ -211,7 +212,7 @@ export function AddReceiptScreen() {
             
             <button
               onClick={() => pdfInputRef.current?.click()}
-              className="app-card flex h-52 cursor-pointer flex-col items-center justify-center p-5 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/30 sm:h-44"
+              className="app-card flex h-52 cursor-pointer flex-col items-center justify-center p-5 hover:border-blue-300 hover:bg-blue-50/30 sm:h-44"
             >
               <div className="bg-gray-100 p-3 rounded-full mb-3">
                 <FileText size={24} className="text-gray-700" />
@@ -286,9 +287,10 @@ function QueueItemCard({ item, onRemove, onReview, onRetry, onCrop, onCancel }: 
 
   const statusInfo = getStatusDisplay();
   const Icon = statusInfo.icon;
+  const extractedTotal = item.extractionResult?.printedGrandTotal;
 
   return (
-    <div className="app-card render-lazy grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-3 p-3 sm:grid-cols-[4rem_minmax(0,1fr)_auto]">
+    <div className={`app-card render-lazy grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-3 p-3 sm:grid-cols-[4rem_minmax(0,1fr)_auto] ${item.status === 'needs-review' ? 'receipt-reveal' : ''}`}>
       <div aria-live="polite" className="sr-only">
         {item.originalName} is {statusInfo.text}
       </div>
@@ -322,6 +324,9 @@ function QueueItemCard({ item, onRemove, onReview, onRetry, onCrop, onCancel }: 
               {item.retryAfter && item.status === 'retry-wait' ? ` (Earliest: ${new Date(item.retryAfter).toLocaleTimeString()})` : ''}
             </span>
          </div>
+         {item.status === 'needs-review' && extractedTotal != null ? (
+           <span className="receipt-reveal-total">{formatCurrency(extractedTotal / 100)}</span>
+         ) : null}
          {item.error && <p className="text-xs text-red-600 mt-1 truncate">{item.error}</p>}
       </div>
        <div className="col-span-2 flex flex-wrap items-center justify-end gap-1 border-t border-gray-100 pt-2 sm:col-span-1 sm:border-0 sm:pt-0">

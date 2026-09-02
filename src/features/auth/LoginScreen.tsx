@@ -15,7 +15,7 @@ export function LoginScreen() {
   const { showToast } = useToast();
 
   if (loading) {
-    return <div className="flex min-h-dvh items-center justify-center bg-[#f7f8fb]"><Loader2 className="animate-spin text-blue-600" size={32} /></div>;
+    return <div className="flex min-h-dvh items-center justify-center bg-[var(--canvas)]"><Loader2 className="animate-spin text-blue-600" size={32} /></div>;
   }
 
   if (user) return <Navigate to="/" replace />;
@@ -29,21 +29,21 @@ export function LoginScreen() {
   };
 
   return (
-    <main className="relative flex min-h-dvh items-center overflow-x-hidden bg-[#f7f8fb] px-4 py-10 sm:px-6 lg:px-8">
-      <div aria-hidden="true" className="absolute -top-56 left-1/2 h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-blue-100/70 blur-3xl" />
+    <main className="relative flex min-h-dvh items-center overflow-x-hidden bg-[var(--canvas)] px-4 py-10 sm:px-6 lg:px-8">
+      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-[var(--scanner-amber)]" />
       <div className="relative mx-auto grid w-full max-w-5xl items-center gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-20">
         <section className="text-center lg:text-left">
-          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_10px_28px_rgba(36,88,214,0.24)]"><Receipt size={30} /></div>
+          <div className="inline-flex h-14 w-14 items-center justify-center rounded-md bg-blue-600 text-white"><Receipt size={30} /></div>
           <h1 className="mt-6 text-4xl font-extrabold tracking-[-0.045em] text-gray-950 sm:text-5xl">KharchaLens</h1>
           <p className="mx-auto mt-4 max-w-lg text-base leading-7 text-gray-600 lg:mx-0 lg:text-lg">A clear, private view of everyday spending—built from the receipts you already have.</p>
           <div className="mt-8 hidden max-w-lg space-y-3 text-left lg:block">
-            {privacyPoints.map(point => <div key={point} className="flex items-center gap-3 text-sm text-gray-600"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700"><Check size={14} /></span>{point}</div>)}
+            {privacyPoints.map(point => <div key={point} className="flex items-center gap-3 text-sm text-gray-600"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-blue-100 text-blue-700"><Check size={14} /></span>{point}</div>)}
           </div>
         </section>
 
         <section className="app-card mx-auto w-full max-w-md p-6 sm:p-8" aria-labelledby="signin-title">
           <div className="mb-6">
-            <div className="flex items-center gap-2 text-green-700"><ShieldCheck size={20} /><span className="text-sm font-semibold">Private by design</span></div>
+            <div className="flex items-center gap-2 text-blue-700"><ShieldCheck size={20} /><span className="text-sm font-semibold">Private by design</span></div>
             <h2 id="signin-title" className="mt-3 text-2xl font-bold tracking-tight text-gray-950">Welcome</h2>
             <p className="mt-1 text-sm leading-6 text-gray-600">Sign in to securely access your receipts and reports.</p>
           </div>
@@ -56,7 +56,7 @@ export function LoginScreen() {
           </button>
 
           <div className="mt-6 space-y-3 border-t border-gray-100 pt-6 lg:hidden">
-            {privacyPoints.map(point => <div key={point} className="flex items-start gap-2 text-xs leading-5 text-gray-500"><Check size={14} className="mt-0.5 shrink-0 text-green-600" />{point}</div>)}
+            {privacyPoints.map(point => <div key={point} className="flex items-start gap-2 text-xs leading-5 text-gray-500"><Check size={14} className="mt-0.5 shrink-0 text-blue-600" />{point}</div>)}
           </div>
         </section>
       </div>

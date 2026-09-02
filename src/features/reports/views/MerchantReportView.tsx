@@ -33,13 +33,13 @@ export function MerchantReportView({ receipts, range }: Props) {
   return (
     <div className="space-y-6">
       <div className="space-y-3 xl:hidden">
-        {sortedData.map((row) => <article key={row.merchant} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link to={`/receipts?search=${encodeURIComponent(row.merchant)}`} className="font-semibold text-blue-700 hover:underline">{row.merchant}</Link><p className="mt-1 text-xs text-gray-500">{row.visits} visit{row.visits === 1 ? '' : 's'} · Average {formatCurrency(row.averageBasket / 100)}</p></div><p className="shrink-0 text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div><p className="mt-3 text-xs text-gray-500">First purchase: {row.firstPurchase || '—'} · Last: {row.lastPurchase || '—'}</p></article>)}
+        {sortedData.map((row) => <article key={row.merchant} className="app-card bg-white p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link to={`/receipts?search=${encodeURIComponent(row.merchant)}`} className="font-semibold text-blue-700 hover:underline">{row.merchant}</Link><p className="mt-1 text-xs text-gray-500">{row.visits} visit{row.visits === 1 ? '' : 's'}. Average {formatCurrency(row.averageBasket / 100)}</p></div><p className="money-value shrink-0 text-lg font-bold text-gray-900">{formatCurrency(row.total / 100)}</p></div><p className="mt-3 text-xs text-gray-500">First purchase: {row.firstPurchase || '—'}. Last: {row.lastPurchase || '—'}</p></article>)}
       </div>
       <div className="app-card hidden overflow-hidden xl:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <caption className="sr-only">Merchant spending summary</caption>
-            <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b border-gray-100">
+            <thead className="border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
               <tr>
                 <SortableTableHeader label="Merchant" active={sort?.field === 'merchant'} direction={sort?.direction ?? 'asc'} initialDirection="asc" onSort={() => handleSort('merchant', 'asc')} />
                 <SortableTableHeader label="Total Spent" active={sort?.field === 'total'} direction={sort?.direction ?? 'desc'} initialDirection="desc" onSort={() => handleSort('total', 'desc')} align="right" />
@@ -57,9 +57,9 @@ export function MerchantReportView({ receipts, range }: Props) {
                       {row.merchant}
                     </Link>
                   </td>
-                  <td className="px-6 py-4 text-right">{formatCurrency(row.total / 100)}</td>
+                  <td className="money-value px-6 py-4 text-right">{formatCurrency(row.total / 100)}</td>
                   <td className="px-6 py-4 text-right">{row.visits}</td>
-                  <td className="px-6 py-4 text-right">{formatCurrency(row.averageBasket / 100)}</td>
+                  <td className="money-value px-6 py-4 text-right">{formatCurrency(row.averageBasket / 100)}</td>
                   <td className="px-6 py-4 text-gray-500">{row.firstPurchase || '-'}</td>
                   <td className="px-6 py-4 text-gray-500">{row.lastPurchase || '-'}</td>
                 </tr>
