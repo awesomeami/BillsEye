@@ -5,6 +5,7 @@ import { getReceiptTotal } from './reconciliation';
 export { getReceiptTotal } from './reconciliation';
 import { getReceiptItemCategoryLabel, resolveReceiptItemCategoryId } from './categories';
 import { APP_CONFIG } from '../utilities/config';
+import { parseCalendarDate } from './calendarDate';
 
 export type DateRangeFilter = 'this_month' | 'last_month' | 'previous_3_months' | 'current_and_previous_2_months' | 'this_year' | 'all_time' | 'custom';
 
@@ -77,10 +78,11 @@ export function getDateRange(filter: DateRangeFilter, referenceDate: Date = new 
   }
 }
 
-export function isDateInRange(dateStr: string | null, range: DateRange): boolean {
-  if (!dateStr) return false;
-  if (range.start && dateStr < range.start) return false;
-  if (range.end && dateStr > range.end) return false;
+export function isDateInRange(dateStr: string | null | undefined, range: DateRange): boolean {
+  const calendarDate = parseCalendarDate(dateStr);
+  if (!calendarDate) return false;
+  if (range.start && calendarDate.value < range.start) return false;
+  if (range.end && calendarDate.value > range.end) return false;
   return true;
 }
 
@@ -161,7 +163,7 @@ export function calculateDashboardSummary(
   const periodReceipts: ReceiptDocument[] = [];
   
   for (const r of confirmed) {
-    if (!r.transactionDate) {
+    if (!parseCalendarDate(r.transactionDate)) {
       needsDateCount++;
       continue;
     }
@@ -230,7 +232,13 @@ export function calculateDashboardSummary(
       .filter(category => category.compositionTotal > 0)
       .map(category => ({ name: category.category, total: category.compositionTotal })),
     dailyTrend: Array.from(dailyMap.entries()).map(([date, total]) => ({ date, total })).sort((a, b) => a.date.localeCompare(b.date)),
-    recentReceipts: [...periodReceipts].sort((a,b) => ((b.transactionDate || "") > (a.transactionDate || "") ? 1 : -1)).slice(0, 5)
+    recentReceipts: [...periodReceipts].sort((a, b) => {
+      const dateComparison = (b.transactionDate || '').localeCompare(a.transactionDate || '');
+      if (dateComparison !== 0) return dateComparison;
+      const createdComparison = b.createdAt.localeCompare(a.createdAt);
+      if (createdComparison !== 0) return createdComparison;
+      return a.id.localeCompare(b.id);
+    }).slice(0, 5)
   };
 }
 
@@ -268,8 +276,7 @@ export function generateMonthlyReport(receipts: ReceiptDocument[], range: DateRa
   for (let i = 0; i < sortedKeys.length; i++) {
     const key = sortedKeys[i];
     const data = map.get(key)!;
-    const prevKey = i > 0 ? sortedKeys[i - 1] : null;
-    const prevData = prevKey ? map.get(prevKey) : null;
+    const prevData = map.get(offsetMonth(key, -1));
     
     let changePct: number | null = null;
     if (prevData && prevData.total !== 0) {

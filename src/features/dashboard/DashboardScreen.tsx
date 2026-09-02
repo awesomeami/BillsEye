@@ -7,6 +7,7 @@ import { calculateDashboardSummary, DashboardPeriod, DashboardSummary, DateRange
 import { ReceiptTotalValue } from '../../components/receipts/ReceiptTotalValue';
 import { RouteLoadingState } from '../../components/ui/LoadingState';
 import { DateRangeControl, DateRangeOption } from '../../components/ui/DateRangeControl';
+import { useKarachiNow } from '../../hooks/useKarachiNow';
 const DashboardCharts = lazy(() => import('./DashboardCharts').then(module => ({ default: module.DashboardCharts })));
 
 const dashboardDateOptions: readonly DateRangeOption[] = [
@@ -95,11 +96,12 @@ function DashboardWidgetDateRangeControl({
 
 export function DashboardScreen() {
   const { receipts, pendingReceipts, categories, loading } = useReceiptsLibrary();
+  const referenceDate = useKarachiNow();
   const [widgetRangeStates, setWidgetRangeStates] = useState(createDashboardWidgetRanges);
   const allReceipts = useMemo(() => [...receipts, ...pendingReceipts], [receipts, pendingReceipts]);
   const monthSummary = useMemo(
-    () => calculateDashboardSummary(allReceipts, new Date(), categories),
-    [allReceipts, categories],
+    () => calculateDashboardSummary(allReceipts, referenceDate, categories),
+    [allReceipts, categories, referenceDate],
   );
   const defaultPeriod: DashboardPeriod = monthSummary.receiptCount === 0
     && receipts.some(receipt => receipt.transactionDate)
@@ -119,7 +121,7 @@ export function DashboardScreen() {
       if (!summary) {
         summary = calculateDashboardSummary(
           allReceipts,
-          new Date(),
+          referenceDate,
           categories,
           period,
           state.customRange,
@@ -141,12 +143,15 @@ export function DashboardScreen() {
         summary,
       }];
     })) as Record<DashboardWidgetId, DashboardWidgetRange>;
-  }, [allReceipts, categories, defaultPeriod, monthSummary, widgetRangeStates]);
+  }, [allReceipts, categories, defaultPeriod, monthSummary, referenceDate, widgetRangeStates]);
   const dataQualitySummary = useMemo(
-    () => calculateDashboardSummary(allReceipts, new Date(), categories, 'all_time'),
-    [allReceipts, categories],
+    () => calculateDashboardSummary(allReceipts, referenceDate, categories, 'all_time'),
+    [allReceipts, categories, referenceDate],
   );
-  const insights = useMemo(() => generateSummaryInsights(receipts, new Date(), categories), [receipts, categories]);
+  const insights = useMemo(
+    () => generateSummaryInsights(receipts, referenceDate, categories),
+    [receipts, categories, referenceDate],
+  );
 
   const updateWidgetPeriod = (widgetId: DashboardWidgetId, selectedPeriod: DashboardPeriod) => {
     setWidgetRangeStates(current => ({

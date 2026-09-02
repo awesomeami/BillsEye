@@ -1,6 +1,8 @@
 import ExcelJS from 'exceljs';
 import { ReceiptDocument, CategoryDocument } from '../../domain/schema';
 import { calculateReceiptTotals, getReceiptTotal } from '../../domain/reconciliation';
+import { getReceiptItemCategoryLabel } from '../../domain/categories';
+import { buildFinancialExportSummary } from './financialSummary';
 
 function sanitizeCell(value: string): string {
   if (/^[=+\-@\t\r]/.test(value)) {
@@ -10,6 +12,8 @@ function sanitizeCell(value: string): string {
 }
 
 export async function exportExcel(receipts: ReceiptDocument[], categories: CategoryDocument[]) {
+  const financialSummary = buildFinancialExportSummary(receipts);
+  const confirmedReceipts = financialSummary.confirmedReceipts;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'BillsEye';
   workbook.lastModifiedBy = 'BillsEye';
@@ -22,14 +26,18 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
     { header: 'Metric', key: 'metric', width: 25 },
     { header: 'Value', key: 'value', width: 20 }
   ];
-  summarySheet.addRow({ metric: 'Total Receipts', value: receipts.length });
-  const knownReceiptTotals = receipts
-    .map((receipt) => getReceiptTotal(receipt))
-    .filter((total): total is number => total != null);
-  const totalAmount = knownReceiptTotals.length > 0
-    ? knownReceiptTotals.reduce((sum, total) => sum + total, 0) / 100
-    : null;
-  summarySheet.addRow({ metric: 'Total Amount Spent', value: totalAmount ?? 'Unavailable' });
+  summarySheet.addRow({ metric: 'Confirmed Receipts', value: confirmedReceipts.length });
+  summarySheet.addRow({ metric: 'Raw Receipt Records', value: receipts.length });
+  if (financialSummary.currencyTotals.length === 0) {
+    summarySheet.addRow({ metric: 'Total Spent', value: 'Unavailable' });
+  } else {
+    financialSummary.currencyTotals.forEach(({ currency, totalMinor }) => {
+      summarySheet.addRow({ metric: `Total Spent (${currency})`, value: totalMinor / 100 });
+    });
+  }
+  if (financialSummary.unavailableTotalCount > 0) {
+    summarySheet.addRow({ metric: 'Confirmed Receipts Without Totals', value: financialSummary.unavailableTotalCount });
+  }
   summarySheet.getRow(1).font = { bold: true };
   summarySheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
 
@@ -70,6 +78,8 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
     { header: 'Quantity', key: 'qty', width: 10 },
     { header: 'Unit Price', key: 'price', width: 15 },
     { header: 'Total', key: 'total', width: 15 },
+    { header: 'Currency', key: 'currency', width: 10 },
+    { header: 'Status', key: 'status', width: 15 },
   ];
   receipts.forEach(r => {
     r.items.forEach(item => {
@@ -77,15 +87,17 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
         date: r.transactionDate || r.createdAt,
         merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
         itemName: sanitizeCell(item.name || item.rawLineText || 'Unknown'),
-        category: sanitizeCell(item.category || 'Uncategorized'),
-        qty: item.quantity || 1,
+        category: sanitizeCell(getReceiptItemCategoryLabel(item, categories)),
+        qty: item.quantity ?? 1,
         price: item.unitPrice != null ? item.unitPrice / 100 : null,
-        total: item.lineTotal != null ? item.lineTotal / 100 : null
+        total: item.lineTotal != null ? item.lineTotal / 100 : null,
+        currency: r.currency,
+        status: r.status,
       });
     });
   });
   itemsSheet.getRow(1).font = { bold: true };
-  itemsSheet.autoFilter = 'A1:G1';
+  itemsSheet.autoFilter = 'A1:I1';
   itemsSheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
 
   // Categories Sheet
@@ -107,24 +119,32 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
     { header: 'Merchant', key: 'merchant', width: 25 },
     { header: 'Visits', key: 'visits', width: 15 },
     { header: 'Total Spent', key: 'total', width: 20 },
+    { header: 'Currency', key: 'currency', width: 10 },
   ];
-  const merchantStats = receipts.reduce((acc, r) => {
+  const merchantStats = confirmedReceipts.reduce((acc, r) => {
     const name = r.merchantNormalized || r.merchantRaw || 'Unknown';
-    if (!acc[name]) acc[name] = { visits: 0, total: 0, knownTotalCount: 0 };
-    acc[name].visits += 1;
+    const currency = r.currency.trim().toUpperCase() || 'PKR';
+    const key = `${name}\u0000${currency}`;
+    if (!acc[key]) acc[key] = { name, currency, visits: 0, total: 0, knownTotalCount: 0 };
+    acc[key].visits += 1;
     const total = getReceiptTotal(r);
     if (total != null) {
-      acc[name].total += total / 100;
-      acc[name].knownTotalCount += 1;
+      acc[key].total += total / 100;
+      acc[key].knownTotalCount += 1;
     }
     return acc;
-  }, {} as Record<string, { visits: number, total: number, knownTotalCount: number }>);
+  }, {} as Record<string, { name: string, currency: string, visits: number, total: number, knownTotalCount: number }>);
   
-  Object.entries(merchantStats).forEach(([name, stats]) => {
-    merchantsSheet.addRow({ merchant: sanitizeCell(name), visits: stats.visits, total: stats.knownTotalCount > 0 ? stats.total : null });
+  Object.values(merchantStats).forEach(stats => {
+    merchantsSheet.addRow({
+      merchant: sanitizeCell(stats.name),
+      visits: stats.visits,
+      total: stats.knownTotalCount > 0 ? stats.total : null,
+      currency: stats.currency,
+    });
   });
   merchantsSheet.getRow(1).font = { bold: true };
-  merchantsSheet.autoFilter = 'A1:C1';
+  merchantsSheet.autoFilter = 'A1:D1';
   merchantsSheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
 
   // Item Price History Sheet
@@ -135,7 +155,7 @@ export async function exportExcel(receipts: ReceiptDocument[], categories: Categ
     { header: 'Date', key: 'date', width: 15 },
     { header: 'Unit Price', key: 'price', width: 15 },
   ];
-  receipts.forEach(r => {
+  confirmedReceipts.forEach(r => {
     r.items.forEach(item => {
       priceHistorySheet.addRow({
         itemName: sanitizeCell(item.name || item.rawLineText || 'Unknown'),

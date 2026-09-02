@@ -93,36 +93,46 @@ export function filterAndSortReceipts(
     ? new Map(result.map(receipt => [receipt, getCategorySortValue(receipt, categories)]))
     : null;
 
-  result = [...result].sort((a, b) => {
-    let comparison = 0;
-    switch (sort.field) {
-      case 'date':
-        // Handles nulls safely by falling back to empty string, pushing them to bottom or top depending on order
-        comparison = (a.transactionDate || '').localeCompare(b.transactionDate || '');
-        break;
-      case 'total':
-        {
-          const aTotal = getReceiptTotal(a);
-          const bTotal = getReceiptTotal(b);
-          if (aTotal == null && bTotal == null) comparison = 0;
-          else if (aTotal == null) return 1;
-          else if (bTotal == null) return -1;
-          else comparison = aTotal - bTotal;
-        }
-        break;
-      case 'merchant':
-        comparison = (a.merchantNormalized || '').localeCompare(b.merchantNormalized || '');
-        break;
-      case 'category':
-        comparison = (categorySortValues?.get(a) ?? '').localeCompare(
-          categorySortValues?.get(b) ?? '',
-          'en-PK',
-          { sensitivity: 'base' },
-        );
-        break;
-    }
-    return sort.order === 'asc' ? comparison : -comparison;
-  });
+  result = result
+    .map((receipt, originalIndex) => ({ receipt, originalIndex }))
+    .sort((left, right) => {
+      const a = left.receipt;
+      const b = right.receipt;
+      let comparison = 0;
+      switch (sort.field) {
+        case 'date':
+          // Handles nulls safely by falling back to empty string, pushing them to bottom or top depending on order
+          comparison = (a.transactionDate || '').localeCompare(b.transactionDate || '');
+          break;
+        case 'total':
+          {
+            const aTotal = getReceiptTotal(a);
+            const bTotal = getReceiptTotal(b);
+            if (aTotal == null && bTotal == null) comparison = 0;
+            else if (aTotal == null) return 1;
+            else if (bTotal == null) return -1;
+            else comparison = aTotal - bTotal;
+          }
+          break;
+        case 'merchant':
+          comparison = (a.merchantNormalized || a.merchantRaw || '').localeCompare(
+            b.merchantNormalized || b.merchantRaw || '',
+            'en-PK',
+            { sensitivity: 'base' },
+          );
+          break;
+        case 'category':
+          comparison = (categorySortValues?.get(a) ?? '').localeCompare(
+            categorySortValues?.get(b) ?? '',
+            'en-PK',
+            { sensitivity: 'base' },
+          );
+          break;
+      }
+      const directedComparison = sort.order === 'asc' ? comparison : -comparison;
+      return directedComparison || left.originalIndex - right.originalIndex;
+    })
+    .map(entry => entry.receipt);
 
   return result;
 }

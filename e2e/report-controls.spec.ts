@@ -127,7 +127,7 @@ test('phones and tablets expose every date preset and every sortable table colum
     await expect(page.getByLabel('Report date range').locator('option')).toHaveText(expectedDateOptions);
     const reportTables = [
       { tab: 'Monthly', columns: ['Month', 'Total', 'Receipts', 'Average', 'Change'] },
-      { tab: 'Categories', columns: ['Category', 'Total', '% of Total', 'Contained in Receipts'] },
+      { tab: 'Categories', columns: ['Category', 'Total', '% of Gross Spend', 'Contained in Receipts'] },
       { tab: 'Merchants', columns: ['Merchant', 'Total Spent', 'Visits', 'Average Basket', 'First Purchase', 'Last Purchase'] },
       { tab: 'Items', columns: ['Canonical Item', 'Total Spent', 'Unit Price (Latest)', 'Change', 'Occasions'] },
     ];

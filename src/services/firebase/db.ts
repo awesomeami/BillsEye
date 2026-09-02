@@ -47,6 +47,8 @@ import {
 } from '../../domain/categories';
 import { replaceCategoryInReceiptWithRetry } from '../../domain/categoryReplacement';
 import { SequencedAsyncSubscription } from './subscriptionIsolation';
+import { sortReceiptsByTransactionDateDescending } from './receiptOrdering';
+import { receiptMatchesDuplicateFingerprint } from '../../domain/duplicateReceipt';
 
 export class ReceiptRevisionConflictError extends Error {
   readonly code = 'receipt-revision-conflict';
@@ -297,9 +299,9 @@ export const receiptRepository = {
   ) {
     const auth = getAuth();
     const receiptsRef = collection(db, `users/${uid}/receipts`);
-    // Realtime sync all confirmed receipts for fast local search/filter
-    // We order by transactionDate descending
-    const q = query(receiptsRef, where('status', '==', 'confirmed'), orderBy('transactionDate', 'desc'));
+    // Ordering by an optional Firestore field excludes documents that omit it.
+    // Fetch all confirmed records, then order the hydrated data locally.
+    const q = query(receiptsRef, where('status', '==', 'confirmed'));
     
     // The cache belongs to this UID-scoped subscription and is discarded on
     // unsubscribe, so neither auth transitions nor replacement generations can
@@ -315,7 +317,9 @@ export const receiptRepository = {
           snapshot.docs.map(docSnap => ({ id: docSnap.id, ref: docSnap.ref, data: docSnap.data() })),
           source => hydrateReceiptItems(source.ref, source.data),
         );
-        return receipts.filter((receipt): receipt is ReceiptDocument => !isMalformedReceipt(receipt));
+        return sortReceiptsByTransactionDateDescending(
+          receipts.filter((receipt): receipt is ReceiptDocument => !isMalformedReceipt(receipt)),
+        );
       },
       onUpdate,
       onError: error => onError(error instanceof Error ? error : new Error('Could not load receipts.')),
@@ -573,10 +577,12 @@ export const receiptRepository = {
       const snapshot = await getDocs(q);
       const docs = (await Promise.all(snapshot.docs.map(docSnap => hydrateReceiptItems(docSnap.ref, docSnap.data()))))
         .filter((receipt): receipt is ReceiptDocument => !isMalformedReceipt(receipt));
-      return docs.filter(doc => 
-        doc.merchantNormalized === merchant && 
-        doc.printedGrandTotal === total
-      );
+      if (total == null) return [];
+      return docs.filter(receipt => receiptMatchesDuplicateFingerprint(receipt, {
+        merchant,
+        transactionDate: date,
+        total,
+      }));
     } catch (err) {
       handleFirestoreError(err, OperationType.LIST, `users/${uid}/receipts`, auth);
     }

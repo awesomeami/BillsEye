@@ -10,7 +10,7 @@ import { MAX_RECEIPT_ITEMS, ReceiptDocument } from '../../domain/schema';
 import { ImageSessionStore } from '../../utils/imageSessionStore';
 import { createSha256Hash, preprocessImage } from '../../utils/imageUtils';
 import { aliasRepository, receiptRepository, ReceiptRevisionConflictError } from '../../services/firebase/db';
-import { calculateReceiptTotals } from '../../domain/reconciliation';
+import { calculateReceiptTotals, getReceiptTotal } from '../../domain/reconciliation';
 import { applyMerchantCategoryAlias, resolveReceiptItemCategoryId } from '../../domain/categories';
 import { prepareReceiptSave } from '../../domain/receiptConfirmation';
 import { useReceiptsLibrary } from './library/ReceiptsLibraryContext';
@@ -148,8 +148,15 @@ export function ReviewReceiptScreen() {
         setReceipt(editor.receipt);
         setFormData(editor.draft);
         setBaseline(editor.baseline);
-        if (data.merchantNormalized && data.transactionDate && data.printedGrandTotal != null) {
-          const possible = await receiptRepository.findPossibleDuplicates(userId, data.merchantNormalized, data.transactionDate, data.printedGrandTotal);
+        const duplicateMerchant = data.merchantNormalized || data.merchantRaw;
+        const duplicateTotal = getReceiptTotal(data);
+        if (duplicateMerchant && data.transactionDate && duplicateTotal != null) {
+          const possible = await receiptRepository.findPossibleDuplicates(
+            userId,
+            duplicateMerchant,
+            data.transactionDate,
+            duplicateTotal,
+          );
           if (active) setDuplicates(possible.filter((candidate) => candidate.id !== data.id));
         }
         const sessionImage = ImageSessionStore.getForUser(userId, id);

@@ -342,5 +342,44 @@ for (const tz of testTimezones) {
       assert.strictEqual(monthly[1].month, '2026-02');
       assert.strictEqual(monthly[1].total, 4000);
     });
+
+    test('does not compare a month with a non-adjacent prior receipt month', () => {
+      const receipts: ReceiptDocument[] = [
+        { ...baseReceipt, id: 'jan', transactionDate: '2026-01-15', printedGrandTotal: 10000 },
+        { ...baseReceipt, id: 'mar', transactionDate: '2026-03-15', printedGrandTotal: 20000 },
+      ];
+
+      const monthly = generateMonthlyReport(receipts, { start: '2026-01-01', end: '2026-03-31' });
+      assert.strictEqual(monthly[0].changePct, null);
+      assert.strictEqual(monthly[1].month, '2026-03');
+      assert.strictEqual(monthly[1].changePct, null);
+    });
+
+    test('treats impossible dates as missing instead of including or normalizing them', () => {
+      const invalidReceipt = {
+        ...baseReceipt,
+        id: 'invalid-date',
+        transactionDate: '2026-02-31',
+      } as ReceiptDocument;
+
+      assert.deepStrictEqual(getFilteredReceipts([invalidReceipt], getDateRange('all_time')), []);
+      const summary = calculateDashboardSummary(
+        [invalidReceipt],
+        new Date('2026-03-10T12:00:00Z'),
+        [],
+        'all_time',
+      );
+      assert.strictEqual(summary.needsDateCount, 1);
+      assert.strictEqual(summary.receiptCount, 0);
+    });
+
+    test('orders same-day recent receipts with a symmetric deterministic comparator', () => {
+      const receipts: ReceiptDocument[] = [
+        { ...baseReceipt, id: 'later', transactionDate: '2026-05-15', createdAt: '2026-05-15T12:00:00Z' },
+        { ...baseReceipt, id: 'earlier', transactionDate: '2026-05-15', createdAt: '2026-05-15T08:00:00Z' },
+      ];
+      const summary = calculateDashboardSummary(receipts, new Date('2026-05-20T12:00:00Z'));
+      assert.deepStrictEqual(summary.recentReceipts.map(receipt => receipt.id), ['later', 'earlier']);
+    });
   });
 }

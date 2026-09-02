@@ -1,6 +1,5 @@
 import { APP_CONFIG } from '../../utilities/config';
-
-const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+import { parseCalendarDateTimestamp } from '../../domain/calendarDate';
 
 export interface DailyTrendSourcePoint {
   date: string;
@@ -12,20 +11,7 @@ export interface DailyTrendChartPoint extends DailyTrendSourcePoint {
 }
 
 export function parseCalendarDate(date: string): number | null {
-  const match = CALENDAR_DATE.exec(date);
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1;
-  const day = Number(match[3]);
-  const timestamp = Date.UTC(year, monthIndex, day);
-  const parsed = new Date(timestamp);
-
-  if (parsed.getUTCFullYear() !== year
-    || parsed.getUTCMonth() !== monthIndex
-    || parsed.getUTCDate() !== day) return null;
-
-  return timestamp;
+  return parseCalendarDateTimestamp(date);
 }
 
 export function buildDailyTrendChartData(points: readonly DailyTrendSourcePoint[]): DailyTrendChartPoint[] {

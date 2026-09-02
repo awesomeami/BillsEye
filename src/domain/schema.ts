@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import { isValidCalendarDate } from './calendarDate';
+
+const CalendarDateSchema = z.string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isValidCalendarDate, 'Date must be a valid calendar date');
 
 // Receipt items are stored in a Firestore subcollection, so Rules validate one
 // item document per write instead of unrolling list validation in its parent.
@@ -47,7 +52,7 @@ export const ReceiptSchema = z.object({
   receiptNumber: z.string().max(100).nullable().optional(),
 
   // Date and Time (strictly YYYY-MM-DD for date)
-  transactionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  transactionDate: CalendarDateSchema.nullable().optional(),
   transactionTime: z.string().max(20).nullable().optional(),
   dateAmbiguous: z.boolean().default(false), // True if DD/MM vs MM/DD is unclear
 
@@ -173,7 +178,7 @@ export const RawGeminiReceiptV2 = z.object({
   merchantNormalizedSuggestion: z.string().max(255).nullable().default(null),
   branchAddress: z.string().max(500).nullable().default(null),
   receiptNumber: z.string().max(100).nullable().default(null),
-  transactionDateCandidate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
+  transactionDateCandidate: CalendarDateSchema.nullable().default(null),
   transactionTimeCandidate: z.string().max(20).nullable().default(null),
   dateInterpretationNote: z.string().max(500).nullable().default(null),
   currency: z.enum(['PKR', 'USD']).nullable().default(null),
@@ -202,7 +207,7 @@ export const ExtractionResultSchema = z.object({
   merchantNormalized: z.string().max(255).optional().nullable(),
   branchAddress: z.string().max(500).optional().nullable(),
   receiptNumber: z.string().max(100).optional().nullable(),
-  transactionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  transactionDate: CalendarDateSchema.optional().nullable(),
   transactionTime: z.string().max(20).optional().nullable(),
   dateAmbiguous: z.boolean().optional().default(false),
   currency: z.enum(['PKR', 'USD']).optional().default('PKR'),

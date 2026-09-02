@@ -5,6 +5,7 @@ import { useReceiptsLibrary } from '../receipts/library/ReceiptsLibraryContext';
 import { DateRange, DateRangeFilter, getDateRange, getDefaultCustomDateRange, getFilteredReceipts } from '../../domain/analytics';
 import { RouteLoadingState } from '../../components/ui/LoadingState';
 import { DateRangeControl, DateRangeOption } from '../../components/ui/DateRangeControl';
+import { useKarachiNow } from '../../hooks/useKarachiNow';
 
 const MonthlyReportView = lazy(() => import('./views/MonthlyReportView').then(m => ({ default: m.MonthlyReportView })));
 const CategoryReportView = lazy(() => import('./views/CategoryReportView').then(m => ({ default: m.CategoryReportView })));
@@ -31,14 +32,20 @@ const reportDateOptions: readonly DateRangeOption[] = [
 export function ReportsScreen() {
   const tabsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
   const { receipts, categories, loading } = useReceiptsLibrary();
+  const referenceDate = useKarachiNow();
   const [activeTab, setActiveTab] = useState<Tab>('monthly');
   const [selectedDateFilter, setDateFilter] = useState<DateRangeFilter | null>(null);
   const [customRange, setCustomRange] = useState<DateRange>(() => getDefaultCustomDateRange());
   const defaultDateFilter = useMemo(() => receipts.some(receipt => receipt.transactionDate)
-    && getFilteredReceipts(receipts, getDateRange('this_year')).length === 0 ? 'all_time' : 'this_year', [receipts]);
+    && getFilteredReceipts(receipts, getDateRange('this_year', referenceDate)).length === 0
+    ? 'all_time'
+    : 'this_year', [receipts, referenceDate]);
   const dateFilter = selectedDateFilter ?? defaultDateFilter;
 
-  const range = useMemo(() => dateFilter === 'custom' ? customRange : getDateRange(dateFilter), [customRange, dateFilter]);
+  const range = useMemo(
+    () => dateFilter === 'custom' ? customRange : getDateRange(dateFilter, referenceDate),
+    [customRange, dateFilter, referenceDate],
+  );
 
   React.useEffect(() => {
     const activeIndex = tabs.findIndex(tab => tab.id === activeTab);

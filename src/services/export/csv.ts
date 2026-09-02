@@ -5,8 +5,9 @@ function sanitizeCell(value: string): string {
   return value;
 }
 import Papa from 'papaparse';
-import { ReceiptDocument } from '../../domain/schema';
+import { CategoryDocument, ReceiptDocument } from '../../domain/schema';
 import { getReceiptTotal } from '../../domain/reconciliation';
+import { getReceiptItemCategoryLabel } from '../../domain/categories';
 
 export function exportReceiptsCSV(receipts: ReceiptDocument[], addBom = true) {
   const data = receipts.map(r => {
@@ -27,7 +28,11 @@ export function exportReceiptsCSV(receipts: ReceiptDocument[], addBom = true) {
   return addBom ? '\uFEFF' + csv : csv;
 }
 
-export function exportItemsCSV(receipts: ReceiptDocument[], addBom = true) {
+export function exportItemsCSV(
+  receipts: ReceiptDocument[],
+  categories: CategoryDocument[] = [],
+  addBom = true,
+) {
   const data = receipts.flatMap(r => 
     r.items.map(item => ({
       receiptId: r.id,
@@ -35,10 +40,12 @@ export function exportItemsCSV(receipts: ReceiptDocument[], addBom = true) {
       merchant: sanitizeCell(r.merchantNormalized || r.merchantRaw || 'Unknown'),
       itemId: item.id,
       itemName: sanitizeCell(item.name || item.rawLineText || 'Unknown'),
-      quantity: item.quantity || 1,
+      quantity: item.quantity ?? 1,
       price: item.unitPrice != null ? item.unitPrice / 100 : '',
       total: item.lineTotal != null ? item.lineTotal / 100 : '',
-      category: sanitizeCell(item.category || 'Uncategorized')
+      category: sanitizeCell(getReceiptItemCategoryLabel(item, categories)),
+      currency: r.currency,
+      status: r.status,
     }))
   );
 

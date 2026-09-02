@@ -144,6 +144,19 @@ describe('libraryUtils', () => {
     assert.deepStrictEqual(descending.map(receipt => receipt.id), ['r1', 'r2', 'r3']);
   });
 
+  it('sorts raw-only merchants by the same fallback value displayed in the table', () => {
+    const rawOnly = [
+      { ...mockReceipts[0], id: 'z', merchantNormalized: null, merchantRaw: 'Zain Store' },
+      { ...mockReceipts[1], id: 'a', merchantNormalized: null, merchantRaw: 'alpha mart' },
+    ];
+    const result = filterAndSortReceipts(
+      rawOnly,
+      defaultFilters,
+      { field: 'merchant', order: 'asc' },
+    );
+    assert.deepStrictEqual(result.map(receipt => receipt.id), ['a', 'z']);
+  });
+
   it('should filter by amount range', () => {
     const result = filterAndSortReceipts(mockReceipts, { ...defaultFilters, amountMin: 1000, amountMax: 10000 }, defaultSort);
     assert.strictEqual(result.length, 1);

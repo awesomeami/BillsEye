@@ -22,6 +22,12 @@ import {
   performAccountDeletion,
   runSingleSubmission,
 } from './accountDeletionFlow';
+import {
+  RestoreInterruptedError,
+  RestoreProgress,
+  RestoreTask,
+  runRestoreTasks,
+} from '../../services/export/restoreProgress';
 
 interface DataExportSettingsProps {
   onBack: () => void;
@@ -47,6 +53,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [restoreProgress, setRestoreProgress] = useState<RestoreProgress | null>(null);
   const [deletionUi, dispatchDeletionUi] = useReducer(
     accountDeletionUiReducer,
     initialAccountDeletionUiState,
@@ -111,9 +118,9 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
   const handleExportItemsCSV = async () => {
     try {
       setLoading(true);
-      const { receipts } = await fetchAllData();
+      const { receipts, categories } = await fetchAllData();
       const { exportItemsCSV } = await import('../../services/export/csv');
-      const csv = exportItemsCSV(receipts);
+      const csv = exportItemsCSV(receipts, categories);
       downloadFile(new Blob([csv]), 'items.csv', 'text/csv;charset=utf-8;');
       setSuccess('Items CSV exported successfully.');
     } catch (error) {
@@ -175,6 +182,7 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
       try {
         setLoading(true);
         setError('');
+        setRestoreProgress(null);
         const text = event.target?.result as string;
         const result = await validateBackup(text);
         if (!result.isValid || !result.envelope) {
@@ -220,71 +228,111 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
     if (!restoreDryRun || !user) return;
     try {
       setLoading(true);
+      setError('');
+      setSuccess('');
       const { profile, receipts, categories, aliases, settings } = restoreDryRun.envelope;
       
-      for (const r of receipts) {
-        const existing = await receiptRepository.getReceipt(user.uid, r.id);
-        if (existing) {
-          if (JSON.stringify(r) !== JSON.stringify(existing)) {
-            await receiptRepository.updateReceipt(user.uid, r.id, receiptRestorePatch(r), existing.revision);
-          }
-        } else {
-          await receiptRepository.createReceipt(user.uid, r, { preserveTimestamps: true });
-        }
-      }
-
-      for (const c of categories) {
-        const ref = doc(db, `users/${user.uid}/categories`, c.id);
-        const existing = await getDoc(ref);
-        await setDoc(ref, {
-          ...c,
-          createdAt: existing.exists() ? toIsoTimestamp(existing.data().createdAt) : toIsoTimestamp(c.createdAt),
-        });
-      }
-
-      for (const alias of aliases) {
-        const ref = doc(db, `users/${user.uid}/aliases`, alias.id);
-        const existing = await getDoc(ref);
-        await setDoc(ref, {
-          ...alias,
-          createdAt: existing.exists() ? toIsoTimestamp(existing.data().createdAt) : toIsoTimestamp(alias.createdAt),
-          updatedAt: existing.exists() ? new Date().toISOString() : toIsoTimestamp(alias.updatedAt),
-        });
-      }
+      const tasks: RestoreTask[] = [
+        ...receipts.map(r => ({
+          section: 'receipts' as const,
+          run: async () => {
+            const existing = await receiptRepository.getReceipt(user.uid, r.id);
+            if (existing) {
+              if (JSON.stringify(r) !== JSON.stringify(existing)) {
+                await receiptRepository.updateReceipt(user.uid, r.id, receiptRestorePatch(r), existing.revision);
+              }
+            } else {
+              await receiptRepository.createReceipt(user.uid, r, { preserveTimestamps: true });
+            }
+          },
+        })),
+        ...categories.map(c => ({
+          section: 'categories' as const,
+          run: async () => {
+            const ref = doc(db, `users/${user.uid}/categories`, c.id);
+            const existing = await getDoc(ref);
+            await setDoc(ref, {
+              ...c,
+              createdAt: existing.exists() ? toIsoTimestamp(existing.data().createdAt) : toIsoTimestamp(c.createdAt),
+            });
+          },
+        })),
+        ...aliases.map(alias => ({
+          section: 'aliases' as const,
+          run: async () => {
+            const ref = doc(db, `users/${user.uid}/aliases`, alias.id);
+            const existing = await getDoc(ref);
+            await setDoc(ref, {
+              ...alias,
+              createdAt: existing.exists() ? toIsoTimestamp(existing.data().createdAt) : toIsoTimestamp(alias.createdAt),
+              updatedAt: existing.exists() ? new Date().toISOString() : toIsoTimestamp(alias.updatedAt),
+            });
+          },
+        })),
+      ];
 
       if (settings) {
-        await setDoc(doc(db, `users/${user.uid}/settings/default`), settings);
+        tasks.push({
+          section: 'settings',
+          run: () => setDoc(doc(db, `users/${user.uid}/settings/default`), settings),
+        });
       }
 
       if (profile) {
-        const profileRef = doc(db, 'users', user.uid);
-        const existingProfile = await getDoc(profileRef);
-        if (existingProfile.exists()) {
-          await setDoc(profileRef, {
-            displayName: profile.displayName ?? null,
-            schemaVersion: Math.max(Number(existingProfile.data().schemaVersion) || 1, profile.schemaVersion),
-            lastLoginAt: serverTimestamp(),
-          }, { merge: true });
-        } else if (user.email) {
-          const profileWrite: Record<string, unknown> = {
-            email: user.email,
-            createdAt: serverTimestamp(),
-            lastLoginAt: serverTimestamp(),
-            schemaVersion: profile.schemaVersion,
-          };
-          if (profile.displayName !== undefined) profileWrite.displayName = profile.displayName;
-          await setDoc(profileRef, profileWrite);
-        }
+        tasks.push({
+          section: 'profile',
+          run: async () => {
+            const profileRef = doc(db, 'users', user.uid);
+            const existingProfile = await getDoc(profileRef);
+            if (existingProfile.exists()) {
+              await setDoc(profileRef, {
+                displayName: profile.displayName ?? null,
+                schemaVersion: Math.max(Number(existingProfile.data().schemaVersion) || 1, profile.schemaVersion),
+                lastLoginAt: serverTimestamp(),
+              }, { merge: true });
+            } else if (user.email) {
+              const profileWrite: Record<string, unknown> = {
+                email: user.email,
+                createdAt: serverTimestamp(),
+                lastLoginAt: serverTimestamp(),
+                schemaVersion: profile.schemaVersion,
+              };
+              if (profile.displayName !== undefined) profileWrite.displayName = profile.displayName;
+              await setDoc(profileRef, profileWrite);
+            }
+          },
+        });
       }
+
+      await runRestoreTasks(tasks, setRestoreProgress);
 
       setSuccess('Restore completed successfully. Existing receipt updates received a new revision.');
       setRestoreDryRun(null);
+      setRestoreProgress(null);
     } catch (error) {
-      setError(messageForError(error));
+      if (error instanceof RestoreInterruptedError) {
+        const completedSections = Object.entries(error.progress.completedBySection)
+          .filter(([, count]) => count > 0)
+          .map(([section, count]) => `${count} ${section}`)
+          .join(', ');
+        const completedDetail = completedSections ? ` (${completedSections})` : '';
+        setError(
+          `Restore stopped after ${error.progress.completed} of ${error.progress.total} records${completedDetail}. `
+          + `Those changes were saved; retry this backup to finish safely. ${messageForError(error.originalError)}`,
+        );
+      } else {
+        setError(messageForError(error));
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  /*
+   * Restores intentionally remain record-by-record: receipts span parent and
+   * item subcollection writes and backups can exceed Firestore batch limits.
+   * The orchestrator above makes any partial completion visible and retryable.
+   */
 
   const openDeletionConfirmation = (action: 'delete_data' | 'delete_account') => {
     if (loading || deletionSubmissionLock.current) return;
@@ -443,12 +491,25 @@ export function DataExportSettings({ onBack }: DataExportSettingsProps) {
             )}
             <p className="text-xs text-blue-700 mt-2 mb-4">A profile restore preserves the signed-in account’s email and creation time; it can restore the display name and profile schema version only.</p>
             <p className="text-xs text-blue-700 mt-2 mb-4">The backup is fully validated before restore starts. Firestore writes are applied record by record; if a network failure interrupts it, retry the same backup to complete the remaining records.</p>
+            {restoreProgress && restoreProgress.total > 0 && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mb-4 rounded-lg border border-blue-200 bg-white/70 p-3 text-sm text-blue-900"
+              >
+                {loading
+                  ? `Restoring ${restoreProgress.completed} of ${restoreProgress.total} records${restoreProgress.currentSection ? ` — ${restoreProgress.currentSection}` : ''}…`
+                  : `${restoreProgress.completed} of ${restoreProgress.total} records were applied before the restore stopped.`}
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={confirmRestore} disabled={loading} className="touch-target bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
                 {loading && <Loader2 size={16} className="animate-spin" />}
-                Confirm Restore
+                {!loading && restoreProgress && restoreProgress.completed < restoreProgress.total
+                  ? 'Retry Restore'
+                  : 'Confirm Restore'}
               </button>
-              <button onClick={() => setRestoreDryRun(null)} disabled={loading} className="touch-target bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
+              <button onClick={() => { setRestoreDryRun(null); setRestoreProgress(null); }} disabled={loading} className="touch-target bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50">
                 Cancel
               </button>
             </div>

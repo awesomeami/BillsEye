@@ -1,3 +1,5 @@
+import { parseCalendarDate } from '../domain/calendarDate';
+
 export const APP_CONFIG = {
   currency: 'PKR',
   locale: 'en-PK',
@@ -20,13 +22,18 @@ export function formatDate(date: Date | string | number | null | undefined, conf
     return 'Unknown Date';
   }
 
-  const d = new Date(date);
+  const calendarDate = typeof date === 'string' ? parseCalendarDate(date) : null;
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && !calendarDate) {
+    return 'Unknown Date';
+  }
+
+  const d = new Date(calendarDate?.timestamp ?? date);
   if (Number.isNaN(d.getTime())) {
     return 'Unknown Date';
   }
 
   return new Intl.DateTimeFormat(config.locale, {
-    timeZone: config.timeZone,
+    timeZone: calendarDate ? 'UTC' : config.timeZone,
     year: 'numeric',
     month: 'short',
     day: 'numeric',

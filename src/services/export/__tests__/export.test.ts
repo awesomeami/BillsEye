@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { exportReceiptsCSV, exportItemsCSV } from '../csv';
 import { exportExcel } from '../excel';
 import { exportPDF } from '../pdf';
+import { buildFinancialExportSummary } from '../financialSummary';
 import { ReceiptDocument, CategoryDocument } from '../../../domain/schema';
 
 describe('Export Service', () => {
@@ -57,10 +58,41 @@ describe('Export Service', () => {
   });
 
   it('generates Items CSV', () => {
-    const csv = exportItemsCSV(mockReceipts, false);
+    const csv = exportItemsCSV(mockReceipts, mockCategories, false);
     assert.match(csv, /i1/);
     assert.match(csv, /Milk/);
     assert.match(csv, /10/); // 1000 / 100 = 10
+  });
+
+  it('preserves zero quantities and resolves modern category IDs in item CSV', () => {
+    const receipt = {
+      ...mockReceipts[0],
+      items: [{
+        ...mockReceipts[0].items[0],
+        quantity: 0,
+        category: undefined,
+        categoryId: 'cat_groceries',
+      }],
+    };
+    const csv = exportItemsCSV([receipt], mockCategories, false);
+    assert.match(csv, /Milk,0,/);
+    assert.match(csv, /Groceries/);
+    assert.match(csv, /PKR,confirmed/);
+  });
+
+  it('keeps financial summaries confirmed-only and separated by currency', () => {
+    const receipts: ReceiptDocument[] = [
+      mockReceipts[0],
+      { ...mockReceipts[0], id: 'pending', status: 'pendingReview', printedGrandTotal: 9900 },
+      { ...mockReceipts[0], id: 'usd', currency: 'USD', printedGrandTotal: 2500 },
+    ];
+    const summary = buildFinancialExportSummary(receipts);
+
+    assert.deepStrictEqual(summary.confirmedReceipts.map(receipt => receipt.id), ['r1', 'usd']);
+    assert.deepStrictEqual(summary.currencyTotals, [
+      { currency: 'PKR', totalMinor: 1500, receiptCount: 1 },
+      { currency: 'USD', totalMinor: 2500, receiptCount: 1 },
+    ]);
   });
 
   it('sanitizes potential CSV formula injection payloads', () => {
@@ -89,7 +121,7 @@ describe('Export Service', () => {
     assert.match(receiptsCsv, /'=SUM\(1,2\)/);
     assert.match(receiptsCsv, /'@cmd \/c calc/);
 
-    const itemsCsv = exportItemsCSV(maliciousReceipts, false);
+    const itemsCsv = exportItemsCSV(maliciousReceipts, mockCategories, false);
     assert.match(itemsCsv, /'\+1337/);
     assert.match(itemsCsv, /'-DANGEROUS/);
   });

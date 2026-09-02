@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import { describe, test } from 'node:test';
 import {
   MAX_RECEIPT_ITEMS,
+  ExtractionResultSchema,
   RawGeminiReceiptV2,
   ReceiptSchema,
   ReceiptWriteSchema,
@@ -142,6 +143,24 @@ describe('Receipt data contract', () => {
     assert.strictEqual(RawGeminiReceiptV2.safeParse({
       ...baseRaw,
       items: [{ ...rawItem, quantity: -1 }],
+    }).success, false);
+  });
+
+  test('rejects impossible calendar dates at every receipt ingestion boundary', () => {
+    const impossibleDate = '2026-02-31';
+    assert.strictEqual(ReceiptSchema.safeParse({
+      ...makeReceipt(),
+      transactionDate: impossibleDate,
+    }).success, false);
+    assert.strictEqual(RawGeminiReceiptV2.safeParse({
+      isReceipt: true,
+      transactionDateCandidate: impossibleDate,
+      items: [],
+    }).success, false);
+    assert.strictEqual(ExtractionResultSchema.safeParse({
+      isReceipt: true,
+      transactionDate: impossibleDate,
+      items: [],
     }).success, false);
   });
 });
