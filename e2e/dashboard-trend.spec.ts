@@ -33,6 +33,20 @@ test('daily spending uses elapsed-time spacing, full years, and a live mobile br
   const xPositions = await dots.evaluateAll(elements => elements.map(element => Number(element.getAttribute('cx'))));
   expect(xPositions[2] - xPositions[1]).toBeGreaterThan((xPositions[1] - xPositions[0]) * 1.5);
 
+  const plotBounds = await trend.locator('clipPath rect').first().evaluate(element => ({
+    left: Number(element.getAttribute('x')),
+    right: Number(element.getAttribute('x')) + Number(element.getAttribute('width')),
+  }));
+  const endpointBounds = await dots.evaluateAll(elements => [elements[0], elements[elements.length - 1]].map(element => {
+    const radius = Number(element.getAttribute('r'));
+    const strokeWidth = Number(getComputedStyle(element).strokeWidth.replace('px', '')) || 0;
+    const outerRadius = radius + (strokeWidth / 2);
+    const center = Number(element.getAttribute('cx'));
+    return { left: center - outerRadius, right: center + outerRadius };
+  }));
+  expect(endpointBounds[0].left).toBeGreaterThanOrEqual(plotBounds.left);
+  expect(endpointBounds[1].right).toBeLessThanOrEqual(plotBounds.right);
+
   await dots.nth(2).hover();
   await expect(trend.getByText(/Date:.*2025/)).toBeVisible();
 
@@ -42,6 +56,18 @@ test('daily spending uses elapsed-time spacing, full years, and a live mobile br
     const box = await traveller.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+
+  await travellers.last().focus();
+  const brushLabels = trend.locator('.recharts-brush-texts text');
+  await expect(brushLabels).toHaveCount(2);
+  const chartBounds = await trend.locator('svg.recharts-surface').boundingBox();
+  expect(chartBounds).not.toBeNull();
+  for (const label of await brushLabels.all()) {
+    const labelBounds = await label.boundingBox();
+    expect(labelBounds).not.toBeNull();
+    expect(labelBounds!.x).toBeGreaterThanOrEqual(chartBounds!.x);
+    expect(labelBounds!.x + labelBounds!.width).toBeLessThanOrEqual(chartBounds!.x + chartBounds!.width);
   }
 
   const originalRange = await trend.getByLabel('Selected trend date range').textContent();
@@ -57,10 +83,13 @@ test('daily spending uses elapsed-time spacing, full years, and a live mobile br
 
   const narrowedRange = await trend.getByLabel('Selected trend date range').textContent();
   const selectedWindow = await trend.locator('.recharts-brush-slide').boundingBox();
+  const narrowedLeftHandle = await travellers.first().boundingBox();
   expect(selectedWindow).not.toBeNull();
+  expect(narrowedLeftHandle).not.toBeNull();
+  const panDistance = leftHandle!.x - narrowedLeftHandle!.x;
   await page.mouse.move(selectedWindow!.x + (selectedWindow!.width / 2), selectedWindow!.y + (selectedWindow!.height / 2));
   await page.mouse.down();
-  await page.mouse.move(selectedWindow!.x - 70, selectedWindow!.y + (selectedWindow!.height / 2), { steps: 12 });
+  await page.mouse.move(selectedWindow!.x + (selectedWindow!.width / 2) + panDistance, selectedWindow!.y + (selectedWindow!.height / 2), { steps: 12 });
   await page.mouse.up();
   await expect(trend.getByLabel('Selected trend date range')).not.toHaveText(narrowedRange ?? '');
   await expect(trend.getByLabel('Selected trend date range')).toContainText('2022');

@@ -119,7 +119,7 @@ function DailySpendingTrend({ data }: { data: DailyTrendChartPoint[] }) {
       <p id="dashboard-trend-summary" className="sr-only">Daily spending uses complete calendar dates and proportional elapsed-time spacing. Exact values are available in chart tooltips.</p>
       <div aria-hidden="true" aria-describedby="dashboard-trend-summary" className="h-80 min-h-0 sm:h-[22rem]">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <LineChart data={data} margin={{ top: 8, right: 64, left: 8, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-rule)" />
             <XAxis
               dataKey="timestamp"
@@ -132,6 +132,7 @@ function DailySpendingTrend({ data }: { data: DailyTrendChartPoint[] }) {
               fontSize={12}
               minTickGap={28}
               tickMargin={10}
+              padding={{ left: 8, right: 8 }}
             />
             <YAxis tickFormatter={(value: number) => formatCurrency(value / 100)} stroke="var(--chart-muted)" fontSize={12} width={58} />
             <Tooltip formatter={(value: number) => formatCurrency(value / 100)} labelFormatter={(label) => `Date: ${formatFullTrendDate(Number(label))}`} contentStyle={tooltipStyle} />
