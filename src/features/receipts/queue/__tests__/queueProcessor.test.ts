@@ -176,6 +176,26 @@ describe('receipt queue processor', () => {
     assert.ok((harness.state[0].retryAfter ?? 0) <= Date.now() + 9000);
   });
 
+  test('does not retry a permanent deployment configuration failure', async () => {
+    const item = createItem('deployment-protection');
+    const harness = createHarness(item);
+    harness.claim();
+
+    const outcome = await processClaimedItem(item, harness.dispatch, createServices({
+      extractReceipt: async () => {
+        throw Object.assign(
+          new Error('Receipt extraction is blocked by Vercel Deployment Protection.'),
+          { status: 424, code: 'DEPLOYMENT_PROTECTION_BLOCKED' },
+        );
+      },
+    }));
+
+    assert.strictEqual(outcome, 'continue');
+    assert.strictEqual(harness.state[0].status, 'failed-permanent');
+    assert.match(harness.state[0].error ?? '', /Vercel Deployment Protection/);
+    assert.strictEqual(harness.state[0].retryAfter, undefined);
+  });
+
   test('cancellation reaches its terminal state and does not create a receipt', async () => {
     const item = createItem('cancel');
     const harness = createHarness(item);

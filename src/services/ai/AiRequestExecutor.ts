@@ -41,6 +41,17 @@ const requestErrorDetails = (error: unknown): RequestErrorDetails => {
   return {};
 };
 
+const extractionConfigurationErrorMessage = (code: string | undefined): string | undefined => {
+  switch (code) {
+    case 'DEPLOYMENT_PROTECTION_BLOCKED':
+      return 'Receipt extraction is blocked by Vercel Deployment Protection. The app owner must allow access to the production deployment.';
+    case 'CONFIGURATION_UNAVAILABLE':
+      return 'Receipt extraction is unavailable because the server Firebase Admin configuration is incomplete. The app owner must configure Firebase Admin for this deployment.';
+    default:
+      return undefined;
+  }
+};
+
 export class AiRequestExecutor {
   private rotationManager: KeyRotationManager;
 
@@ -96,6 +107,16 @@ export class AiRequestExecutor {
       } catch (error) {
         // Redact any raw error messages
         const details = requestErrorDetails(error);
+        const configurationError = extractionConfigurationErrorMessage(details.code);
+        if (configurationError) {
+          // These errors are unrelated to a Gemini key and cannot be fixed by
+          // retrying. Preserve the key and let the queue show an actionable,
+          // terminal error instead of scheduling an endless retry loop.
+          throw Object.assign(new Error(configurationError), {
+            status: 424,
+            code: details.code,
+          });
+        }
         const safeMessage = CryptoUtils.redactString(details.message ?? 'Unknown error');
         
         const aiError = this.classifyError(details, safeMessage);

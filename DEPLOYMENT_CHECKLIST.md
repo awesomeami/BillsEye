@@ -26,7 +26,8 @@
 1. Import the repository, use `npm run build`, and set the output directory to `dist`.
 2. Keep `vercel.json` in place: it sends `/api/*` to `api/index.ts`, sends SPA paths to `index.html`, applies the security headers, and configures a 60-second function duration.
 3. Set the complete environment-variable set from `.env.example` in the appropriate Production/Preview scope. Client and Admin project/database IDs must match. Do not enable `FIREBASE_ADMIN_USE_ADC` in production.
-4. Test an authenticated extraction and a client-side route after deployment.
+4. Ensure the URL users open is not redirected to `vercel.com/login`. For this Firebase-authenticated app, set Deployment Protection to **None** for production or use an unprotected production domain. Keep protection on previews if desired.
+5. Test `GET /api/health` on the public app URL (it must return JSON, not HTML or a redirect), then test an authenticated extraction and a client-side route after deployment.
 
 The extractor accepts one `multipart/form-data` upload with `receiptImage` and `geminiKey` fields. It authenticates the Firebase token before parsing the upload, limits the image to 4 MiB, and stops upstream work after 55 seconds. Vercel's platform request/response payload ceiling is 4.5 MB and is not configurable in this project. The configured 60-second function duration requires a Vercel plan/runtime that permits it.
 

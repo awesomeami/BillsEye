@@ -1,7 +1,7 @@
 import { ExtractionResultSchema, type ExtractionResultDTO } from '../../domain/schema';
 import { getAuth } from 'firebase/auth';
 import { isE2eMockMode } from '../../config/e2eMocks';
-import { readExtractionErrorResponse } from './extractionErrors';
+import { isVercelDeploymentProtectionRedirect, readExtractionErrorResponse } from './extractionErrors';
 
 const useE2eMocks = isE2eMockMode;
 
@@ -48,6 +48,14 @@ export class ExtractionClient {
       body: formData,
       signal,
     });
+
+    if (isVercelDeploymentProtectionRedirect(response)) {
+      throw new ExtractionRequestError(
+        'Receipt extraction is blocked by Vercel Deployment Protection. The app owner must allow access to the production deployment.',
+        424,
+        'DEPLOYMENT_PROTECTION_BLOCKED',
+      );
+    }
 
     if (!response.ok) {
       const errorData = await readExtractionErrorResponse(response);

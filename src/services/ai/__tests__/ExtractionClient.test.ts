@@ -1,8 +1,23 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readExtractionErrorResponse } from '../extractionErrors';
+import { isVercelDeploymentProtectionRedirect, readExtractionErrorResponse } from '../extractionErrors';
 
 describe('ExtractionClient error responses', () => {
+  test('recognizes a Vercel deployment-protection login redirect', () => {
+    assert.strictEqual(isVercelDeploymentProtectionRedirect({
+      redirected: true,
+      url: 'https://vercel.com/login?next=%2Fsso-api',
+    }), true);
+    assert.strictEqual(isVercelDeploymentProtectionRedirect({
+      redirected: false,
+      url: 'https://vercel.com/login',
+    }), false);
+    assert.strictEqual(isVercelDeploymentProtectionRedirect({
+      redirected: true,
+      url: 'https://example.com/login',
+    }), false);
+  });
+
   test('reads a non-JSON platform error body exactly once and preserves status context', async () => {
     const response = new Response('<html>Bad gateway</html>', {
       status: 502,

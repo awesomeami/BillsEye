@@ -142,6 +142,45 @@ describe('KeyRotationManager Fake Clock Tests', () => {
     }
   });
 
+  test('AiRequestExecutor: permanent deployment configuration failures preserve AI keys and do not retry', async () => {
+    krm.updateSlots([
+      { slotId: 1, isEnabled: true, status: 'healthy', maskedKey: 'key-1', isSessionOnly: false },
+      { slotId: 2, isEnabled: true, status: 'healthy', maskedKey: 'key-2', isSessionOnly: false },
+    ]);
+    const executor = new AiRequestExecutor(krm);
+
+    for (const [code, expectedMessage] of [
+      ['DEPLOYMENT_PROTECTION_BLOCKED', 'Vercel Deployment Protection'],
+      ['CONFIGURATION_UNAVAILABLE', 'Firebase Admin configuration'],
+    ] as const) {
+      let attempts = 0;
+      await assert.rejects(
+        () => executor.execute(
+          'extractReceipt',
+          async () => {
+            attempts += 1;
+            throw Object.assign(new Error('generic service failure'), { status: 503, code });
+          },
+          async index => `decrypted-key-${index}`,
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.match(error.message, new RegExp(expectedMessage));
+          assert.strictEqual((error as Error & { status?: number; code?: string }).status, 424);
+          assert.strictEqual((error as Error & { code?: string }).code, code);
+          return true;
+        },
+      );
+      assert.strictEqual(attempts, 1);
+    }
+
+    for (const slot of krm.getSlotsForTesting()) {
+      assert.strictEqual(slot.status, 'healthy');
+      assert.strictEqual(slot.cooldownUntil, undefined);
+      assert.strictEqual(slot.failureCount, undefined);
+    }
+  });
+
   test('AiRequestExecutor: rotates to next key on rate_limit and applies cooldown', async () => {
     krm.updateSlots([
       { slotId: 1, isEnabled: true, status: 'healthy', maskedKey: 'key-1', isSessionOnly: false },

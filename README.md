@@ -84,8 +84,9 @@ GitHub Actions runs `npm ci`, linting, type checking, unit tests, Firestore emul
 
 1. Import the repository into Vercel and retain `npm run build` as the build command with `dist` as the output directory.
 2. Add the required names from `.env.example` as Vercel environment variables. Keep `FIREBASE_SERVICE_ACCOUNT` server-only; never expose it with a `VITE_` prefix. The receipt-extraction model is fixed in server code and does not require an environment variable. Do not set `FIREBASE_ADMIN_USE_ADC` in production.
-3. Add the deployed Vercel domain to Firebase Authentication's Authorized domains.
-4. Deploy Firestore rules and indexes from the same Firebase project before allowing users to write data.
+3. Keep the URL that users open reachable without a Vercel Login redirect. For this Firebase-authenticated app, either set Deployment Protection to **None** for production or use an unprotected production domain; do not distribute a protected generated deployment URL. Confirm `GET /api/health` returns JSON rather than redirecting to `vercel.com/login`.
+4. Add the deployed Vercel domain to Firebase Authentication's Authorized domains.
+5. Deploy Firestore rules and indexes from the same Firebase project before allowing users to write data.
 
 `vercel.json` configures `api/index.ts` with a 60-second maximum duration. The extraction route stops its Gemini request after 55 seconds so it can return a normal timeout response first. Vercel's request and response payload limit is 4.5 MB; the application accepts one receipt image up to 4 MiB and reserves multipart overhead below that platform limit. No setting in this repository raises Vercel's 4.5 MB platform limit.
 
